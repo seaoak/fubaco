@@ -39,76 +39,51 @@ fn test_pop3() -> Result<()> {
 	let mut pop3_stream = POP3Stream::connect((hostname.to_string(), port), &hostname)?;
 
     println!("wait for greeting response");
-    let response = pop3_stream.exec_command(&POP3_COMMAND_GREET, None)?;
+    let response = pop3_stream.exec_command(&POP3_COMMAND_GREETING, None)?;
     match response {
-        POP3Response::OkSingleLine(status) => println!("{}", status),
+        POP3Response::OkSingleLine(status) => println!("detect OK response: {}", status),
         POP3Response::OkMultiLine(status, body) => panic!("BUG: unexpected multi-line response: {}{}", status, String::from_utf8_lossy(&body)),
         POP3Response::Err(status) => panic!("FATAL: detect -ERR response: {}", status),
     }
 
     println!("issue USER command");
-    let mut buf = Vec::<u8>::new();
-    pop3_stream.write_command(&format!("USER {}\r\n", &username))?;
-    pop3_stream.read_single_line_response(&mut buf)?;
-    let response = String::from_utf8_lossy(&buf);
-    if starts_with_u8(&buf, b"+OK ") || starts_with_u8(&buf, b"+OK\r\n") {
-        println!("detect OK response for USER command: {}", &response);
-    } else if starts_with_u8(&buf, b"-ERR ") || starts_with_u8(&buf, b"-ERR\r\n") {
-        return Err(anyhow!("detect ERR response for USER command: {}", &response));
-    } else {
-        panic!("detect invalid response (neither +OK nor -ERR) for USER command: {}", &response);
+    let response = pop3_stream.exec_command(&POP3_COMMAND_USER, Some(username))?;
+    match response {
+        POP3Response::OkSingleLine(status) => println!("detect OK response: {}", status),
+        POP3Response::OkMultiLine(status, body) => panic!("BUG: unexpected multi-line response: {}{}", status, String::from_utf8_lossy(&body)),
+        POP3Response::Err(status) => panic!("FATAL: detect -ERR response: {}", status),
     }
 
     println!("issue PASS command");
-    let mut buf = Vec::<u8>::new();
-    pop3_stream.write_command(&format!("PASS {}\r\n", &password))?;
-    pop3_stream.read_single_line_response(&mut buf)?;
-    let response = String::from_utf8_lossy(&buf);
-    if starts_with_u8(&buf, b"+OK ") || starts_with_u8(&buf, b"+OK\r\n") {
-        println!("detect OK response for PASS command: {}", &response);
-    } else if starts_with_u8(&buf, b"-ERR ") || starts_with_u8(&buf, b"-ERR\r\n") {
-        return Err(anyhow!("detect ERR response for PASS command: {}", &response));
-    } else {
-        panic!("detect invalid response (neither +OK nor -ERR) for PASS command: {}", &response);
+    let response = pop3_stream.exec_command(&POP3_COMMAND_PASS, Some(password))?;
+    match response {
+        POP3Response::OkSingleLine(status) => println!("detect OK response: {}", status),
+        POP3Response::OkMultiLine(status, body) => panic!("BUG: unexpected multi-line response: {}{}", status, String::from_utf8_lossy(&body)),
+        POP3Response::Err(status) => panic!("FATAL: detect -ERR response: {}", status),
     }
 
     println!("issue STAT command");
-    let mut buf = Vec::<u8>::new();
-    pop3_stream.write_command(&format!("STAT\r\n"))?;
-    pop3_stream.read_single_line_response(&mut buf)?;
-    let response = String::from_utf8_lossy(&buf);
-    if starts_with_u8(&buf, b"+OK ") || starts_with_u8(&buf, b"+OK\r\n") {
-        println!("detect OK response for STAT command: {}", &response);
-    } else if starts_with_u8(&buf, b"-ERR ") || starts_with_u8(&buf, b"-ERR\r\n") {
-        return Err(anyhow!("detect ERR response for STAT command: {}", &response));
-    } else {
-        panic!("detect invalid response (neither +OK nor -ERR) for STAT command: {}", &response);
+    let response = pop3_stream.exec_command(&POP3_COMMAND_STAT, None)?;
+    match response {
+        POP3Response::OkSingleLine(status) => println!("detect OK response: {}", status),
+        POP3Response::OkMultiLine(status, body) => panic!("BUG: unexpected multi-line response: {}{}", status, String::from_utf8_lossy(&body)),
+        POP3Response::Err(status) => panic!("FATAL: detect -ERR response: {}", status),
     }
 
     println!("issue LIST command");
-    let mut buf = Vec::<u8>::new();
-    pop3_stream.write_command(&format!("LIST\r\n"))?;
-    pop3_stream.read_multi_line_response(&mut buf)?;
-    let response = String::from_utf8_lossy(&buf);
-    if starts_with_u8(&buf, b"+OK ") || starts_with_u8(&buf, b"+OK\r\n") {
-        println!("detect OK response for LIST command: {}", &response);
-    } else if starts_with_u8(&buf, b"-ERR ") || starts_with_u8(&buf, b"-ERR\r\n") {
-        return Err(anyhow!("detect ERR response for LIST command: {}", &response));
-    } else {
-        panic!("detect invalid response (neither +OK nor -ERR) for LIST command: {}", &response);
+    let response = pop3_stream.exec_command(&POP3_COMMAND_LIST_ALL, None)?;
+    match response {
+        POP3Response::OkSingleLine(status) => panic!("BUG: unexpected single-line response: {}", status),
+        POP3Response::OkMultiLine(status, body) => println!("detect OK response: {}{}", status, String::from_utf8_lossy(&body)),
+        POP3Response::Err(status) => panic!("FATAL: detect -ERR response: {}", status),
     }
 
     println!("issue QUIT command");
-    let mut buf = Vec::<u8>::new();
-    pop3_stream.write_command("QUIT\r\n")?;
-    pop3_stream.read_single_line_response(&mut buf)?;
-    let response = String::from_utf8_lossy(&buf);
-    if starts_with_u8(&buf, b"+OK ") || starts_with_u8(&buf, b"+OK\r\n") {
-        println!("detect OK response for QUIT command: {}", &response);
-    } else if starts_with_u8(&buf, b"-ERR ") || starts_with_u8(&buf, b"-ERR\r\n") {
-        return Err(anyhow!("detect ERR response for QUIT command: {}", &response));
-    } else {
-        panic!("detect invalid response (neither +OK nor -ERR) for QUIT command: {}", &response);
+    let response = pop3_stream.exec_command(&POP3_COMMAND_QUIT, None)?;
+    match response {
+        POP3Response::OkSingleLine(status) => println!("detect OK response: {}", status),
+        POP3Response::OkMultiLine(status, body) => panic!("BUG: unexpected multi-line response: {}{}", status, String::from_utf8_lossy(&body)),
+        POP3Response::Err(status) => panic!("FATAL: detect -ERR response: {}", status),
     }
 
     println!("closing connection...");
@@ -119,91 +94,129 @@ fn test_pop3() -> Result<()> {
 }
 
 //====================================================================
+#[derive(Debug, Copy, Clone, PartialEq)]
+#[allow(non_camel_case_types)]
+enum POP3State {
+    GREETING,
+    AUTHORIZATION_0,
+    AUTHORIZATION_1,
+    TRANSACTION,
+    UPDATE,
+}
+
+impl std::fmt::Display for POP3State {
+    fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(dest, "{:?}", self)
+    }
+}
+
 #[derive(Debug)]
-pub struct POP3Command {
-    pub command_text: String,
-    pub arg_regex: Option<Regex>,
-    pub has_multi_line_response: bool,
+struct POP3Command {
+    command_text: String,
+    arg_regex: Option<Regex>,
+    has_multi_line_response: bool,
+    expected_state: POP3State,
+    next_state: POP3State,
 }
 
 lazy_static! {
-    static ref POP3_COMMAND_GREET: POP3Command = POP3Command {
+    static ref POP3_COMMAND_GREETING: POP3Command = POP3Command {
         command_text: "".to_string(),
         arg_regex: None,
         has_multi_line_response: false,
-        
+        expected_state: POP3State::GREETING,
+        next_state: POP3State::AUTHORIZATION_0,
     };
     static ref POP3_COMMAND_QUIT: POP3Command = POP3Command {
         command_text: "QUIT".to_string(),
         arg_regex: None,
         has_multi_line_response: false,
-        
+        expected_state: POP3State::TRANSACTION,
+        next_state: POP3State::UPDATE,
     };
     static ref POP3_COMMAND_STAT: POP3Command = POP3Command {
         command_text: "STAT".to_string(),
         arg_regex: None,
         has_multi_line_response: false,
-        
+        expected_state: POP3State::TRANSACTION,
+        next_state: POP3State::TRANSACTION,
     };
     static ref POP3_COMMAND_LIST_ALL: POP3Command = POP3Command {
         command_text: "LIST".to_string(),
         arg_regex: None,
         has_multi_line_response: true,
-        
+        expected_state: POP3State::TRANSACTION,
+        next_state: POP3State::TRANSACTION,
     };
 	static ref POP3_COMMAND_LIST_ONE: POP3Command = POP3Command {
         command_text: "LIST".to_string(),
         arg_regex: Some(Regex::new(r"^[1-9][0-9]*$").unwrap()), // "message-number" is decimal and greater than 0 (RFC1939)
         has_multi_line_response: false,
+        expected_state: POP3State::TRANSACTION,
+        next_state: POP3State::TRANSACTION,
     };
 	static ref POP3_COMMAND_RETR: POP3Command = POP3Command {
         command_text: "RETR".to_string(),
         arg_regex: Some(Regex::new(r"^[1-9][0-9]*$").unwrap()), // "message-number" is decimal and greater than 0 (RFC1939)
         has_multi_line_response: true,
+        expected_state: POP3State::TRANSACTION,
+        next_state: POP3State::TRANSACTION,
     };
 	static ref POP3_COMMAND_DELE: POP3Command = POP3Command {
         command_text: "DELE".to_string(),
         arg_regex: Some(Regex::new(r"^[1-9][0-9]*$").unwrap()), // "message-number" is decimal and greater than 0 (RFC1939)
         has_multi_line_response: false,
+        expected_state: POP3State::TRANSACTION,
+        next_state: POP3State::TRANSACTION,
     };
     static ref POP3_COMMAND_NOOP: POP3Command = POP3Command {
         command_text: "NOOP".to_string(),
         arg_regex: None,
         has_multi_line_response: false,
-        
+        expected_state: POP3State::TRANSACTION,
+        next_state: POP3State::TRANSACTION,
     };
     static ref POP3_COMMAND_RSET: POP3Command = POP3Command {
         command_text: "RSET".to_string(),
         arg_regex: None,
         has_multi_line_response: false,
-        
+        expected_state: POP3State::TRANSACTION,
+        next_state: POP3State::TRANSACTION,
     };
     static ref POP3_COMMAND_TOP: POP3Command = POP3Command {
         command_text: "TOP".to_string(),
         arg_regex: Some(Regex::new(r"^[1-9][0-9]* [1-9][0-9]*$").unwrap()), // "message-number" is decimal and greater than 0 (RFC1939)
         has_multi_line_response: true,
-        
+        expected_state: POP3State::TRANSACTION,
+        next_state: POP3State::TRANSACTION,
     };
     static ref POP3_COMMAND_UIDL_ALL: POP3Command = POP3Command {
         command_text: "UIDL".to_string(),
         arg_regex: None,
         has_multi_line_response: true,
-        
+        expected_state: POP3State::TRANSACTION,
+        next_state: POP3State::TRANSACTION,
     };
 	static ref POP3_COMMAND_UIDL_ONE: POP3Command = POP3Command {
         command_text: "UIDL".to_string(),
         arg_regex: Some(Regex::new(r"^[1-9][0-9]*$").unwrap()), // "message-number" is decimal and greater than 0 (RFC1939)
         has_multi_line_response: false,
+        expected_state: POP3State::TRANSACTION,
+        next_state: POP3State::TRANSACTION,
     };
 	static ref POP3_COMMAND_USER: POP3Command = POP3Command {
         command_text: "USER".to_string(),
         arg_regex: Some(Regex::new(r"^\S+$").unwrap()),
         has_multi_line_response: false,
+        expected_state: POP3State::AUTHORIZATION_0,
+        next_state: POP3State::AUTHORIZATION_1,
     };
 	static ref POP3_COMMAND_PASS: POP3Command = POP3Command {
         command_text: "PASS".to_string(),
         arg_regex: Some(Regex::new(r"^\S+$").unwrap()),
         has_multi_line_response: false,
+        expected_state: POP3State::AUTHORIZATION_1,
+        next_state: POP3State::TRANSACTION,
     };
 }
 
@@ -218,7 +231,7 @@ enum POP3Response { // String includes CRLF at the end
 #[derive(Debug)]
 struct POP3Stream<S: Read + Write> {
     stream: S,
-    is_in_transaction: bool, // a TRANSACTION is from authentication to QUIT command
+    state: POP3State,
 }
 
 impl POP3Stream<TlsStream<TcpStream>> {
@@ -229,7 +242,7 @@ impl POP3Stream<TlsStream<TcpStream>> {
         let tls_stream = connector.connect(server_fqdn, tcp_stream)?;
         Ok(POP3Stream {
             stream: tls_stream,
-            is_in_transaction: false,
+            state: POP3State::GREETING,
         })
     }
 
@@ -252,14 +265,18 @@ impl<S: Read + Write> POP3Stream<S> {
             assert!(args.is_none());
         }
 
+        if command.expected_state != self.state {
+            return Err(anyhow!("FATAL: can not exec {} command in {} state", command.command_text, self.state));
+        }
+
         if command.command_text.len() == 0 { // Greeting
             assert!(command.arg_regex.is_none());
             assert!(args.is_none());
             // do nothing
         } else if let Some(args_text) = &args {
-            self.write_command(&format!("{} {}", command.command_text, args_text))?;
+            self.write_command(&format!("{} {}\r\n", command.command_text, args_text))?;
         } else {
-            self.write_command(&command.command_text)?;
+            self.write_command(&format!("{}\r\n", command.command_text))?;
         }
 
         let mut buf = Vec::<u8>::new();
@@ -275,6 +292,7 @@ impl<S: Read + Write> POP3Stream<S> {
             }
             return Ok(POP3Response::Err(first_line));
         } else if REGEX_POP3_OK_RESPONSE.is_match(&first_line) {
+            self.state = command.next_state;
             if command.has_multi_line_response {
                 assert!(ends_with_u8(&buf, b"\r\n.\r\n"));
                 let body_length = buf.len() - first_line.len() - b".\r\n".len(); // may be zero
