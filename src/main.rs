@@ -72,19 +72,33 @@ fn test_pop3() -> Result<()> {
 
     println!("issue LIST command");
     let response = pop3_stream.exec_command(&POP3_COMMAND_LIST_ALL, None)?;
-    match response {
+    let (_, body) = match response {
         POP3Response::OkSingleLine(status) => panic!("BUG: unexpected single-line response: {}", status),
-        POP3Response::OkMultiLine(status, body) => println!("detect OK response: {}{}", status, String::from_utf8_lossy(&body)),
+        POP3Response::OkMultiLine(status, body) => {
+            println!("detect OK response: {}{}", status, String::from_utf8_lossy(&body));
+            (status, body)
+        },
         POP3Response::Err(status) => panic!("FATAL: detect -ERR response: {}", status),
-    }
+    };
+    let mail_size_list: Vec<usize> = String::from_utf8_lossy(&body).lines().map(|line| line.split_whitespace().nth(1).unwrap()).map(|s| s.parse::<usize>().unwrap()).collect();
+    println!("DEBUG: mail_size_list = {:?}\n", mail_size_list);
 
     println!("issue UIDL command");
     let response = pop3_stream.exec_command(&POP3_COMMAND_UIDL_ALL, None)?;
-    match response {
+    let (_, body) = match response {
         POP3Response::OkSingleLine(status) => panic!("BUG: unexpected single-line response: {}", status),
-        POP3Response::OkMultiLine(status, body) => println!("detect OK response: {}{}", status, String::from_utf8_lossy(&body)),
+        POP3Response::OkMultiLine(status, body) => {
+            println!("detect OK response: {}{}", status, String::from_utf8_lossy(&body));
+            (status, body)
+        },
         POP3Response::Err(status) => panic!("FATAL: detect -ERR response: {}", status),
-    }
+    };
+    let mail_uid_list: Vec<String> = String::from_utf8_lossy(&body).lines().map(|line| line.split_whitespace().nth(1).unwrap().to_string()).collect();
+    println!("DEBUG: mail_uid_list = {:?}\n", mail_uid_list);
+
+    assert_eq!(mail_size_list.len(), mail_uid_list.len());
+    let mail_list: Vec<(usize, String)> = mail_size_list.into_iter().zip(mail_uid_list.into_iter()).collect();
+    println!("DEBUG: mail_list = {:?}\n", mail_list);
 
     println!("issue QUIT command");
     let response = pop3_stream.exec_command(&POP3_COMMAND_QUIT, None)?;
@@ -118,6 +132,7 @@ impl std::fmt::Display for POP3State {
     }
 }
 
+//====================================================================
 #[derive(Debug)]
 struct POP3Command {
     command_text: String,
@@ -129,7 +144,7 @@ struct POP3Command {
 
 lazy_static! {
     static ref POP3_COMMAND_GREETING: POP3Command = POP3Command {
-        command_text: "".to_string(),
+        command_text: "".to_string(), // this is not a command (only response for connecting)
         arg_regex: None,
         has_multi_line_response: false,
         expected_state: POP3State::GREETING,
@@ -228,6 +243,7 @@ lazy_static! {
     };
 }
 
+//====================================================================
 #[derive(Debug)]
 enum POP3Response { // String includes CRLF at the end
     OkSingleLine(String),
