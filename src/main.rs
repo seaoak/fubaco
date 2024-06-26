@@ -78,6 +78,14 @@ fn test_pop3() -> Result<()> {
         POP3Response::Err(status) => panic!("FATAL: detect -ERR response: {}", status),
     }
 
+    println!("issue UIDL command");
+    let response = pop3_stream.exec_command(&POP3_COMMAND_UIDL_ALL, None)?;
+    match response {
+        POP3Response::OkSingleLine(status) => panic!("BUG: unexpected single-line response: {}", status),
+        POP3Response::OkMultiLine(status, body) => println!("detect OK response: {}{}", status, String::from_utf8_lossy(&body)),
+        POP3Response::Err(status) => panic!("FATAL: detect -ERR response: {}", status),
+    }
+
     println!("issue QUIT command");
     let response = pop3_stream.exec_command(&POP3_COMMAND_QUIT, None)?;
     match response {
