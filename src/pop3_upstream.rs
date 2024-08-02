@@ -1,10 +1,10 @@
 use std::io::{Read, Write, ErrorKind};
-use std::net::{ToSocketAddrs, TcpStream};
 
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
-use native_tls::{TlsConnector, TlsStream};
 use regex::Regex;
+
+use crate::my_disconnect::MyDisconnect;
 
 const ALMOST_MAX_LINE_LENGTH: usize = 1024;
 const ASCII_CODE_CR: u8 = b'\r'; // 0x0d "Carriage Return"
@@ -154,30 +154,27 @@ pub enum POP3Response { // String includes CRLF at the end
 
 //====================================================================
 #[derive(Debug)]
-pub struct POP3Upstream<S: Read + Write> {
+pub struct POP3Upstream<S: Read + Write + MyDisconnect> {
     stream: S,
     state: POP3State,
 }
 
-impl POP3Upstream<TlsStream<TcpStream>> {
+impl<S: Read + Write + MyDisconnect> POP3Upstream<S> {
 
-    pub fn connect<A:ToSocketAddrs>(addr: A, server_fqdn: &str) -> Result<POP3Upstream<TlsStream<TcpStream>>> {
-        let connector = TlsConnector::new()?;
-        let tcp_stream = TcpStream::connect(addr)?;
-        let tls_stream = connector.connect(server_fqdn, tcp_stream)?;
+    pub fn connect(stream: S) -> Result<POP3Upstream<S>> {
         Ok(POP3Upstream {
-            stream: tls_stream,
+            stream: stream,
             state: POP3State::GREETING,
         })
     }
 
-    pub fn shutdown(&mut self) -> Result<()> {
-        self.stream.shutdown()?;
+    pub fn disconnect(&mut self) -> Result<()> {
+        self.stream.disconnect()?;
         Ok(())
     }
 }
 
-impl<S: Read + Write> POP3Upstream<S> {
+impl<S: Read + Write + MyDisconnect> POP3Upstream<S> {
 
     pub fn exec_command(&mut self, command: &POP3Command, args: Option<String>) -> Result<POP3Response> {
         if let Some(regex) = &command.arg_regex {

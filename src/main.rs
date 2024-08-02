@@ -1,8 +1,12 @@
 use std::env;
+use std::net::TcpStream;
 
 use anyhow::Result;
+use native_tls::TlsConnector;
 
+mod my_disconnect;
 mod pop3_upstream;
+
 use pop3_upstream::*;
 
 //====================================================================
@@ -22,7 +26,11 @@ fn test_pop3() -> Result<()> {
     let port = 995;
 
     println!("open connection");
-	let mut pop3_upstream = POP3Upstream::connect((hostname.to_string(), port), &hostname)?;
+    let connector = TlsConnector::new()?;
+    let tcp_stream = TcpStream::connect((hostname.to_string(), port))?;
+    let tls_stream = connector.connect(&hostname, tcp_stream)?;
+
+    let mut pop3_upstream = POP3Upstream::connect(tls_stream)?;
 
     println!("wait for greeting response");
     let response = pop3_upstream.exec_command(&POP3_COMMAND_GREETING, None)?;
@@ -95,7 +103,7 @@ fn test_pop3() -> Result<()> {
     }
 
     println!("closing connection...");
-    pop3_upstream.shutdown()?;
+    pop3_upstream.disconnect()?;
     println!("connection is successfully closed");
 
     Ok(())
