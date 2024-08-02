@@ -2,8 +2,8 @@ use std::env;
 
 use anyhow::Result;
 
-mod pop3_stream;
-use pop3_stream::*;
+mod pop3_upstream;
+use pop3_upstream::*;
 
 //====================================================================
 fn main() {
@@ -22,10 +22,10 @@ fn test_pop3() -> Result<()> {
     let port = 995;
 
     println!("open connection");
-	let mut pop3_stream = POP3Stream::connect((hostname.to_string(), port), &hostname)?;
+	let mut pop3_upstream = POP3Upstream::connect((hostname.to_string(), port), &hostname)?;
 
     println!("wait for greeting response");
-    let response = pop3_stream.exec_command(&POP3_COMMAND_GREETING, None)?;
+    let response = pop3_upstream.exec_command(&POP3_COMMAND_GREETING, None)?;
     match response {
         POP3Response::OkSingleLine(status) => println!("detect OK response: {}", status),
         POP3Response::OkMultiLine(status, body) => panic!("BUG: unexpected multi-line response: {}{}", status, String::from_utf8_lossy(&body)),
@@ -33,7 +33,7 @@ fn test_pop3() -> Result<()> {
     }
 
     println!("issue USER command");
-    let response = pop3_stream.exec_command(&POP3_COMMAND_USER, Some(username))?;
+    let response = pop3_upstream.exec_command(&POP3_COMMAND_USER, Some(username))?;
     match response {
         POP3Response::OkSingleLine(status) => println!("detect OK response: {}", status),
         POP3Response::OkMultiLine(status, body) => panic!("BUG: unexpected multi-line response: {}{}", status, String::from_utf8_lossy(&body)),
@@ -41,7 +41,7 @@ fn test_pop3() -> Result<()> {
     }
 
     println!("issue PASS command");
-    let response = pop3_stream.exec_command(&POP3_COMMAND_PASS, Some(password))?;
+    let response = pop3_upstream.exec_command(&POP3_COMMAND_PASS, Some(password))?;
     match response {
         POP3Response::OkSingleLine(status) => println!("detect OK response: {}", status),
         POP3Response::OkMultiLine(status, body) => panic!("BUG: unexpected multi-line response: {}{}", status, String::from_utf8_lossy(&body)),
@@ -49,7 +49,7 @@ fn test_pop3() -> Result<()> {
     }
 
     println!("issue STAT command");
-    let response = pop3_stream.exec_command(&POP3_COMMAND_STAT, None)?;
+    let response = pop3_upstream.exec_command(&POP3_COMMAND_STAT, None)?;
     match response {
         POP3Response::OkSingleLine(status) => println!("detect OK response: {}", status),
         POP3Response::OkMultiLine(status, body) => panic!("BUG: unexpected multi-line response: {}{}", status, String::from_utf8_lossy(&body)),
@@ -57,7 +57,7 @@ fn test_pop3() -> Result<()> {
     }
 
     println!("issue LIST command");
-    let response = pop3_stream.exec_command(&POP3_COMMAND_LIST_ALL, None)?;
+    let response = pop3_upstream.exec_command(&POP3_COMMAND_LIST_ALL, None)?;
     let (_, body) = match response {
         POP3Response::OkSingleLine(status) => panic!("BUG: unexpected single-line response: {}", status),
         POP3Response::OkMultiLine(status, body) => {
@@ -70,7 +70,7 @@ fn test_pop3() -> Result<()> {
     println!("DEBUG: mail_size_list = {:?}\n", mail_size_list);
 
     println!("issue UIDL command");
-    let response = pop3_stream.exec_command(&POP3_COMMAND_UIDL_ALL, None)?;
+    let response = pop3_upstream.exec_command(&POP3_COMMAND_UIDL_ALL, None)?;
     let (_, body) = match response {
         POP3Response::OkSingleLine(status) => panic!("BUG: unexpected single-line response: {}", status),
         POP3Response::OkMultiLine(status, body) => {
@@ -87,7 +87,7 @@ fn test_pop3() -> Result<()> {
     println!("DEBUG: mail_list = {:?}\n", mail_list);
 
     println!("issue QUIT command");
-    let response = pop3_stream.exec_command(&POP3_COMMAND_QUIT, None)?;
+    let response = pop3_upstream.exec_command(&POP3_COMMAND_QUIT, None)?;
     match response {
         POP3Response::OkSingleLine(status) => println!("detect OK response: {}", status),
         POP3Response::OkMultiLine(status, body) => panic!("BUG: unexpected multi-line response: {}{}", status, String::from_utf8_lossy(&body)),
@@ -95,7 +95,7 @@ fn test_pop3() -> Result<()> {
     }
 
     println!("closing connection...");
-    pop3_stream.shutdown()?;
+    pop3_upstream.shutdown()?;
     println!("connection is successfully closed");
 
     Ok(())

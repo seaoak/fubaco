@@ -154,18 +154,18 @@ pub enum POP3Response { // String includes CRLF at the end
 
 //====================================================================
 #[derive(Debug)]
-pub struct POP3Stream<S: Read + Write> {
+pub struct POP3Upstream<S: Read + Write> {
     stream: S,
     state: POP3State,
 }
 
-impl POP3Stream<TlsStream<TcpStream>> {
+impl POP3Upstream<TlsStream<TcpStream>> {
 
-    pub fn connect<A:ToSocketAddrs>(addr: A, server_fqdn: &str) -> Result<POP3Stream<TlsStream<TcpStream>>> {
+    pub fn connect<A:ToSocketAddrs>(addr: A, server_fqdn: &str) -> Result<POP3Upstream<TlsStream<TcpStream>>> {
         let connector = TlsConnector::new()?;
         let tcp_stream = TcpStream::connect(addr)?;
         let tls_stream = connector.connect(server_fqdn, tcp_stream)?;
-        Ok(POP3Stream {
+        Ok(POP3Upstream {
             stream: tls_stream,
             state: POP3State::GREETING,
         })
@@ -177,7 +177,7 @@ impl POP3Stream<TlsStream<TcpStream>> {
     }
 }
 
-impl<S: Read + Write> POP3Stream<S> {
+impl<S: Read + Write> POP3Upstream<S> {
 
     pub fn exec_command(&mut self, command: &POP3Command, args: Option<String>) -> Result<POP3Response> {
         if let Some(regex) = &command.arg_regex {
