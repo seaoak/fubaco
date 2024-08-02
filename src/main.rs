@@ -5,6 +5,7 @@ use anyhow::Result;
 use native_tls::TlsConnector;
 
 mod my_disconnect;
+mod my_text_line_stream;
 mod pop3_upstream;
 
 use pop3_upstream::*;

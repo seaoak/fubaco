@@ -1,12 +1,12 @@
-use std::io::{Read, Write, ErrorKind};
+use std::io::{Read, Write};
 
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use regex::Regex;
 
 use crate::my_disconnect::MyDisconnect;
+use crate::my_text_line_stream::MyTextLineStream;
 
-const ALMOST_MAX_LINE_LENGTH: usize = 1024;
 const ASCII_CODE_CR: u8 = b'\r'; // 0x0d "Carriage Return"
 const ASCII_CODE_LF: u8 = b'\n'; // 0x0a "Line Feed"
 
@@ -155,13 +155,14 @@ pub enum POP3Response { // String includes CRLF at the end
 //====================================================================
 #[derive(Debug)]
 pub struct POP3Upstream<S: Read + Write + MyDisconnect> {
-    stream: S,
+    stream: MyTextLineStream<S>,
     state: POP3State,
 }
 
 impl<S: Read + Write + MyDisconnect> POP3Upstream<S> {
 
     pub fn connect(stream: S) -> Result<POP3Upstream<S>> {
+        let stream = MyTextLineStream::<S>::connect(stream);
         Ok(POP3Upstream {
             stream: stream,
             state: POP3State::GREETING,
@@ -234,7 +235,7 @@ impl<S: Read + Write + MyDisconnect> POP3Upstream<S> {
     //-----------------------------------------------------------------------------
     fn read_single_line_response(&mut self, buf: &mut Vec<u8>) -> Result<()> {
         assert_eq!(buf.len(), 0);
-        self.read_some_lines(buf)?;
+        self.stream.read_some_lines(buf)?;
         assert!(!buf[0..buf.len() - 2].contains(&ASCII_CODE_CR));
         assert!(!buf[0..buf.len() - 2].contains(&ASCII_CODE_LF));
         Ok(())
@@ -244,7 +245,7 @@ impl<S: Read + Write + MyDisconnect> POP3Upstream<S> {
         assert_eq!(buf.len(), 0);
         let mut is_ok_response = false;
         loop {
-            self.read_some_lines(buf)?;
+            self.stream.read_some_lines(buf)?;
             if !is_ok_response {
                 is_ok_response = starts_with_u8(buf, b"+OK ") || starts_with_u8(buf, b"+OK\r\n");
                 if !is_ok_response {
@@ -261,29 +262,9 @@ impl<S: Read + Write + MyDisconnect> POP3Upstream<S> {
     Ok(())
     }
 
-    fn read_some_lines(&mut self, buf: &mut Vec<u8>) -> Result<()> {
-        // NOTE: buf might contain some elements already
-        // NOTE: this function may read multple lines at once
-        let mut local_buf = [0u8; ALMOST_MAX_LINE_LENGTH];
-        loop {
-            let nbytes = match self.stream.read(&mut local_buf) {
-                Ok(0) => return Err(anyhow!("TLS connection is closed unexpectedly")),
-                Ok(len) => len,
-                Err(ref e) if e.kind() == ErrorKind::Interrupted => continue,
-                Err(e) => return Err(anyhow!(e)),
-            };
-            buf.extend(&local_buf[0..nbytes]);
-            if ends_with_u8(buf, b"\r\n") { // allow empty line
-                break;
-            }
-        }
-        Ok(())
-    }
-
     fn write_command(&mut self, text: &str) -> Result<()> {
         assert!(REGEX_POP3_COMMAND_LINE.is_match(text));
-        self.stream.write_all(text.as_bytes())?;
-        self.stream.flush()?;
+        self.stream.write_all_and_flush(text.as_bytes())?;
         Ok(())
     }
 }
