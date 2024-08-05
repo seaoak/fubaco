@@ -1,10 +1,14 @@
+use std::collections::HashMap;
 use std::env;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
 
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use native_tls::TlsConnector;
 use regex::Regex;
+use serde::{Serialize, Deserialize};
 
 mod my_disconnect;
 mod my_text_line_stream;
@@ -29,14 +33,83 @@ fn main() {
 }
 
 lazy_static!{
-    static ref REGEX_POP3_COMMAND_LINE_FOR_MULTI_LINE_RESPONSE: Regex = Regex::new(r"^(LIST|UIDL|RETR +\S+|TOP +\S+( +\S+)?)\s*\r\n$").unwrap();
-    static ref REGEX_POP3_COMMAND_LINE_FOR_QUIT: Regex = Regex::new(r"^QUIT\s*\r\n$").unwrap();
+    static ref REGEX_POP3_COMMAND_LINE_FOR_MULTI_LINE_RESPONSE: Regex = Regex::new(r"^(LIST|UIDL|RETR +\S+|TOP +\S+( +\S+)?) *\r\n$").unwrap();
+    static ref REGEX_POP3_COMMAND_LINE_FOR_UIDL_ALL: Regex = Regex::new(r"^UIDL *\r\n$").unwrap();
+    static ref REGEX_POP3_COMMAND_LINE_FOR_UIDL_SINGLE: Regex = Regex::new(r"^UIDL +(\S+) *\r\n$").unwrap();
+    static ref REGEX_POP3_COMMAND_LINE_FOR_LIST_ALL: Regex = Regex::new(r"^LIST *\r\n$").unwrap();
+    static ref REGEX_POP3_COMMAND_LINE_FOR_LIST_SINGLE: Regex = Regex::new(r"^LIST +(\S+) *\r\n$").unwrap();
+    static ref REGEX_POP3_COMMAND_LINE_FOR_QUIT: Regex = Regex::new(r"^QUIT *\r\n$").unwrap();
+    static ref REGEX_POP3_COMMAND_LINE_FOR_USER: Regex = Regex::new(r"^USER +(\S+) *\r\n$").unwrap();
+    static ref REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND: Regex = Regex::new(r"^\+OK +(\S+) +(\S+) *\r\n$").unwrap();
+    static ref REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND: Regex = Regex::new(r"^ *(\S+) +(\S+) *$").unwrap(); // "\r\n" is stripped
+    static ref DATABASE_FILENAME: String = "./db.json".to_string();
 }
 
 #[allow(unused)]
 fn test_pop3_bridge() -> Result<()> {
-    let upstream_hostname = env::var("FUBACO_Km2TTTAEMErD_H").unwrap();
-    let upstream_port = 995;
+
+    #[derive(Clone,Debug,Eq,PartialEq,Ord,PartialOrd,Hash,Serialize,Deserialize)]
+    struct Username(String);
+
+    #[derive(Clone,Debug,Eq,PartialEq,Ord,PartialOrd,Hash)]
+    struct Hostname(String);
+
+    #[derive(Clone,Debug,Eq,PartialEq,Ord,PartialOrd,Hash,Serialize,Deserialize)]
+    struct UniqueID(String);
+
+    #[derive(Clone,Debug,Serialize,Deserialize)]
+    struct MailInfo {
+        account: Username,
+        unique_id: UniqueID,
+        original_size: usize,
+        modified_size: usize,
+        inserted_headers: String,
+        is_deleted: bool,
+    }
+
+    #[derive(Clone,Debug,Eq,PartialEq,Ord,PartialOrd,Hash)]
+    struct MessageNumber(u32);
+
+    let username_to_hostname: HashMap<Username, Hostname> = vec![
+        "FUBACO_Nq2DYd4cFHGZ_U",
+        "FUBACO_Km2TTTAEMErD_H",
+
+        "FUBACO_NC7s2kMrxDnU_U",
+        "FUBACO_Fzkd5hfaTv6D_H",
+
+        "FUBACO_SiwDkj2vtpqH_U",
+        "FUBACO_MFhg2T3pxVRW_H",
+
+        "FUBACO_GYDTwK7YTcbU_U",
+        "FUBACO_QW5DV9Wko6oC_H",
+
+    ].into_iter().map(|s| env::var(s).unwrap()).collect::<Vec<String>>().chunks(2).map(|v| (Username(v[0].clone()), Hostname(v[1].clone()))).into_iter().collect();
+
+    fn load_db_file() -> Result<String> {
+        let f = File::open(&*DATABASE_FILENAME)?;
+        let mut reader = BufReader::new(f);
+        let mut buf = String::new();
+        reader.read_to_string(&mut buf)?;
+        Ok(buf)
+    }
+
+    fn save_db_file(s: &str) -> Result<()> {
+        let f = File::open(&*DATABASE_FILENAME)?;
+        let mut writer = BufWriter::new(f);
+        writer.write_all(s.as_bytes())?;
+        writer.flush()?;
+        Ok(())
+    }
+
+    // https://serde.rs/derive.html
+    let mut database: HashMap<Username, HashMap<UniqueID, MailInfo>> = serde_json::from_str(&load_db_file()?).unwrap(); // permanent table (save and load a DB file)
+    let lack_keys: Vec<Username> = username_to_hostname.keys().filter(|u| !database.contains_key(u)).map(|u| u.clone()).collect();
+    lack_keys.into_iter().for_each(|u| {
+        database.insert(u, HashMap::new());
+    });
+
+    let mut message_number_to_unique_id: HashMap<MessageNumber, UniqueID> = HashMap::new(); // transient table (be used in a transaction)
+    let mut message_number_to_nbytes: HashMap<MessageNumber, usize> = HashMap::new(); // transient table (be used in a transaction)
 
     // https://doc.rust-lang.org/std/net/struct.TcpListener.html
     let downstream_port = 5940;
@@ -50,10 +123,39 @@ fn test_pop3_bridge() -> Result<()> {
 
                 let mut downstream_stream = MyTextLineStream::connect(downstream_tcp_stream);
 
+                // send dummy greeting message to client (upstream is not opened yet)
+                println!("send dummy greeting message to downstream");
+                downstream_stream.write_all_and_flush(b"+OK Greeting\r\n")?;
+
+                // wait for "USER" command to identify mail account (include server hostname)
+                let username;
+                let upstream_hostname;
+                {
+                    let mut buf = Vec::<u8>::new();
+                    downstream_stream.read_some_lines(&mut buf)?;
+                    let command_line = String::from_utf8_lossy(&buf);
+                    match REGEX_POP3_COMMAND_LINE_FOR_USER.captures(&command_line) {
+                        Some(caps) => {
+                            username = Username(caps.get(1).unwrap().as_str().to_string());
+                            match username_to_hostname.get(&username) {
+                                Some(h) => upstream_hostname = h.clone(),
+                                None => return Err(anyhow!("FATAL: unknown username: {:?}", username)),
+                            }
+                        },
+                        None => {
+                            return Err(anyhow!("The first POP3 command should be \"USER\", but: {}", command_line));
+                        }
+                    }
+                }
+                println!("Username: {}", username.0);
+                println!("upstream_hostname: {}", upstream_hostname.0);
+
+                let upstream_port = 995;
+            
                 println!("open upstream connection");
                 let upstream_connector = TlsConnector::new()?;
-                let upstream_tcp_stream = TcpStream::connect((upstream_hostname.to_string(), upstream_port))?;
-                let upstream_tls_stream = upstream_connector.connect(&upstream_hostname, upstream_tcp_stream)?;
+                let upstream_tcp_stream = TcpStream::connect(format!("{}:{}", upstream_hostname.0, upstream_port))?;
+                let upstream_tls_stream = upstream_connector.connect(&upstream_hostname.0, upstream_tcp_stream)?;
                 let mut upstream_stream = MyTextLineStream::connect(upstream_tls_stream);
 
                 // wait for POP3 greeting message from server
@@ -65,7 +167,28 @@ fn test_pop3_bridge() -> Result<()> {
                         }
                         return Err(e);
                     }
-                    println!("relay greeting message");
+                    println!("greeting message is received: {}", String::from_utf8_lossy(&response));
+                }
+
+                // issue "USER" command
+                {
+                    println!("issue USER command");
+                    let mut command_line = format!("USER {}\r\n", username.0).into_bytes();
+                    if let Err(e) = upstream_stream.write_all_and_flush(&command_line) {
+                        if let Err(e2) = downstream_stream.disconnect() {
+                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
+                        }
+                        return Err(e);
+                    }
+                    println!("wait the response for USER command");
+                    let mut response = Vec::<u8>::new();
+                    if let Err(e) = upstream_stream.read_some_lines(&mut response) {
+                        if let Err(e2) = downstream_stream.disconnect() {
+                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
+                        }
+                        return Err(e);
+                    }
+                    println!("relay the response for USER command: {}", MyTextLineStream::<TcpStream>::take_first_line(&response)?);
                     if let Err(e) = downstream_stream.write_all_and_flush(&response) {
                         if let Err(e2) = upstream_stream.disconnect() {
                             return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
@@ -78,6 +201,10 @@ fn test_pop3_bridge() -> Result<()> {
                 // relay POP3 commands/responses
                 loop {
                     let is_multi_line_response_expected;
+                    let is_uidl_all_command;
+                    let is_uidl_single_command;
+                    let is_list_all_command;
+                    let is_list_single_command;
                     let is_last_command;
                     { // relay a POP3 command
                         let mut command_line = Vec::<u8>::new();
@@ -97,6 +224,10 @@ fn test_pop3_bridge() -> Result<()> {
                         }
                         println!("Done");
                         is_multi_line_response_expected = REGEX_POP3_COMMAND_LINE_FOR_MULTI_LINE_RESPONSE.is_match(&command_str);
+                        is_uidl_all_command = REGEX_POP3_COMMAND_LINE_FOR_UIDL_ALL.is_match(&command_str);
+                        is_uidl_single_command = REGEX_POP3_COMMAND_LINE_FOR_UIDL_SINGLE.is_match(&command_str);
+                        is_list_all_command = REGEX_POP3_COMMAND_LINE_FOR_LIST_ALL.is_match(&command_str);
+                        is_list_single_command = REGEX_POP3_COMMAND_LINE_FOR_LIST_SINGLE.is_match(&command_str);
                         is_last_command = REGEX_POP3_COMMAND_LINE_FOR_QUIT.is_match(&command_str);
                     }
 
@@ -113,20 +244,97 @@ fn test_pop3_bridge() -> Result<()> {
                         if (is_first_response) {
                             status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
                         }
-                        if !is_multi_line_response_expected {
-                            println!("relay single-line response: {}", status_line);
+                        if is_first_response && status_line.starts_with("-ERR") {
+                            println!("ERR response is received: {}", status_line);
                             break;
                         }
-                        if is_first_response && status_line.starts_with("-ERR") {
-                            println!("relay ERR response: {}", status_line);
+                        if !is_multi_line_response_expected {
+                            println!("single-line response is received: {}", status_line);
+                            if is_uidl_single_command {
+                                match REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&status_line) {
+                                    Some(caps) => {
+                                        let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
+                                        let unique_id = UniqueID(caps.get(2).unwrap().as_str().into());
+                                        match message_number_to_unique_id.get(&message_number) {
+                                            Some(prev_unique_id) => {
+                                                assert_eq!(unique_id, *prev_unique_id);
+                                            },
+                                            None => {
+                                                message_number_to_unique_id.insert(message_number, unique_id);
+                                            },
+                                        }
+                                    },
+                                    None => return Err(anyhow!("invalid response: {}", status_line)),
+                                }
+                            }
+                            if is_list_single_command {
+                                match REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&status_line) {
+                                    Some(caps) => {
+                                        let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
+                                        let nbytes = usize::from_str_radix(caps.get(2).unwrap().into(), 10).unwrap();
+                                        match message_number_to_nbytes.get(&message_number) {
+                                            Some(prev_nbytes) => {
+                                                assert_eq!(nbytes, *prev_nbytes);
+                                            },
+                                            None => {
+                                                message_number_to_nbytes.insert(message_number, nbytes);
+                                            },
+                                        }
+                                    },
+                                    None => return Err(anyhow!("invalid response: {}", status_line)),
+                                }
+                            }
                             break;
                         }
                         if MyTextLineStream::<TcpStream>::ends_with_u8(&response_lines, b"\r\n.\r\n") {
-                            println!("relay multl-line response ({} byte body): {}", response_lines.len() - status_line.len() - b".\r\n".len(), status_line);
+                            println!("multl-line response ({} byte body) is received: {}", response_lines.len() - status_line.len() - b".\r\n".len(), status_line);
+                            if is_uidl_all_command {
+                                let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
+                                let body_text = String::from_utf8_lossy(body_u8);
+                                for line in body_text.split_terminator("\r\n") {
+                                    match REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
+                                        Some(caps) => {
+                                            let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
+                                            let unique_id = UniqueID(caps.get(2).unwrap().as_str().into());
+                                            match message_number_to_unique_id.get(&message_number) {
+                                                Some(prev_unique_id) => {
+                                                    assert_eq!(unique_id, *prev_unique_id);
+                                                },
+                                                None => {
+                                                    message_number_to_unique_id.insert(message_number, unique_id);
+                                                },
+                                            }
+                                        },
+                                        None => return Err(anyhow!("invalid response: {}", line)),
+                                    }
+                                }
+                            }
+                            if is_list_all_command {
+                                let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
+                                let body_text = String::from_utf8_lossy(body_u8);
+                                for line in body_text.split_terminator("\r\n") {
+                                    match REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
+                                        Some(caps) => {
+                                            let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
+                                            let nbytes = usize::from_str_radix(caps.get(2).unwrap().into(), 10).unwrap();
+                                            match message_number_to_nbytes.get(&message_number) {
+                                                Some(prev_nbytes) => {
+                                                    assert_eq!(nbytes, *prev_nbytes);
+                                                },
+                                                None => {
+                                                    message_number_to_nbytes.insert(message_number, nbytes);
+                                                },
+                                            }
+                                            },
+                                        None => return Err(anyhow!("invalid response: {}", line)),
+                                    }
+                                }
+                            }
                             break;
                         }
                         is_first_response = false;
                     }
+                    println!("relay the response: {}", status_line);
                     if let Err(e) = downstream_stream.write_all_and_flush(&response_lines) {
                         if let Err(e2) = upstream_stream.disconnect() {
                             return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
@@ -141,6 +349,9 @@ fn test_pop3_bridge() -> Result<()> {
                         break;
                     }
                 }
+
+                // https://serde.rs/derive.html
+                save_db_file(&serde_json::to_string(&database).unwrap())?;
             },
             Err(e) => return Err(anyhow!(e)),
         }
