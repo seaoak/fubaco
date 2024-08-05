@@ -59,7 +59,7 @@ fn test_pop3_bridge() -> Result<()> {
 
     #[derive(Clone,Debug,Serialize,Deserialize)]
     struct MailInfo {
-        account: Username,
+        username: Username,
         unique_id: UniqueID,
         original_size: usize,
         modified_size: usize,
@@ -83,7 +83,7 @@ fn test_pop3_bridge() -> Result<()> {
         "FUBACO_GYDTwK7YTcbU_U",
         "FUBACO_QW5DV9Wko6oC_H",
 
-    ].into_iter().map(|s| env::var(s).unwrap()).collect::<Vec<String>>().chunks(2).map(|v| (Username(v[0].clone()), Hostname(v[1].clone()))).into_iter().collect();
+    ].into_iter().map(|s| env::var(s).unwrap()).collect::<Vec<String>>().chunks(2).map(|v| (Username(v[0].clone()), Hostname(v[1].clone()))).collect();
 
     fn load_db_file() -> Result<String> {
         let f = File::open(&*DATABASE_FILENAME)?;
@@ -108,9 +108,6 @@ fn test_pop3_bridge() -> Result<()> {
         database.insert(u, HashMap::new());
     });
 
-    let mut message_number_to_unique_id: HashMap<MessageNumber, UniqueID> = HashMap::new(); // transient table (be used in a transaction)
-    let mut message_number_to_nbytes: HashMap<MessageNumber, usize> = HashMap::new(); // transient table (be used in a transaction)
-
     // https://doc.rust-lang.org/std/net/struct.TcpListener.html
     let downstream_port = 5940;
     let downstream_addr = format!("{}:{}", "127.0.0.1", downstream_port);
@@ -118,6 +115,7 @@ fn test_pop3_bridge() -> Result<()> {
     loop {
         match listener.accept() {
             Ok((downstream_tcp_stream, remote_addr)) => {
+
                 // https://doc.rust-lang.org/std/net/enum.SocketAddr.html#method.ip
                 assert_eq!(remote_addr.ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
@@ -127,9 +125,10 @@ fn test_pop3_bridge() -> Result<()> {
                 println!("send dummy greeting message to downstream");
                 downstream_stream.write_all_and_flush(b"+OK Greeting\r\n")?;
 
-                // wait for "USER" command to identify mail account (include server hostname)
+                // wait for "USER" command to identify mail account
                 let username;
                 let upstream_hostname;
+                let upstream_port = 995;
                 {
                     let mut buf = Vec::<u8>::new();
                     downstream_stream.read_some_lines(&mut buf)?;
@@ -137,21 +136,24 @@ fn test_pop3_bridge() -> Result<()> {
                     match REGEX_POP3_COMMAND_LINE_FOR_USER.captures(&command_line) {
                         Some(caps) => {
                             username = Username(caps.get(1).unwrap().as_str().to_string());
-                            match username_to_hostname.get(&username) {
-                                Some(h) => upstream_hostname = h.clone(),
-                                None => return Err(anyhow!("FATAL: unknown username: {:?}", username)),
-                            }
                         },
                         None => {
                             return Err(anyhow!("The first POP3 command should be \"USER\", but: {}", command_line));
                         }
                     }
+                    match username_to_hostname.get(&username) {
+                        Some(h) => upstream_hostname = h.clone(),
+                        None => return Err(anyhow!("FATAL: unknown username: {:?}", username)),
+                    }
                 }
-                println!("Username: {}", username.0);
-                println!("upstream_hostname: {}", upstream_hostname.0);
+                println!("username: {}", username.0);
+                println!("upstream_addr: {}:{}", upstream_hostname.0, upstream_port);
 
-                let upstream_port = 995;
-            
+                let mut message_number_to_unique_id: HashMap<MessageNumber, UniqueID> = HashMap::new();
+                let mut message_number_to_nbytes: HashMap<MessageNumber, usize> = HashMap::new();
+
+                let mut unique_id_to_mail_info = database.get(&username).unwrap(); // borrow mutable ref
+
                 println!("open upstream connection");
                 let upstream_connector = TlsConnector::new()?;
                 let upstream_tcp_stream = TcpStream::connect(format!("{}:{}", upstream_hostname.0, upstream_port))?;
