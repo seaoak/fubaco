@@ -191,6 +191,9 @@ fn test_pop3_bridge() -> Result<()> {
                     downstream_stream.read_some_lines(&mut command_line)?;
                     let command_str = String::from_utf8_lossy(&command_line);
                     println!("relay POP3 command: {}", command_str);
+                    if !command_str.starts_with("PASS ") {
+                        return Err(anyhow!("2nd command should be \"PASS\" command, but: {}", command_str));
+                    }
                     upstream_stream.write_all_and_flush(&command_line)?;
                     let mut response_lines = Vec::<u8>::new();
                     upstream_stream.read_some_lines(&mut response_lines)?;
