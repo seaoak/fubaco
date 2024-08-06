@@ -158,52 +158,28 @@ fn test_pop3_bridge() -> Result<()> {
                 // wait for POP3 greeting message from server
                 {
                     let mut response_lines = Vec::<u8>::new();
-                    if let Err(e) = upstream_stream.read_some_lines(&mut response_lines) {
-                        if let Err(e2) = downstream_stream.disconnect() {
-                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                        }
-                        return Err(e);
-                    }
+                    upstream_stream.read_some_lines(&mut response_lines)?;
                     let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
                     println!("greeting message is received: {}", status_line);
                     if status_line.starts_with("-ERR") {
-                        downstream_stream.disconnect()?;
-                        upstream_stream.disconnect()?;
                         return Err(anyhow!("FATAL: invalid greeting message is received: {}", status_line));
                     }
                     assert!(status_line.starts_with("+OK"));
                 }
 
-                // issue "USER" command
+                // issue delayed "USER" command
                 {
                     println!("issue USER command");
                     let mut command_line = format!("USER {}\r\n", username.0).into_bytes();
-                    if let Err(e) = upstream_stream.write_all_and_flush(&command_line) {
-                        if let Err(e2) = downstream_stream.disconnect() {
-                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                        }
-                        return Err(e);
-                    }
+                    upstream_stream.write_all_and_flush(&command_line)?;
                     println!("wait the response for USER command");
                     let mut response_lines = Vec::<u8>::new();
-                    if let Err(e) = upstream_stream.read_some_lines(&mut response_lines) {
-                        if let Err(e2) = downstream_stream.disconnect() {
-                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                        }
-                        return Err(e);
-                    }
+                    upstream_stream.read_some_lines(&mut response_lines)?;
                     let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
                     println!("relay the response: {}", status_line);
-                    if let Err(e) = downstream_stream.write_all_and_flush(&response_lines) {
-                        if let Err(e2) = upstream_stream.disconnect() {
-                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                        }
-                        return Err(e);
-                    }
+                    downstream_stream.write_all_and_flush(&response_lines)?;
                     println!("Done");
                     if status_line.starts_with("-ERR") {
-                        downstream_stream.disconnect()?;
-                        upstream_stream.disconnect()?;
                         return Err(anyhow!("FATAL: ERR response is received for USER command"));
                     }
                     assert!(status_line.starts_with("+OK"));
@@ -212,39 +188,17 @@ fn test_pop3_bridge() -> Result<()> {
                 // relay "PASS" command
                 {
                     let mut command_line = Vec::<u8>::new();
-                    if let Err(e) = downstream_stream.read_some_lines(&mut command_line) {
-                        if let Err(e2) = upstream_stream.disconnect() {
-                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                        }
-                        return Err(e);
-                    }
+                    downstream_stream.read_some_lines(&mut command_line)?;
                     let command_str = String::from_utf8_lossy(&command_line);
                     println!("relay POP3 command: {}", command_str);
-                    if let Err(e) = upstream_stream.write_all_and_flush(&command_line) {
-                        if let Err(e2) = downstream_stream.disconnect() {
-                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                        }
-                        return Err(e);
-                    }
+                    upstream_stream.write_all_and_flush(&command_line)?;
                     let mut response_lines = Vec::<u8>::new();
-                    if let Err(e) = upstream_stream.read_some_lines(&mut response_lines) {
-                        if let Err(e2) = downstream_stream.disconnect() {
-                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                        }
-                        return Err(e);
-                    }
+                    upstream_stream.read_some_lines(&mut response_lines)?;
                     let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
                     println!("relay the response: {}", status_line);
-                    if let Err(e) = downstream_stream.write_all_and_flush(&response_lines) {
-                        if let Err(e2) = upstream_stream.disconnect() {
-                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                        }
-                        return Err(e);
-                    }
+                    downstream_stream.write_all_and_flush(&response_lines)?;
                     println!("Done");
                     if status_line.starts_with("-ERR") {
-                        downstream_stream.disconnect()?;
-                        upstream_stream.disconnect()?;
                         return Err(anyhow!("FATAL: ERR response is received for PASS command"));
                     }
                     assert!(status_line.starts_with("+OK"));
@@ -255,25 +209,13 @@ fn test_pop3_bridge() -> Result<()> {
                 {
                     println!("issue internal UIDL command");
                     let mut command_line = format!("UIDL\r\n").into_bytes();
-                    if let Err(e) = upstream_stream.write_all_and_flush(&command_line) {
-                        if let Err(e2) = downstream_stream.disconnect() {
-                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                        }
-                        return Err(e);
-                    }
+                    upstream_stream.write_all_and_flush(&command_line)?;
                     println!("wait the response for UIDL command");
                     let mut response_lines = Vec::<u8>::new();
-                    if let Err(e) = upstream_stream.read_some_lines(&mut response_lines) {
-                        if let Err(e2) = downstream_stream.disconnect() {
-                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                        }
-                        return Err(e);
-                    }
+                    upstream_stream.read_some_lines(&mut response_lines)?;
                     let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
                     println!("the response for UIDL command is received: {}", status_line);
                     if status_line.starts_with("-ERR") {
-                        downstream_stream.disconnect()?;
-                        upstream_stream.disconnect()?;
                         return Err(anyhow!("FATAL: ERR response is received for UIDL command"));
                     }
                     assert!(status_line.starts_with("+OK"));
@@ -301,25 +243,13 @@ fn test_pop3_bridge() -> Result<()> {
                 {
                     println!("issue internal LIST command");
                     let mut command_line = format!("LIST\r\n").into_bytes();
-                    if let Err(e) = upstream_stream.write_all_and_flush(&command_line) {
-                        if let Err(e2) = downstream_stream.disconnect() {
-                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                        }
-                        return Err(e);
-                    }
+                    upstream_stream.write_all_and_flush(&command_line)?;
                     println!("wait the response for LIST command");
                     let mut response_lines = Vec::<u8>::new();
-                    if let Err(e) = upstream_stream.read_some_lines(&mut response_lines) {
-                        if let Err(e2) = downstream_stream.disconnect() {
-                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                        }
-                        return Err(e);
-                    }
+                    upstream_stream.read_some_lines(&mut response_lines)?;
                     let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
                     println!("the response for UIDL command is received: {}", status_line);
                     if status_line.starts_with("-ERR") {
-                        downstream_stream.disconnect()?;
-                        upstream_stream.disconnect()?;
                         return Err(anyhow!("FATAL: ERR response is received for LIST command"));
                     }
                     assert!(status_line.starts_with("+OK"));
@@ -358,20 +288,10 @@ fn test_pop3_bridge() -> Result<()> {
                     let is_last_command;
                     { // relay a POP3 command
                         let mut command_line = Vec::<u8>::new();
-                        if let Err(e) = downstream_stream.read_some_lines(&mut command_line) {
-                            if let Err(e2) = upstream_stream.disconnect() {
-                                return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                            }
-                            return Err(e);
-                        }
+                        downstream_stream.read_some_lines(&mut command_line)?;
                         let command_str = String::from_utf8_lossy(&command_line);
                         println!("relay POP3 command: {}", command_str);
-                        if let Err(e) = upstream_stream.write_all_and_flush(&command_line) {
-                            if let Err(e2) = downstream_stream.disconnect() {
-                                return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                            }
-                            return Err(e);
-                        }
+                        upstream_stream.write_all_and_flush(&command_line)?;
                         println!("Done");
                         is_multi_line_response_expected = REGEX_POP3_COMMAND_LINE_FOR_MULTI_LINE_RESPONSE.is_match(&command_str);
                         is_list_single_command = REGEX_POP3_COMMAND_LINE_FOR_LIST_SINGLE.is_match(&command_str);
@@ -385,12 +305,7 @@ fn test_pop3_bridge() -> Result<()> {
                     let mut is_first_response = true;
                     let mut status_line = "".to_string(); // dummy initialization (must be set to a string before use)
                     loop { // receive lines until the end of a response
-                        if let Err(e) = upstream_stream.read_some_lines(&mut response_lines) {
-                            if let Err(e2) = downstream_stream.disconnect() {
-                                return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                            }
-                            return Err(e);
-                        }
+                        upstream_stream.read_some_lines(&mut response_lines)?;
                         if (is_first_response) {
                             status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
                         }
@@ -421,12 +336,7 @@ fn test_pop3_bridge() -> Result<()> {
                         }
                     }
                     println!("relay the response: {}", status_line);
-                    if let Err(e) = downstream_stream.write_all_and_flush(&response_lines) {
-                        if let Err(e2) = upstream_stream.disconnect() {
-                            return Err(anyhow!("DOUBLE FAILURE!\nError1: {:?}\nError2: {:?}", e, e2));
-                        }
-                        return Err(e);
-                    }
+                    downstream_stream.write_all_and_flush(&response_lines)?;
                     println!("Done");
                     if is_last_command {
                         println!("close POP3 stream");
