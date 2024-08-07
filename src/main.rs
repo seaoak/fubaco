@@ -32,6 +32,22 @@ fn main() {
     };
 }
 
+fn make_fubaco_padding_header(nbytes: usize) -> String { // generate just-nbyte-sized "X-Fubaco-Padding" header
+    let line_length_limit = 80;
+    let headding = "X-Fubaco-Padding: ".to_string();
+    assert!(nbytes >= headding.len() + "x\r\n".len()); // at least one "x" is necessary
+    let mut buf = format!("{}{}\r\n", headding, "x".repeat(nbytes - headding.len() - "\r\n".len())); // if line length is no limit
+
+    // split buf into multi-line
+    let mut pos = line_length_limit - "\r\n".len();
+    while pos <= buf.len() - "\r\n x\r\n".len() {
+        buf.replace_range(pos..(pos + "\r\n ".len()), "\r\n ");
+        pos += line_length_limit;
+    }
+    assert!(buf.ends_with("x\r\n")); // at least one "x" is contained in last line
+    buf
+}
+
 lazy_static!{
     static ref REGEX_POP3_COMMAND_LINE_FOR_MULTI_LINE_RESPONSE: Regex = Regex::new(r"^(LIST|UIDL|RETR +\S+|TOP +\S+ +\S+) *\r\n$").unwrap();
     static ref REGEX_POP3_COMMAND_LINE_FOR_LIST_SINGLE: Regex = Regex::new(r"^LIST +(\S+) *\r\n$").unwrap();
