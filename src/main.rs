@@ -50,7 +50,6 @@ fn make_fubaco_padding_header(nbytes: usize) -> String { // generate just-nbyte-
 
 lazy_static!{
     static ref REGEX_POP3_COMMAND_LINE_GENERAL: Regex = Regex::new(r"^([A-Z]+)(:? +(\S+)(?: +(\S+))?)? *\r\n$").unwrap();
-    static ref REGEX_POP3_COMMAND_LINE_FOR_MULTI_LINE_RESPONSE: Regex = Regex::new(r"^(LIST|UIDL|RETR +\S+|TOP +\S+ +\S+) *\r\n$").unwrap();
     static ref REGEX_POP3_COMMAND_LINE_FOR_USER: Regex = Regex::new(r"^USER +(\S+) *\r\n$").unwrap();
     static ref REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND: Regex = Regex::new(r"^\+OK +(\S+) +(\S+) *\r\n$").unwrap();
     static ref REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND: Regex = Regex::new(r"^ *(\S+) +(\S+) *$").unwrap(); // "\r\n" is stripped
@@ -315,7 +314,23 @@ fn test_pop3_bridge() -> Result<()> {
                         } else {
                             return Err(anyhow!("invalid command line: {}", command_str));
                         }
-                        is_multi_line_response_expected = REGEX_POP3_COMMAND_LINE_FOR_MULTI_LINE_RESPONSE.is_match(&command_str);
+
+                        is_multi_line_response_expected = match command_name.as_str() {
+                            "STAT"                           => false,
+                            "LIST" if command_arg1.is_none() => true,
+                            "LIST" if command_arg1.is_some() => false,
+                            "RETR"                           => true,
+                            "DELE"                           => false,
+                            "NOOP"                           => false,
+                            "RSET"                           => false,
+                            "QUIT"                           => false,
+                            "TOP"                            => true,
+                            "UIDL" if command_arg1.is_none() => true,
+                            "UIDL" if command_arg1.is_some() => false,
+                            "USER"                           => false,
+                            "PASS"                           => false,
+                            _ => return Err(anyhow!("unknown comand: {}", command_str)),
+                        };
                     }
 
                     let mut response_lines = Vec::<u8>::new();
