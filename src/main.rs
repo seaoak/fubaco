@@ -433,6 +433,7 @@ fn test_pop3_bridge() -> Result<()> {
 
                             let fubaco_headers;
                             if let Some(info) = unique_id_to_mail_info.get(unique_id) {
+                                assert_eq!(body_u8.len(), info.original_size);
                                 fubaco_headers = info.inserted_headers.clone();
                             } else {
                                 fubaco_headers = make_fubaco_padding_header(*FUBACO_HEADER_TOTAL_SIZE);
