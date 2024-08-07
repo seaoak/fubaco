@@ -294,7 +294,7 @@ fn test_pop3_bridge() -> Result<()> {
                 }
 
                 let mut unique_id_to_mail_info = database.get(&username).unwrap(); // borrow mutable ref
-                let is_new_mail: HashMap<UniqueID, bool> = message_number_to_unique_id.values().map(|unique_id| (unique_id.clone(), !unique_id_to_mail_info.contains_key(unique_id))).collect();
+                let is_new_mail: HashMap<MessageNumber, bool> = message_number_to_unique_id.iter().map(|(message_number, unique_id)| (message_number.clone(), !unique_id_to_mail_info.contains_key(unique_id))).collect();
 
                 // relay POP3 commands/responses
                 loop {
@@ -346,29 +346,44 @@ fn test_pop3_bridge() -> Result<()> {
                     }
                     if status_line.starts_with("+OK") {
                         if is_list_single_command {
+                            println!("modify single-line response for LIST command");
                             let message_number;
                             let nbytes;
                             match REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&status_line) {
                                 Some(caps) => {
-                                    match u32::from_str_radix(caps.get(1).unwrap().as_str(), 10) {
-                                        Ok(x) => message_number = MessageNumber(x),
-                                        Err(e) => return Err(anyhow!(e)),
-                                    }
-                                    match usize::from_str_radix(caps.get(2).unwrap().as_str(), 10) {
-                                        Ok(x) => nbytes = x,
-                                        Err(e) => return Err(anyhow!(e)),
-                                    }
+                                    message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().as_str(), 10).unwrap());
+                                    nbytes = usize::from_str_radix(caps.get(2).unwrap().as_str(), 10).unwrap();
                                 },
                                 None => return Err(anyhow!("invalid response: {}", status_line)),
                             }
-                            let unique_id = &message_number_to_unique_id[&message_number];
                             assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
-                            let new_nbytes = nbytes + if is_new_mail[unique_id] { *FUBACO_HEADER_TOTAL_SIZE } else { 0 };
+                            let new_nbytes = nbytes + if is_new_mail[&message_number] { *FUBACO_HEADER_TOTAL_SIZE } else { 0 };
                             response_lines.clear();
                             response_lines.extend(format!("+OK {} {}", message_number.0, new_nbytes).into_bytes());
+                            println!("Done");
                         }
                         if is_list_all_command {
-                            // TODO: overwrite message size with modified value
+                            println!("modify multi-line response for LIST command");
+                            // NOTE: the status line is NOT modified because its format is not defined in RFC1939 (it looks like human-readable)
+                            let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
+                            let body_text = String::from_utf8_lossy(body_u8);
+                            let mut buf = Vec::<u8>::with_capacity(body_u8.len());
+                            for line in body_text.split_terminator("\r\n") {
+                                match REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
+                                    Some(caps) => {
+                                        let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
+                                        let nbytes = usize::from_str_radix(caps.get(2).unwrap().into(), 10).unwrap();
+                                        let new_nbytes = nbytes + if is_new_mail[&message_number] { *FUBACO_HEADER_TOTAL_SIZE } else { 0 };
+                                        buf.extend(format!("{} {}\r\n", message_number.0, new_nbytes).into_bytes());
+                                    },
+                                    None => return Err(anyhow!("invalid response: {}", line)),
+                                }
+                            }
+                            response_lines.clear();
+                            response_lines.extend(status_line.as_bytes());
+                            response_lines.extend(buf);
+                            response_lines.extend(".\r\n".as_bytes());
+                            println!("Done");
                         }
                         if is_retr_command || is_top_command {
                             // TODO: insert fubaco original headers
