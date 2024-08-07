@@ -149,12 +149,12 @@ fn test_pop3_bridge() -> Result<()> {
                 let upstream_hostname;
                 let upstream_port = 995;
                 {
-                    let mut buf = Vec::<u8>::new();
-                    downstream_stream.read_some_lines(&mut buf)?;
-                    let command_line = String::from_utf8_lossy(&buf);
-                    match REGEX_POP3_COMMAND_LINE_FOR_USER.captures(&command_line) {
+                    let mut command_line = Vec::<u8>::new();
+                    downstream_stream.read_some_lines(&mut command_line)?;
+                    let command_str = String::from_utf8_lossy(&command_line);
+                    match REGEX_POP3_COMMAND_LINE_FOR_USER.captures(&command_str) {
                         Some(caps) => username = Username(caps.get(1).unwrap().as_str().to_string()),
-                        None => return Err(anyhow!("The first POP3 command should be \"USER\", but: {}", command_line)),
+                        None => return Err(anyhow!("The first POP3 command should be \"USER\", but: {}", command_str)),
                     }
                     match username_to_hostname.get(&username) {
                         Some(h) => upstream_hostname = h.clone(),
