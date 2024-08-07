@@ -153,12 +153,8 @@ fn test_pop3_bridge() -> Result<()> {
                     downstream_stream.read_some_lines(&mut buf)?;
                     let command_line = String::from_utf8_lossy(&buf);
                     match REGEX_POP3_COMMAND_LINE_FOR_USER.captures(&command_line) {
-                        Some(caps) => {
-                            username = Username(caps.get(1).unwrap().as_str().to_string());
-                        },
-                        None => {
-                            return Err(anyhow!("The first POP3 command should be \"USER\", but: {}", command_line));
-                        }
+                        Some(caps) => username = Username(caps.get(1).unwrap().as_str().to_string()),
+                        None => return Err(anyhow!("The first POP3 command should be \"USER\", but: {}", command_line)),
                     }
                     match username_to_hostname.get(&username) {
                         Some(h) => upstream_hostname = h.clone(),
@@ -246,14 +242,13 @@ fn test_pop3_bridge() -> Result<()> {
                     let body_text = String::from_utf8_lossy(body_u8);
                     let mut table: HashMap<MessageNumber, UniqueID> = HashMap::new();
                     for line in body_text.split_terminator("\r\n") {
-                        match REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
-                            Some(caps) => {
-                                let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
-                                let unique_id = UniqueID(caps.get(2).unwrap().as_str().into());
-                                let is_already_exists = table.insert(message_number, unique_id).is_some();
-                                assert!(!is_already_exists);
-                            },
-                            None => return Err(anyhow!("invalid response: {}", line)),
+                        if let Some(caps) = REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
+                            let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
+                            let unique_id = UniqueID(caps.get(2).unwrap().as_str().into());
+                            let is_already_exists = table.insert(message_number, unique_id).is_some();
+                            assert!(!is_already_exists);
+                        } else {
+                            return Err(anyhow!("invalid response: {}", line));
                         }
                     }
                     message_number_to_unique_id = table;
@@ -280,14 +275,13 @@ fn test_pop3_bridge() -> Result<()> {
                     let body_text = String::from_utf8_lossy(body_u8);
                     let mut table: HashMap<MessageNumber, usize> = HashMap::new();
                     for line in body_text.split_terminator("\r\n") {
-                        match REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
-                            Some(caps) => {
-                                let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
-                                let nbytes = usize::from_str_radix(caps.get(2).unwrap().into(), 10).unwrap();
-                                let is_already_exists = table.insert(message_number, nbytes).is_some();
-                                assert!(!is_already_exists);
-                            },
-                            None => return Err(anyhow!("invalid response: {}", line)),
+                        if let Some(caps) = REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
+                            let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
+                            let nbytes = usize::from_str_radix(caps.get(2).unwrap().into(), 10).unwrap();
+                            let is_already_exists = table.insert(message_number, nbytes).is_some();
+                            assert!(!is_already_exists);
+                        } else {
+                            return Err(anyhow!("invalid response: {}", line));
                         }
                     }
                     message_number_to_nbytes = table;
@@ -358,12 +352,11 @@ fn test_pop3_bridge() -> Result<()> {
                             println!("modify single-line response for LIST command");
                             let message_number;
                             let nbytes;
-                            match REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&status_line) {
-                                Some(caps) => {
-                                    message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().as_str(), 10).unwrap());
-                                    nbytes = usize::from_str_radix(caps.get(2).unwrap().as_str(), 10).unwrap();
-                                },
-                                None => return Err(anyhow!("invalid response: {}", status_line)),
+                            if let Some(caps) = REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&status_line) {
+                                message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().as_str(), 10).unwrap());
+                                nbytes = usize::from_str_radix(caps.get(2).unwrap().as_str(), 10).unwrap();
+                            } else {
+                                return Err(anyhow!("invalid response: {}", status_line));
                             }
                             assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
                             let new_nbytes = nbytes + if is_new_mail[&message_number] { *FUBACO_HEADER_TOTAL_SIZE } else { 0 };
@@ -378,16 +371,15 @@ fn test_pop3_bridge() -> Result<()> {
                             let mut buf = Vec::<u8>::with_capacity(body_u8.len());
                             let mut total_nbytes = 0;
                             for line in body_text.split_terminator("\r\n") {
-                                match REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
-                                    Some(caps) => {
-                                        let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
-                                        let nbytes = usize::from_str_radix(caps.get(2).unwrap().into(), 10).unwrap();
-                                        assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
-                                        let new_nbytes = nbytes + if is_new_mail[&message_number] { *FUBACO_HEADER_TOTAL_SIZE } else { 0 };
-                                        total_nbytes += new_nbytes;
-                                        buf.extend(format!("{} {}\r\n", message_number.0, new_nbytes).into_bytes());
-                                    },
-                                    None => return Err(anyhow!("invalid response: {}", line)),
+                                if let Some(caps) = REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
+                                    let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
+                                    let nbytes = usize::from_str_radix(caps.get(2).unwrap().into(), 10).unwrap();
+                                    assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
+                                    let new_nbytes = nbytes + if is_new_mail[&message_number] { *FUBACO_HEADER_TOTAL_SIZE } else { 0 };
+                                    total_nbytes += new_nbytes;
+                                    buf.extend(format!("{} {}\r\n", message_number.0, new_nbytes).into_bytes());
+                                } else {
+                                    return Err(anyhow!("invalid response: {}", line));
                                 }
                             }
                             assert_eq!(total_nbytes, total_nbytes_of_modified_maildrop);
