@@ -386,7 +386,20 @@ fn test_pop3_bridge() -> Result<()> {
                             println!("Done");
                         }
                         if is_retr_command || is_top_command {
-                            // TODO: insert fubaco original headers
+                            println!("modify response body for RETR/TOP command");
+                            // NOTE: the status line is NOT modified because its format is not defined in RFC1939 (it looks like human-readable)
+                            let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
+                            let fubaco_headers = make_fubaco_padding_header(*FUBACO_HEADER_TOTAL_SIZE);
+
+                            let mut buf = Vec::<u8>::with_capacity(body_u8.len() + *FUBACO_HEADER_TOTAL_SIZE);
+                            buf.extend(fubaco_headers.into_bytes());
+                            buf.extend(body_u8);
+
+                            response_lines.clear();
+                            response_lines.extend(status_line.as_bytes());
+                            response_lines.extend(buf);
+                            response_lines.extend(".\r\n".as_bytes());
+                            println!("Done");
                         }
                         if is_stat_command {
                             // TODO: overwrite maildrop size with modified value
