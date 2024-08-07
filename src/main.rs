@@ -75,7 +75,6 @@ fn test_pop3_bridge() -> Result<()> {
         username: Username,
         unique_id: UniqueID,
         original_size: usize,
-        modified_size: usize,
         inserted_headers: String,
         is_deleted: bool,
     }
@@ -282,14 +281,13 @@ fn test_pop3_bridge() -> Result<()> {
                     println!("Done");
                 }
 
-                let mut unique_id_to_mail_info = database.get(&username).unwrap(); // borrow mutable ref
-                let is_new_mail: HashMap<MessageNumber, bool> = message_number_to_unique_id.iter().map(|(message_number, unique_id)| (message_number.clone(), !unique_id_to_mail_info.contains_key(unique_id))).collect();
+                let mut unique_id_to_mail_info = database.get_mut(&username).unwrap(); // borrow mutable ref
                 let total_nbytes_of_maildrop = message_number_to_nbytes.values().fold(0, |acc, nbytes| acc + nbytes);
                 let total_nbytes_of_modified_maildrop = message_number_to_unique_id.iter().map(|(message_number, unique_id)| {
-                    if is_new_mail[message_number] {
-                        message_number_to_nbytes[message_number] + *FUBACO_HEADER_TOTAL_SIZE
+                    if let Some(info) = unique_id_to_mail_info.get(unique_id) {
+                        info.original_size + info.inserted_headers.len()
                     } else {
-                        unique_id_to_mail_info[unique_id].modified_size
+                        message_number_to_nbytes[message_number] + *FUBACO_HEADER_TOTAL_SIZE
                     }
                 }).fold(0, |acc, nbytes| acc + nbytes);
 
@@ -361,6 +359,7 @@ fn test_pop3_bridge() -> Result<()> {
                         if command_name == "LIST" && command_arg1.is_some() {
                             println!("modify single-line response for LIST command");
                             let arg_message_number = MessageNumber(u32::from_str_radix(&command_arg1.clone().unwrap(), 10).unwrap());
+                            let unique_id = &message_number_to_unique_id[&arg_message_number];
                             let message_number;
                             let nbytes;
                             if let Some(caps) = REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&status_line) {
@@ -371,7 +370,13 @@ fn test_pop3_bridge() -> Result<()> {
                             }
                             assert_eq!(message_number, arg_message_number);
                             assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
-                            let new_nbytes = nbytes + if is_new_mail[&message_number] { *FUBACO_HEADER_TOTAL_SIZE } else { 0 };
+                            let new_nbytes;
+                            if let Some(info) = unique_id_to_mail_info.get(unique_id) {
+                                assert_eq!(nbytes, info.original_size);
+                                new_nbytes = nbytes + info.inserted_headers.len();
+                            } else {
+                                new_nbytes = nbytes + *FUBACO_HEADER_TOTAL_SIZE;
+                            };
                             response_lines.clear();
                             response_lines.extend(format!("+OK {} {}\r\n", message_number.0, new_nbytes).into_bytes());
                             println!("Done");
@@ -387,7 +392,14 @@ fn test_pop3_bridge() -> Result<()> {
                                     let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
                                     let nbytes = usize::from_str_radix(caps.get(2).unwrap().into(), 10).unwrap();
                                     assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
-                                    let new_nbytes = nbytes + if is_new_mail[&message_number] { *FUBACO_HEADER_TOTAL_SIZE } else { 0 };
+                                    let unique_id = &message_number_to_unique_id[&message_number];
+                                    let new_nbytes;
+                                    if let Some(info) = unique_id_to_mail_info.get(unique_id) {
+                                        assert_eq!(nbytes, info.original_size);
+                                        new_nbytes = nbytes + info.inserted_headers.len();
+                                    } else {
+                                        new_nbytes = nbytes + *FUBACO_HEADER_TOTAL_SIZE;
+                                    }
                                     total_nbytes += new_nbytes;
                                     buf.extend(format!("{} {}\r\n", message_number.0, new_nbytes).into_bytes());
                                 } else {
@@ -415,17 +427,33 @@ fn test_pop3_bridge() -> Result<()> {
                         }
                         if command_name == "RETR" || command_name == "TOP" {
                             println!("modify response body for RETR/TOP command");
+                            let arg_message_number = MessageNumber(u32::from_str_radix(&command_arg1.clone().unwrap(), 10).unwrap());
+                            let unique_id = &message_number_to_unique_id[&arg_message_number];
                             let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
-                            let fubaco_headers = make_fubaco_padding_header(*FUBACO_HEADER_TOTAL_SIZE);
 
-                            let mut buf = Vec::<u8>::with_capacity(body_u8.len() + *FUBACO_HEADER_TOTAL_SIZE);
-                            buf.extend(fubaco_headers.into_bytes());
-                            buf.extend(body_u8);
+                            let fubaco_headers;
+                            if let Some(info) = unique_id_to_mail_info.get(unique_id) {
+                                fubaco_headers = info.inserted_headers.clone();
+                            } else {
+                                fubaco_headers = make_fubaco_padding_header(*FUBACO_HEADER_TOTAL_SIZE);
+                                unique_id_to_mail_info.insert(unique_id.clone(), MailInfo {
+                                    username: username.clone(),
+                                    unique_id: unique_id.clone(),
+                                    original_size: body_u8.len(),
+                                    inserted_headers: fubaco_headers.clone(),
+                                    is_deleted: false,
+                                });
+                            };
+
+                            let mut buf = Vec::<u8>::new();
+                            buf.extend(fubaco_headers.as_bytes());
+                            buf.extend(body_u8.iter());
 
                             let new_status_line;
                             if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&status_line) {
                                 let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
-                                let new_nbytes = nbytes + *FUBACO_HEADER_TOTAL_SIZE;
+                                assert_eq!(nbytes, body_u8.len());
+                                let new_nbytes = nbytes + fubaco_headers.len();
                                 new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&status_line, format!("{} octets", new_nbytes)).to_string();
                             } else {
                                 new_status_line = status_line.clone();
