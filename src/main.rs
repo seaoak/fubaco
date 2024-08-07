@@ -49,13 +49,8 @@ fn make_fubaco_padding_header(nbytes: usize) -> String { // generate just-nbyte-
 }
 
 lazy_static!{
+    static ref REGEX_POP3_COMMAND_LINE_GENERAL: Regex = Regex::new(r"^([A-Z]+)(:? +(\S+)(?: +(\S+))?)? *\r\n$").unwrap();
     static ref REGEX_POP3_COMMAND_LINE_FOR_MULTI_LINE_RESPONSE: Regex = Regex::new(r"^(LIST|UIDL|RETR +\S+|TOP +\S+ +\S+) *\r\n$").unwrap();
-    static ref REGEX_POP3_COMMAND_LINE_FOR_LIST_SINGLE: Regex = Regex::new(r"^LIST +(\S+) *\r\n$").unwrap();
-    static ref REGEX_POP3_COMMAND_LINE_FOR_LIST_ALL: Regex = Regex::new(r"^LIST *\r\n$").unwrap();
-    static ref REGEX_POP3_COMMAND_LINE_FOR_RETR: Regex = Regex::new(r"^RETR *\r\n$").unwrap();
-    static ref REGEX_POP3_COMMAND_LINE_FOR_TOP: Regex = Regex::new(r"^TOP +(\S+) +(\S+) *\r\n$").unwrap();
-    static ref REGEX_POP3_COMMAND_LINE_FOR_STAT: Regex = Regex::new(r"^STAT *\r\n$").unwrap();
-    static ref REGEX_POP3_COMMAND_LINE_FOR_QUIT: Regex = Regex::new(r"^QUIT *\r\n$").unwrap();
     static ref REGEX_POP3_COMMAND_LINE_FOR_USER: Regex = Regex::new(r"^USER +(\S+) *\r\n$").unwrap();
     static ref REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND: Regex = Regex::new(r"^\+OK +(\S+) +(\S+) *\r\n$").unwrap();
     static ref REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND: Regex = Regex::new(r"^ *(\S+) +(\S+) *$").unwrap(); // "\r\n" is stripped
@@ -301,13 +296,10 @@ fn test_pop3_bridge() -> Result<()> {
 
                 // relay POP3 commands/responses
                 loop {
+                    let command_name;
+                    let command_arg1;
+                    let command_arg2;
                     let is_multi_line_response_expected;
-                    let is_list_single_command;
-                    let is_list_all_command;
-                    let is_retr_command;
-                    let is_top_command;
-                    let is_stat_command;
-                    let is_last_command;
                     { // relay a POP3 command
                         let mut command_line = Vec::<u8>::new();
                         downstream_stream.read_some_lines(&mut command_line)?;
@@ -315,13 +307,15 @@ fn test_pop3_bridge() -> Result<()> {
                         println!("relay POP3 command: {}", command_str);
                         upstream_stream.write_all_and_flush(&command_line)?;
                         println!("Done");
+
+                        if let Some(caps) = REGEX_POP3_COMMAND_LINE_GENERAL.captures(&command_str) {
+                            command_name = caps[1].to_string();
+                            command_arg1 = caps.get(2).map(|v| v.as_str().to_owned());
+                            command_arg2 = caps.get(3).map(|v| v.as_str().to_owned());
+                        } else {
+                            return Err(anyhow!("invalid command line: {}", command_str));
+                        }
                         is_multi_line_response_expected = REGEX_POP3_COMMAND_LINE_FOR_MULTI_LINE_RESPONSE.is_match(&command_str);
-                        is_list_single_command = REGEX_POP3_COMMAND_LINE_FOR_LIST_SINGLE.is_match(&command_str);
-                        is_list_all_command = REGEX_POP3_COMMAND_LINE_FOR_LIST_ALL.is_match(&command_str);
-                        is_retr_command = REGEX_POP3_COMMAND_LINE_FOR_RETR.is_match(&command_str);
-                        is_top_command = REGEX_POP3_COMMAND_LINE_FOR_TOP.is_match(&command_str);
-                        is_stat_command = REGEX_POP3_COMMAND_LINE_FOR_STAT.is_match(&command_str);
-                        is_last_command = REGEX_POP3_COMMAND_LINE_FOR_QUIT.is_match(&command_str);
                     }
 
                     let mut response_lines = Vec::<u8>::new();
@@ -348,8 +342,10 @@ fn test_pop3_bridge() -> Result<()> {
                         is_first_response = false;
                     }
                     if status_line.starts_with("+OK") {
-                        if is_list_single_command {
+                        // modify response
+                        if command_name == "LIST" && command_arg1.is_some() {
                             println!("modify single-line response for LIST command");
+                            let arg_message_number = MessageNumber(u32::from_str_radix(&command_arg1.clone().unwrap(), 10).unwrap());
                             let message_number;
                             let nbytes;
                             if let Some(caps) = REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&status_line) {
@@ -358,13 +354,14 @@ fn test_pop3_bridge() -> Result<()> {
                             } else {
                                 return Err(anyhow!("invalid response: {}", status_line));
                             }
+                            assert_eq!(message_number, arg_message_number);
                             assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
                             let new_nbytes = nbytes + if is_new_mail[&message_number] { *FUBACO_HEADER_TOTAL_SIZE } else { 0 };
                             response_lines.clear();
                             response_lines.extend(format!("+OK {} {}\r\n", message_number.0, new_nbytes).into_bytes());
                             println!("Done");
                         }
-                        if is_list_all_command {
+                        if command_name == "LIST" && command_arg1.is_none() {
                             println!("modify multi-line response for LIST command");
                             let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
                             let body_text = String::from_utf8_lossy(body_u8);
@@ -401,7 +398,7 @@ fn test_pop3_bridge() -> Result<()> {
                             response_lines.extend(".\r\n".as_bytes());
                             println!("Done");
                         }
-                        if is_retr_command || is_top_command {
+                        if command_name == "RETR" || command_name == "TOP" {
                             println!("modify response body for RETR/TOP command");
                             let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
                             let fubaco_headers = make_fubaco_padding_header(*FUBACO_HEADER_TOTAL_SIZE);
@@ -425,7 +422,7 @@ fn test_pop3_bridge() -> Result<()> {
                             response_lines.extend(".\r\n".as_bytes());
                             println!("Done");
                         }
-                        if is_stat_command {
+                        if command_name == "STAT" {
                             println!("modify single-line response for STAT command");
                             let num_of_mails;
                             let nbytes;
@@ -445,7 +442,7 @@ fn test_pop3_bridge() -> Result<()> {
                     println!("relay the response: {}", status_line);
                     downstream_stream.write_all_and_flush(&response_lines)?;
                     println!("Done");
-                    if is_last_command {
+                    if command_name == "QUIT" {
                         println!("close POP3 stream");
                         upstream_stream.disconnect()?;
                         downstream_stream.disconnect()?;
