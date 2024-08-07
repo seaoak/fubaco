@@ -382,6 +382,7 @@ fn test_pop3_bridge() -> Result<()> {
                                     Some(caps) => {
                                         let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
                                         let nbytes = usize::from_str_radix(caps.get(2).unwrap().into(), 10).unwrap();
+                                        assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
                                         let new_nbytes = nbytes + if is_new_mail[&message_number] { *FUBACO_HEADER_TOTAL_SIZE } else { 0 };
                                         total_nbytes += new_nbytes;
                                         buf.extend(format!("{} {}\r\n", message_number.0, new_nbytes).into_bytes());
@@ -389,10 +390,12 @@ fn test_pop3_bridge() -> Result<()> {
                                     None => return Err(anyhow!("invalid response: {}", line)),
                                 }
                             }
+                            assert_eq!(total_nbytes, total_nbytes_of_modified_maildrop);
 
                             let new_status_line;
                             if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&status_line) {
                                 let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
+                                assert_eq!(nbytes, total_nbytes_of_maildrop);
                                 assert!(nbytes <= total_nbytes);
                                 assert_eq!(0, (total_nbytes - nbytes) % *FUBACO_HEADER_TOTAL_SIZE);
                                 new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&status_line, format!("{} octets", total_nbytes)).to_string();
