@@ -359,7 +359,12 @@ fn test_pop3_bridge() -> Result<()> {
                         if command_name == "LIST" && command_arg1.is_some() {
                             println!("modify single-line response for LIST command");
                             let arg_message_number = MessageNumber(u32::from_str_radix(&command_arg1.clone().unwrap(), 10).unwrap());
-                            let unique_id = &message_number_to_unique_id[&arg_message_number];
+                            let unique_id;
+                            if let Some(v) = message_number_to_unique_id.get(&arg_message_number) {
+                                unique_id = v;
+                            } else {
+                                return Err(anyhow!("unknown message number is specified: {}", arg_message_number.0));
+                            }
                             let message_number;
                             let nbytes;
                             if let Some(caps) = REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&status_line) {
@@ -428,7 +433,12 @@ fn test_pop3_bridge() -> Result<()> {
                         if command_name == "RETR" || command_name == "TOP" {
                             println!("modify response body for RETR/TOP command");
                             let arg_message_number = MessageNumber(u32::from_str_radix(&command_arg1.clone().unwrap(), 10).unwrap());
-                            let unique_id = &message_number_to_unique_id[&arg_message_number];
+                            let unique_id;
+                            if let Some(v) = message_number_to_unique_id.get(&arg_message_number) {
+                                unique_id = v;
+                            } else {
+                                return Err(anyhow!("unknown message number is specified: {}", arg_message_number.0));
+                            }
                             let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
 
                             let fubaco_headers;
