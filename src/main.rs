@@ -59,6 +59,7 @@ lazy_static!{
     static ref REGEX_POP3_COMMAND_LINE_FOR_USER: Regex = Regex::new(r"^USER +(\S+) *\r\n$").unwrap();
     static ref REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND: Regex = Regex::new(r"^\+OK +(\S+) +(\S+) *\r\n$").unwrap();
     static ref REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND: Regex = Regex::new(r"^ *(\S+) +(\S+) *$").unwrap(); // "\r\n" is stripped
+    static ref REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS: Regex = Regex::new(r"\b([1-9][0-9]*) octets\b").unwrap();
     static ref DATABASE_FILENAME: String = "./db.json".to_string();
     static ref FUBACO_HEADER_TOTAL_SIZE: usize = 512; // (78+2)*6+(30+2)
 }
@@ -364,30 +365,41 @@ fn test_pop3_bridge() -> Result<()> {
                         }
                         if is_list_all_command {
                             println!("modify multi-line response for LIST command");
-                            // NOTE: the status line is NOT modified because its format is not defined in RFC1939 (it looks like human-readable)
                             let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
                             let body_text = String::from_utf8_lossy(body_u8);
                             let mut buf = Vec::<u8>::with_capacity(body_u8.len());
+                            let mut total_nbytes = 0;
                             for line in body_text.split_terminator("\r\n") {
                                 match REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
                                     Some(caps) => {
                                         let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
                                         let nbytes = usize::from_str_radix(caps.get(2).unwrap().into(), 10).unwrap();
                                         let new_nbytes = nbytes + if is_new_mail[&message_number] { *FUBACO_HEADER_TOTAL_SIZE } else { 0 };
+                                        total_nbytes += new_nbytes;
                                         buf.extend(format!("{} {}\r\n", message_number.0, new_nbytes).into_bytes());
                                     },
                                     None => return Err(anyhow!("invalid response: {}", line)),
                                 }
                             }
+
+                            let new_status_line;
+                            if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&status_line) {
+                                let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
+                                assert!(nbytes <= total_nbytes);
+                                assert_eq!(0, (total_nbytes - nbytes) % *FUBACO_HEADER_TOTAL_SIZE);
+                                new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&status_line, format!("{} octets", total_nbytes)).to_string();
+                            } else {
+                                new_status_line = status_line.clone();
+                            }
+
                             response_lines.clear();
-                            response_lines.extend(status_line.as_bytes());
+                            response_lines.extend(new_status_line.into_bytes());
                             response_lines.extend(buf);
                             response_lines.extend(".\r\n".as_bytes());
                             println!("Done");
                         }
                         if is_retr_command || is_top_command {
                             println!("modify response body for RETR/TOP command");
-                            // NOTE: the status line is NOT modified because its format is not defined in RFC1939 (it looks like human-readable)
                             let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
                             let fubaco_headers = make_fubaco_padding_header(*FUBACO_HEADER_TOTAL_SIZE);
 
@@ -395,8 +407,17 @@ fn test_pop3_bridge() -> Result<()> {
                             buf.extend(fubaco_headers.into_bytes());
                             buf.extend(body_u8);
 
+                            let new_status_line;
+                            if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&status_line) {
+                                let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
+                                let new_nbytes = nbytes + *FUBACO_HEADER_TOTAL_SIZE;
+                                new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&status_line, format!("{} octets", new_nbytes)).to_string();
+                            } else {
+                                new_status_line = status_line.clone();
+                            }
+
                             response_lines.clear();
-                            response_lines.extend(status_line.as_bytes());
+                            response_lines.extend(new_status_line.into_bytes());
                             response_lines.extend(buf);
                             response_lines.extend(".\r\n".as_bytes());
                             println!("Done");
