@@ -360,7 +360,7 @@ fn test_pop3_bridge() -> Result<()> {
                             assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
                             let new_nbytes = nbytes + if is_new_mail[&message_number] { *FUBACO_HEADER_TOTAL_SIZE } else { 0 };
                             response_lines.clear();
-                            response_lines.extend(format!("+OK {} {}", message_number.0, new_nbytes).into_bytes());
+                            response_lines.extend(format!("+OK {} {}\r\n", message_number.0, new_nbytes).into_bytes());
                             println!("Done");
                         }
                         if is_list_all_command {
