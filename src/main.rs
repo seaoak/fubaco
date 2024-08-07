@@ -296,6 +296,14 @@ fn test_pop3_bridge() -> Result<()> {
 
                 let mut unique_id_to_mail_info = database.get(&username).unwrap(); // borrow mutable ref
                 let is_new_mail: HashMap<MessageNumber, bool> = message_number_to_unique_id.iter().map(|(message_number, unique_id)| (message_number.clone(), !unique_id_to_mail_info.contains_key(unique_id))).collect();
+                let total_nbytes_of_maildrop = message_number_to_nbytes.values().fold(0, |acc, nbytes| acc + nbytes);
+                let total_nbytes_of_modified_maildrop = message_number_to_unique_id.iter().map(|(message_number, unique_id)| {
+                    if is_new_mail[message_number] {
+                        message_number_to_nbytes[message_number] + *FUBACO_HEADER_TOTAL_SIZE
+                    } else {
+                        unique_id_to_mail_info[unique_id].modified_size
+                    }
+                }).fold(0, |acc, nbytes| acc + nbytes);
 
                 // relay POP3 commands/responses
                 loop {
@@ -423,7 +431,20 @@ fn test_pop3_bridge() -> Result<()> {
                             println!("Done");
                         }
                         if is_stat_command {
-                            // TODO: overwrite maildrop size with modified value
+                            println!("modify single-line response for STAT command");
+                            let num_of_mails;
+                            let nbytes;
+                            if let Some(caps) = REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&status_line) {
+                                num_of_mails = usize::from_str_radix(&caps[1], 10).unwrap();
+                                nbytes = usize::from_str_radix(&caps[2], 10).unwrap();
+                            } else {
+                                return Err(anyhow!("invalid response: {}", status_line));
+                            }
+                            assert_eq!(num_of_mails, message_number_to_nbytes.len());
+                            assert_eq!(nbytes, total_nbytes_of_maildrop);
+                            response_lines.clear();
+                            response_lines.extend(format!("+OK {} {}\r\n", num_of_mails, total_nbytes_of_modified_maildrop).into_bytes());
+                            println!("Done");
                         }
                     }
                     println!("relay the response: {}", status_line);
