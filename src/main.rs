@@ -436,6 +436,7 @@ fn test_pop3_bridge() -> Result<()> {
                                 assert_eq!(body_u8.len(), info.original_size);
                                 fubaco_headers = info.inserted_headers.clone();
                             } else {
+                                // TODO: SPAM checker
                                 fubaco_headers = make_fubaco_padding_header(*FUBACO_HEADER_TOTAL_SIZE);
                                 unique_id_to_mail_info.insert(unique_id.clone(), MailInfo {
                                     username: username.clone(),
