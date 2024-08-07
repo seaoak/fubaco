@@ -54,6 +54,7 @@ lazy_static!{
     static ref REGEX_POP3_COMMAND_LINE_FOR_LIST_ALL: Regex = Regex::new(r"^LIST *\r\n$").unwrap();
     static ref REGEX_POP3_COMMAND_LINE_FOR_RETR: Regex = Regex::new(r"^RETR *\r\n$").unwrap();
     static ref REGEX_POP3_COMMAND_LINE_FOR_TOP: Regex = Regex::new(r"^TOP +(\S+) +(\S+) *\r\n$").unwrap();
+    static ref REGEX_POP3_COMMAND_LINE_FOR_STAT: Regex = Regex::new(r"^STAT *\r\n$").unwrap();
     static ref REGEX_POP3_COMMAND_LINE_FOR_QUIT: Regex = Regex::new(r"^QUIT *\r\n$").unwrap();
     static ref REGEX_POP3_COMMAND_LINE_FOR_USER: Regex = Regex::new(r"^USER +(\S+) *\r\n$").unwrap();
     static ref REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND: Regex = Regex::new(r"^\+OK +(\S+) +(\S+) *\r\n$").unwrap();
@@ -302,6 +303,7 @@ fn test_pop3_bridge() -> Result<()> {
                     let is_list_all_command;
                     let is_retr_command;
                     let is_top_command;
+                    let is_stat_command;
                     let is_last_command;
                     { // relay a POP3 command
                         let mut command_line = Vec::<u8>::new();
@@ -315,6 +317,7 @@ fn test_pop3_bridge() -> Result<()> {
                         is_list_all_command = REGEX_POP3_COMMAND_LINE_FOR_LIST_ALL.is_match(&command_str);
                         is_retr_command = REGEX_POP3_COMMAND_LINE_FOR_RETR.is_match(&command_str);
                         is_top_command = REGEX_POP3_COMMAND_LINE_FOR_TOP.is_match(&command_str);
+                        is_stat_command = REGEX_POP3_COMMAND_LINE_FOR_STAT.is_match(&command_str);
                         is_last_command = REGEX_POP3_COMMAND_LINE_FOR_QUIT.is_match(&command_str);
                     }
 
@@ -369,6 +372,9 @@ fn test_pop3_bridge() -> Result<()> {
                         }
                         if is_retr_command || is_top_command {
                             // TODO: insert fubaco original headers
+                        }
+                        if is_stat_command {
+                            // TODO: overwrite maildrop size with modified value
                         }
                     }
                     println!("relay the response: {}", status_line);
