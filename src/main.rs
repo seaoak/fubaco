@@ -59,6 +59,7 @@ lazy_static!{
     static ref REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND: Regex = Regex::new(r"^\+OK +(\S+) +(\S+) *\r\n$").unwrap();
     static ref REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND: Regex = Regex::new(r"^ *(\S+) +(\S+) *$").unwrap(); // "\r\n" is stripped
     static ref DATABASE_FILENAME: String = "./db.json".to_string();
+    static ref FUBACO_HEADER_TOTAL_SIZE: usize = 512; // (78+2)*6+(30+2)
 }
 
 #[allow(unused)]
@@ -291,11 +292,8 @@ fn test_pop3_bridge() -> Result<()> {
                     println!("Done");
                 }
 
-                // make table of mail info (check whether the mail is new)
                 let mut unique_id_to_mail_info = database.get(&username).unwrap(); // borrow mutable ref
-                {
-                    // TODO: update table
-                }
+                let is_new_mail: HashMap<UniqueID, bool> = message_number_to_unique_id.values().map(|unique_id| (unique_id.clone(), !unique_id_to_mail_info.contains_key(unique_id))).collect();
 
                 // relay POP3 commands/responses
                 loop {
@@ -345,7 +343,26 @@ fn test_pop3_bridge() -> Result<()> {
                     }
                     if status_line.starts_with("+OK") {
                         if is_list_single_command {
-                            // TODO: overwrite message size with modified value
+                            let message_number;
+                            let nbytes;
+                            match REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&status_line) {
+                                Some(caps) => {
+                                    match u32::from_str_radix(caps.get(1).unwrap().as_str(), 10) {
+                                        Ok(x) => message_number = MessageNumber(x),
+                                        Err(e) => return Err(anyhow!(e)),
+                                    }
+                                    match usize::from_str_radix(caps.get(2).unwrap().as_str(), 10) {
+                                        Ok(x) => nbytes = x,
+                                        Err(e) => return Err(anyhow!(e)),
+                                    }
+                                },
+                                None => return Err(anyhow!("invalid response: {}", status_line)),
+                            }
+                            let unique_id = &message_number_to_unique_id[&message_number];
+                            assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
+                            let new_nbytes = nbytes + if is_new_mail[unique_id] { *FUBACO_HEADER_TOTAL_SIZE } else { 0 };
+                            response_lines.clear();
+                            response_lines.extend(format!("+OK {} {}", message_number.0, new_nbytes).into_bytes());
                         }
                         if is_list_all_command {
                             // TODO: overwrite message size with modified value
