@@ -71,7 +71,7 @@ fn test_pop3_bridge() -> Result<()> {
     struct UniqueID(String);
 
     #[derive(Clone,Debug,Serialize,Deserialize)]
-    struct MailInfo {
+    struct MessageInfo {
         username: Username,
         unique_id: UniqueID,
         original_size: usize,
@@ -114,7 +114,7 @@ fn test_pop3_bridge() -> Result<()> {
     }
 
     // https://serde.rs/derive.html
-    let mut database: HashMap<Username, HashMap<UniqueID, MailInfo>> = serde_json::from_str(&load_db_file()?).unwrap(); // permanent table (save and load a DB file)
+    let mut database: HashMap<Username, HashMap<UniqueID, MessageInfo>> = serde_json::from_str(&load_db_file()?).unwrap(); // permanent table (save and load a DB file)
     let lack_keys: Vec<Username> = username_to_hostname.keys().filter(|u| !database.contains_key(u)).map(|u| u.clone()).collect();
     lack_keys.into_iter().for_each(|u| {
         database.insert(u, HashMap::new());
@@ -281,25 +281,25 @@ fn test_pop3_bridge() -> Result<()> {
                     println!("Done");
                 }
 
-                let mut unique_id_to_mail_info = database.get_mut(&username).unwrap(); // borrow mutable ref
-                if (unique_id_to_mail_info.len() == 0) { // at the first time only, all existed massages are treated as old messages which have no fubaco header
+                let mut unique_id_to_message_info = database.get_mut(&username).unwrap(); // borrow mutable ref
+                if (unique_id_to_message_info.len() == 0) { // at the first time only, all existed massages are treated as old messages which have no fubaco header
                     for (message_number, unique_id) in message_number_to_unique_id.iter() {
                         let nbytes = message_number_to_nbytes[message_number];
-                        let info = MailInfo {
+                        let info = MessageInfo {
                             username: username.clone(),
                             unique_id: unique_id.clone(),
                             original_size: nbytes,
                             inserted_headers: "".to_string(),
                             is_deleted: false,
                         };
-                        let ret = unique_id_to_mail_info.insert(unique_id.clone(), info);
+                        let ret = unique_id_to_message_info.insert(unique_id.clone(), info);
                         assert!(ret.is_none());
                     }
                 }
 
                 let total_nbytes_of_maildrop = message_number_to_nbytes.values().fold(0, |acc, nbytes| acc + nbytes);
                 let total_nbytes_of_modified_maildrop = message_number_to_unique_id.iter().map(|(message_number, unique_id)| {
-                    if let Some(info) = unique_id_to_mail_info.get(unique_id) {
+                    if let Some(info) = unique_id_to_message_info.get(unique_id) {
                         info.original_size + info.inserted_headers.len()
                     } else {
                         message_number_to_nbytes[message_number] + *FUBACO_HEADER_TOTAL_SIZE
@@ -391,7 +391,7 @@ fn test_pop3_bridge() -> Result<()> {
                             assert_eq!(message_number, arg_message_number);
                             assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
                             let new_nbytes;
-                            if let Some(info) = unique_id_to_mail_info.get(unique_id) {
+                            if let Some(info) = unique_id_to_message_info.get(unique_id) {
                                 assert_eq!(nbytes, info.original_size);
                                 new_nbytes = nbytes + info.inserted_headers.len();
                             } else {
@@ -414,7 +414,7 @@ fn test_pop3_bridge() -> Result<()> {
                                     assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
                                     let unique_id = &message_number_to_unique_id[&message_number];
                                     let new_nbytes;
-                                    if let Some(info) = unique_id_to_mail_info.get(unique_id) {
+                                    if let Some(info) = unique_id_to_message_info.get(unique_id) {
                                         assert_eq!(nbytes, info.original_size);
                                         new_nbytes = nbytes + info.inserted_headers.len();
                                     } else {
@@ -457,13 +457,13 @@ fn test_pop3_bridge() -> Result<()> {
                             let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
 
                             let fubaco_headers;
-                            if let Some(info) = unique_id_to_mail_info.get(unique_id) {
+                            if let Some(info) = unique_id_to_message_info.get(unique_id) {
                                 assert_eq!(body_u8.len(), info.original_size);
                                 fubaco_headers = info.inserted_headers.clone();
                             } else {
                                 // TODO: SPAM checker
                                 fubaco_headers = make_fubaco_padding_header(*FUBACO_HEADER_TOTAL_SIZE);
-                                unique_id_to_mail_info.insert(unique_id.clone(), MailInfo {
+                                unique_id_to_message_info.insert(unique_id.clone(), MessageInfo {
                                     username: username.clone(),
                                     unique_id: unique_id.clone(),
                                     original_size: body_u8.len(),
@@ -494,18 +494,18 @@ fn test_pop3_bridge() -> Result<()> {
                         }
                         if command_name == "STAT" {
                             println!("modify single-line response for STAT command");
-                            let num_of_mails;
+                            let num_of_messages;
                             let nbytes;
                             if let Some(caps) = REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&status_line) {
-                                num_of_mails = usize::from_str_radix(&caps[1], 10).unwrap();
+                                num_of_messages = usize::from_str_radix(&caps[1], 10).unwrap();
                                 nbytes = usize::from_str_radix(&caps[2], 10).unwrap();
                             } else {
                                 return Err(anyhow!("invalid response: {}", status_line));
                             }
-                            assert_eq!(num_of_mails, message_number_to_nbytes.len());
+                            assert_eq!(num_of_messages, message_number_to_nbytes.len());
                             assert_eq!(nbytes, total_nbytes_of_maildrop);
                             response_lines.clear();
-                            response_lines.extend(format!("+OK {} {}\r\n", num_of_mails, total_nbytes_of_modified_maildrop).into_bytes());
+                            response_lines.extend(format!("+OK {} {}\r\n", num_of_messages, total_nbytes_of_modified_maildrop).into_bytes());
                             println!("Done");
                         }
                     }
