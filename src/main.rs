@@ -147,7 +147,7 @@ fn test_pop3_bridge() -> Result<()> {
                     let command_str = String::from_utf8_lossy(&command_line);
                     match REGEX_POP3_COMMAND_LINE_FOR_USER.captures(&command_str) {
                         Some(caps) => username = Username(caps.get(1).unwrap().as_str().to_string()),
-                        None => return Err(anyhow!("The first POP3 command should be \"USER\", but: {}", command_str)),
+                        None => return Err(anyhow!("The first POP3 command should be \"USER\", but: {}", command_str.trim())),
                     }
                     match username_to_hostname.get(&username) {
                         Some(h) => upstream_hostname = h.clone(),
@@ -168,9 +168,9 @@ fn test_pop3_bridge() -> Result<()> {
                     let mut response_lines = Vec::<u8>::new();
                     upstream_stream.read_some_lines(&mut response_lines)?;
                     let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
-                    println!("greeting message is received: {}", status_line);
+                    println!("greeting message is received: {}", status_line.trim());
                     if status_line.starts_with("-ERR") {
-                        return Err(anyhow!("FATAL: invalid greeting message is received: {}", status_line));
+                        return Err(anyhow!("FATAL: invalid greeting message is received: {}", status_line.trim()));
                     }
                     assert!(status_line.starts_with("+OK"));
                 }
@@ -184,7 +184,7 @@ fn test_pop3_bridge() -> Result<()> {
                     let mut response_lines = Vec::<u8>::new();
                     upstream_stream.read_some_lines(&mut response_lines)?;
                     let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
-                    println!("relay the response: {}", status_line);
+                    println!("relay the response: {}", status_line.trim());
                     downstream_stream.write_all_and_flush(&response_lines)?;
                     println!("Done");
                     if status_line.starts_with("-ERR") {
@@ -198,15 +198,15 @@ fn test_pop3_bridge() -> Result<()> {
                     let mut command_line = Vec::<u8>::new();
                     downstream_stream.read_some_lines(&mut command_line)?;
                     let command_str = String::from_utf8_lossy(&command_line);
-                    println!("relay POP3 command: {}", command_str);
+                    println!("relay POP3 command: {}", command_str.trim());
                     if !command_str.starts_with("PASS ") {
-                        return Err(anyhow!("2nd command should be \"PASS\" command, but: {}", command_str));
+                        return Err(anyhow!("2nd command should be \"PASS\" command, but: {}", command_str.trim()));
                     }
                     upstream_stream.write_all_and_flush(&command_line)?;
                     let mut response_lines = Vec::<u8>::new();
                     upstream_stream.read_some_lines(&mut response_lines)?;
                     let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
-                    println!("relay the response: {}", status_line);
+                    println!("relay the response: {}", status_line.trim());
                     downstream_stream.write_all_and_flush(&response_lines)?;
                     println!("Done");
                     if status_line.starts_with("-ERR") {
@@ -225,7 +225,7 @@ fn test_pop3_bridge() -> Result<()> {
                     let mut response_lines = Vec::<u8>::new();
                     upstream_stream.read_some_lines(&mut response_lines)?;
                     let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
-                    println!("the response for UIDL command is received: {}", status_line);
+                    println!("the response for UIDL command is received: {}", status_line.trim());
                     if status_line.starts_with("-ERR") {
                         return Err(anyhow!("FATAL: ERR response is received for UIDL command"));
                     }
@@ -258,7 +258,7 @@ fn test_pop3_bridge() -> Result<()> {
                     let mut response_lines = Vec::<u8>::new();
                     upstream_stream.read_some_lines(&mut response_lines)?;
                     let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
-                    println!("the response for UIDL command is received: {}", status_line);
+                    println!("the response for UIDL command is received: {}", status_line.trim());
                     if status_line.starts_with("-ERR") {
                         return Err(anyhow!("FATAL: ERR response is received for LIST command"));
                     }
@@ -319,7 +319,7 @@ fn test_pop3_bridge() -> Result<()> {
                         let mut command_line = Vec::<u8>::new();
                         downstream_stream.read_some_lines(&mut command_line)?;
                         let command_str = String::from_utf8_lossy(&command_line);
-                        println!("relay POP3 command: {}", command_str);
+                        println!("relay POP3 command: {}", command_str.trim());
                         upstream_stream.write_all_and_flush(&command_line)?;
                         println!("Done");
 
@@ -328,7 +328,7 @@ fn test_pop3_bridge() -> Result<()> {
                             command_arg1 = caps.get(2).map(|v| v.as_str().to_owned());
                             command_arg2 = caps.get(3).map(|v| v.as_str().to_owned());
                         } else {
-                            return Err(anyhow!("invalid command line: {}", command_str));
+                            return Err(anyhow!("invalid command line: {}", command_str.trim()));
                         }
 
                         is_multi_line_response_expected = match command_name.as_str() {
@@ -345,7 +345,7 @@ fn test_pop3_bridge() -> Result<()> {
                             "UIDL" if command_arg1.is_some() => false,
                             "USER"                           => false,
                             "PASS"                           => false,
-                            _ => return Err(anyhow!("unknown command: {}", command_str)),
+                            _ => return Err(anyhow!("unknown command: {}", command_str.trim())),
                         };
                     }
 
@@ -358,16 +358,16 @@ fn test_pop3_bridge() -> Result<()> {
                             status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
                         }
                         if is_first_response && status_line.starts_with("-ERR") {
-                            println!("ERR response is received: {}", status_line);
+                            println!("ERR response is received: {}", status_line.trim());
                             break;
                         }
                         assert!(is_first_response && status_line.starts_with("+OK"));
                         if !is_multi_line_response_expected {
-                            println!("single-line response is received: {}", status_line);
+                            println!("single-line response is received: {}", status_line.trim());
                             break;
                         }
                         if MyTextLineStream::<TcpStream>::ends_with_u8(&response_lines, b"\r\n.\r\n") {
-                            println!("multl-line response ({} byte body) is received: {}", response_lines.len() - status_line.len() - b".\r\n".len(), status_line);
+                            println!("multl-line response ({} byte body) is received: {}", response_lines.len() - status_line.len() - b".\r\n".len(), status_line.trim());
                             break;
                         }
                         is_first_response = false;
@@ -389,7 +389,7 @@ fn test_pop3_bridge() -> Result<()> {
                                 message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().as_str(), 10).unwrap());
                                 nbytes = usize::from_str_radix(caps.get(2).unwrap().as_str(), 10).unwrap();
                             } else {
-                                return Err(anyhow!("invalid response: {}", status_line));
+                                return Err(anyhow!("invalid response: {}", status_line.trim()));
                             }
                             assert_eq!(message_number, arg_message_number);
                             assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
@@ -503,7 +503,7 @@ fn test_pop3_bridge() -> Result<()> {
                                 num_of_messages = usize::from_str_radix(&caps[1], 10).unwrap();
                                 nbytes = usize::from_str_radix(&caps[2], 10).unwrap();
                             } else {
-                                return Err(anyhow!("invalid response: {}", status_line));
+                                return Err(anyhow!("invalid response: {}", status_line.trim()));
                             }
                             assert_eq!(num_of_messages, message_number_to_nbytes.len());
                             assert_eq!(nbytes, total_nbytes_of_maildrop);
@@ -512,7 +512,7 @@ fn test_pop3_bridge() -> Result<()> {
                             println!("Done");
                         }
                     }
-                    println!("relay the response: {}", status_line);
+                    println!("relay the response: {}", status_line.trim());
                     downstream_stream.write_all_and_flush(&response_lines)?;
                     println!("Done");
                     if command_name == "QUIT" {
