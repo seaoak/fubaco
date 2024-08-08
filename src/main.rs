@@ -521,6 +521,7 @@ fn test_pop3_bridge() -> Result<()> {
                         println!("close POP3 stream");
                         upstream_stream.disconnect()?;
                         downstream_stream.disconnect()?;
+                        println!("POP3 streams are closed"); // both streams were automatically closed by QUIT command
                         break;
                     }
                 }
