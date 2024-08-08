@@ -282,6 +282,21 @@ fn test_pop3_bridge() -> Result<()> {
                 }
 
                 let mut unique_id_to_mail_info = database.get_mut(&username).unwrap(); // borrow mutable ref
+                if (unique_id_to_mail_info.len() == 0) { // at the first time only, all existed massages are treated as old messages which have no fubaco header
+                    for (message_number, unique_id) in message_number_to_unique_id.iter() {
+                        let nbytes = message_number_to_nbytes[message_number];
+                        let info = MailInfo {
+                            username: username.clone(),
+                            unique_id: unique_id.clone(),
+                            original_size: nbytes,
+                            inserted_headers: "".to_string(),
+                            is_deleted: false,
+                        };
+                        let ret = unique_id_to_mail_info.insert(unique_id.clone(), info);
+                        assert!(ret.is_none());
+                    }
+                }
+
                 let total_nbytes_of_maildrop = message_number_to_nbytes.values().fold(0, |acc, nbytes| acc + nbytes);
                 let total_nbytes_of_modified_maildrop = message_number_to_unique_id.iter().map(|(message_number, unique_id)| {
                     if let Some(info) = unique_id_to_mail_info.get(unique_id) {
