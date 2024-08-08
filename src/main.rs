@@ -361,7 +361,7 @@ fn test_pop3_bridge() -> Result<()> {
                             println!("ERR response is received: {}", status_line.trim());
                             break;
                         }
-                        assert!(is_first_response && status_line.starts_with("+OK"));
+                        assert!(!is_first_response || status_line.starts_with("+OK"));
                         if !is_multi_line_response_expected {
                             println!("single-line response is received: {}", status_line.trim());
                             break;
