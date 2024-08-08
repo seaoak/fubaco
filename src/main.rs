@@ -327,7 +327,7 @@ fn test_pop3_bridge() -> Result<()> {
                             "UIDL" if command_arg1.is_some() => false,
                             "USER"                           => false,
                             "PASS"                           => false,
-                            _ => return Err(anyhow!("unknown comand: {}", command_str)),
+                            _ => return Err(anyhow!("unknown command: {}", command_str)),
                         };
                     }
 
