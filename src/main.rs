@@ -106,7 +106,7 @@ fn test_pop3_bridge() -> Result<()> {
     }
 
     fn save_db_file(s: &str) -> Result<()> {
-        let f = File::open(&*DATABASE_FILENAME)?;
+        let f = File::create(&*DATABASE_FILENAME)?;
         let mut writer = BufWriter::new(f);
         writer.write_all(s.as_bytes())?;
         writer.flush()?;
