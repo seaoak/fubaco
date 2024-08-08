@@ -296,8 +296,10 @@ fn test_pop3_bridge() -> Result<()> {
                         assert!(ret.is_none());
                     }
                 }
+                println!("{} messages exist in database", unique_id_to_message_info.len());
 
                 let total_nbytes_of_maildrop = message_number_to_nbytes.values().fold(0, |acc, nbytes| acc + nbytes);
+                println!("total_nbytes_of_maildrop = {}", total_nbytes_of_maildrop);
                 let total_nbytes_of_modified_maildrop = message_number_to_unique_id.iter().map(|(message_number, unique_id)| {
                     if let Some(info) = unique_id_to_message_info.get(unique_id) {
                         info.original_size + info.inserted_headers.len()
@@ -305,6 +307,7 @@ fn test_pop3_bridge() -> Result<()> {
                         message_number_to_nbytes[message_number] + *FUBACO_HEADER_TOTAL_SIZE
                     }
                 }).fold(0, |acc, nbytes| acc + nbytes);
+                println!("total_nbytes_of_modified_maildrop = {}", total_nbytes_of_modified_maildrop);
 
                 // relay POP3 commands/responses
                 loop {
