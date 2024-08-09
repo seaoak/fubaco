@@ -93,4 +93,27 @@ impl<S: Read + Write + MyDisconnect> MyTextLineStream<S> {
         }
         Err(anyhow!("detect lack of CRLF: {}", String::from_utf8_lossy(target)))
     }
+
+    #[allow(unused)]
+    pub fn find_u8(target: &[u8], pattern: &[u8]) -> Option<usize> {
+        assert!(pattern.len() > 0);
+        if target.len() < pattern.len() {
+            return None;
+        }
+        let mut pos = 0;
+        while pos + pattern.len() <= target.len() {
+            let mut is_matching = true;
+            for i in 0..pattern.len() {
+                if target[pos + i] != pattern[i] {
+                    is_matching = false;
+                    break;
+                }
+            }
+            if is_matching {
+                return Some(pos);
+            }
+            pos += 1;
+        }
+        None
+    }
 }
