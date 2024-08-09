@@ -95,6 +95,7 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
     let name = normalize_string(message.from().unwrap().first().unwrap().name.clone().unwrap());
     let address = normalize_string(message.from().unwrap().first().unwrap().address.clone().unwrap());
     let subject = normalize_string(message.subject().unwrap());
+    let destination = normalize_string(message.to().unwrap().first().unwrap().address.clone().unwrap());
     let expected_from_address_pattern = (|| {
         if name.contains("AMAZON") || subject.contains("AMAZON") {
             return r"[.@]amazon(\.co\.jp|\.com)$";
@@ -133,6 +134,9 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
             return true;
         }
         if suspicious_words.iter().any(|s| name.contains(s)) {
+            return true;
+        }
+        if address == destination { // header.from is camoflaged with destination address
             return true;
         }
         false
