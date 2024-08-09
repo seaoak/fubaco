@@ -229,13 +229,16 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     } else {
         return Err(anyhow!("can not parse the message"));
     }
-    let spam_judgement: Vec<String> = [
+    let mut spam_judgement: Vec<String> = [
         spam_checker_blacklist_tld,
         spam_checker_suspicious_from,
         spam_checker_suspicious_hyperlink,
         spam_checker_hidden_text_in_html,
         spam_checker_fully_html_encoded_text,
     ].iter().filter_map(|f| f(&message)).collect();
+    if spam_judgement.len() == 0 {
+        spam_judgement.push("none".to_string());
+    }
 
     let mut fubaco_headers = Vec::new();
     fubaco_headers.push(format!("X-Fubaco-Spam-Judgement: {}\r\n", spam_judgement.join(" ")));
