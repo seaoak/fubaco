@@ -6,6 +6,7 @@ use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
 
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
+use mail_parser::{Message, MessageParser};
 use native_tls::TlsConnector;
 use regex::Regex;
 use serde::{Serialize, Deserialize};
@@ -56,6 +57,46 @@ lazy_static!{
     static ref REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS: Regex = Regex::new(r"\b([1-9][0-9]*) octets\b").unwrap();
     static ref DATABASE_FILENAME: String = "./db.json".to_string();
     static ref FUBACO_HEADER_TOTAL_SIZE: usize = 512; // (78+2)*6+(30+2)
+}
+
+fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
+    let blacklist_tld_list = vec![".cn", ".ru"];
+    let header_from = message.from().unwrap().first().unwrap().address.clone().unwrap().to_string();
+    let envelop_from = message.return_path().clone().unwrap_text().to_string();
+    let target_addresses = [header_from, envelop_from];
+    let is_spam = (|| {
+        for target_address in target_addresses {
+            for tld in &blacklist_tld_list {
+                if target_address.ends_with(tld) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    })();
+    if is_spam {
+        Some("blacklist_tld".to_string())
+    } else {
+        None
+    }
+}
+
+fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
+    let message;
+    if let Some(v) = MessageParser::default().parse(message_u8) {
+        message = v;
+    } else {
+        return Err(anyhow!("can not parse the message"));
+    }
+    let spam_judgement: Vec<String> = [
+        spam_checker_blacklist_tld,
+    ].iter().filter_map(|f| f(&message)).collect();
+
+    let mut fubaco_headers = Vec::new();
+    fubaco_headers.push(format!("X-Fubaco-Spam-Judgement: {}\r\n", spam_judgement.join(" ")));
+    let nbytes = fubaco_headers.iter().fold(0, |acc, s| acc + s.len());
+    fubaco_headers.push(make_fubaco_padding_header(*FUBACO_HEADER_TOTAL_SIZE - nbytes));
+    Ok(fubaco_headers.join(""))
 }
 
 #[allow(unused)]
@@ -463,7 +504,7 @@ fn test_pop3_bridge() -> Result<()> {
                                 fubaco_headers = info.fubaco_headers.clone();
                             } else {
                                 // TODO: SPAM checker
-                                fubaco_headers = make_fubaco_padding_header(*FUBACO_HEADER_TOTAL_SIZE);
+                                fubaco_headers = make_fubaco_headers(body_u8)?;
                                 println!("add fubaco headers:\n----------\n{}----------", fubaco_headers);
                                 unique_id_to_message_info.insert(unique_id.clone(), MessageInfo {
                                     username: username.clone(),
