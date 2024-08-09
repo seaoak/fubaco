@@ -74,7 +74,7 @@ fn test_pop3_bridge() -> Result<()> {
     struct MessageInfo {
         username: Username,
         unique_id: UniqueID,
-        inserted_headers: String,
+        fubaco_headers: String,
         is_deleted: bool,
     }
 
@@ -287,7 +287,7 @@ fn test_pop3_bridge() -> Result<()> {
                         let info = MessageInfo {
                             username: username.clone(),
                             unique_id: unique_id.clone(),
-                            inserted_headers: "".to_string(),
+                            fubaco_headers: "".to_string(),
                             is_deleted: false,
                         };
                         let ret = unique_id_to_message_info.insert(unique_id.clone(), info);
@@ -300,7 +300,7 @@ fn test_pop3_bridge() -> Result<()> {
                 println!("total_nbytes_of_maildrop = {}", total_nbytes_of_maildrop);
                 let total_nbytes_of_modified_maildrop = message_number_to_unique_id.iter().map(|(message_number, unique_id)| {
                     if let Some(info) = unique_id_to_message_info.get(unique_id) {
-                        message_number_to_nbytes[message_number] + info.inserted_headers.len()
+                        message_number_to_nbytes[message_number] + info.fubaco_headers.len()
                     } else {
                         message_number_to_nbytes[message_number] + *FUBACO_HEADER_TOTAL_SIZE
                     }
@@ -393,7 +393,7 @@ fn test_pop3_bridge() -> Result<()> {
                             assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
                             let new_nbytes;
                             if let Some(info) = unique_id_to_message_info.get(unique_id) {
-                                new_nbytes = nbytes + info.inserted_headers.len();
+                                new_nbytes = nbytes + info.fubaco_headers.len();
                             } else {
                                 new_nbytes = nbytes + *FUBACO_HEADER_TOTAL_SIZE;
                             };
@@ -415,7 +415,7 @@ fn test_pop3_bridge() -> Result<()> {
                                     let unique_id = &message_number_to_unique_id[&message_number];
                                     let new_nbytes;
                                     if let Some(info) = unique_id_to_message_info.get(unique_id) {
-                                        new_nbytes = nbytes + info.inserted_headers.len();
+                                        new_nbytes = nbytes + info.fubaco_headers.len();
                                     } else {
                                         new_nbytes = nbytes + *FUBACO_HEADER_TOTAL_SIZE;
                                     }
@@ -460,7 +460,7 @@ fn test_pop3_bridge() -> Result<()> {
                                 if command_name == "RETR" {
                                     assert_eq!(body_u8.len(), message_number_to_nbytes[&arg_message_number]);
                                 }
-                                fubaco_headers = info.inserted_headers.clone();
+                                fubaco_headers = info.fubaco_headers.clone();
                             } else {
                                 // TODO: SPAM checker
                                 fubaco_headers = make_fubaco_padding_header(*FUBACO_HEADER_TOTAL_SIZE);
@@ -468,7 +468,7 @@ fn test_pop3_bridge() -> Result<()> {
                                 unique_id_to_message_info.insert(unique_id.clone(), MessageInfo {
                                     username: username.clone(),
                                     unique_id: unique_id.clone(),
-                                    inserted_headers: fubaco_headers.clone(),
+                                    fubaco_headers: fubaco_headers.clone(),
                                     is_deleted: false,
                                 });
                             };
