@@ -101,7 +101,7 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
             return r"[.@]amazon(\.co\.jp|\.com)$";
         }
         if name.contains("JCB") {
-            return r"[.@]jcb.co.jp$";
+            return r"[.@]jcb\.co\.jp$";
         }
         if name.contains("三井住友銀行") || name.contains("三井住友カード") || name.contains("SMBC") || name.contains("VPASS") || name.contains("SUMITOMOMITSUI") || subject.contains("三井住友") {
             return r"[.@](vpass\.ne\.jp|smbc\.co\.jp)$";
