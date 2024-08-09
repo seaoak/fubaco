@@ -103,7 +103,7 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         if name.contains("JCB") {
             return r"[.@]jcb.co.jp$";
         }
-        if name.contains("三井住友銀行") || name.contains("三井住友カード") || name.contains("SMBC") || name.contains("VPASS") {
+        if name.contains("三井住友銀行") || name.contains("三井住友カード") || name.contains("SMBC") || name.contains("VPASS") || name.contains("SUMITOMOMITSUI") || subject.contains("三井住友") {
             return r"[.@](vpass\.ne\.jp|smbc\.co\.jp)$";
         }
         if name.contains("ヤマト運輸") {
@@ -115,9 +115,15 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         if name.contains("東京電力") || name.contains("TEPCO") || subject.contains("東京電力"){
             return r"[.@](tepco\.co\.jp|hikkoshi-line\.jp)$";
         }
+        if name.contains("三菱UFJ") || name.contains("MUFG") {
+            return r"[.@]mufg\.jp$";
+        }
+        if name.contains("えきねっと") {
+            return r"[.@]eki-net\.com$";
+        }
         r"." // always match
     })();
-    let suspicious_words = [
+    let suspicious_words_in_name = [
         "イオンペイ", "イオン銀行", "イオンフィナンシャルサービス", "AEON",
         "AMERICANEXPRESS", "アメリカンエキスプレス",
         "セゾンカード",
@@ -128,12 +134,19 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         "JCON", "J-COM",
         "楽天カード",
     ];
+    let suspicious_words_in_subject = [
+        "Viagra",
+        "Cialis",
+    ];
 
     let is_spam = (|| {
         if !Regex::new(expected_from_address_pattern).unwrap().is_match(&address) {
             return true;
         }
-        if suspicious_words.iter().any(|s| name.contains(s)) {
+        if suspicious_words_in_name.iter().any(|s| name.contains(s)) {
+            return true;
+        }
+        if suspicious_words_in_subject.iter().any(|s| subject.contains(s)) {
             return true;
         }
         if address == destination { // header.from is camoflaged with destination address
