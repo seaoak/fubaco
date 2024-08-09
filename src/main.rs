@@ -83,17 +83,19 @@ fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
     let header_from = message.from().unwrap().first().map(|addr| addr.address.clone().unwrap_or_default().to_string()).unwrap_or_default().to_lowercase();
     let envelop_from = message.return_path().clone().unwrap_text().to_string().replace("<", "").replace(">", "").to_lowercase();
     println!("Evelop.from: \"{}\"", envelop_from);
-    let target_addresses = [header_from, envelop_from];
-    let is_spam = (|| {
-        for target_address in target_addresses {
-            for tld in &blacklist_tld_list {
-                if target_address.ends_with(tld) {
-                    return true;
-                }
-            }
+    let mut is_spam = false;
+    for tld in &blacklist_tld_list {
+        if header_from.ends_with(tld) {
+            println!("blacklist-tld in from header address: \"{}\"", header_from);
+            is_spam = true;
         }
-        return false;
-    })();
+    }
+    for tld in &blacklist_tld_list {
+        if envelop_from.ends_with(tld) {
+            println!("blacklist-tld in envelop from address: \"{}\"", envelop_from);
+            is_spam = true;
+        }
+    }
     if is_spam {
         Some("blacklist-tld".to_string())
     } else {
