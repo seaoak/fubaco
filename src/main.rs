@@ -70,7 +70,7 @@ lazy_static!{
 }
 
 fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
-    let blacklist_tld_list = vec![".cn", ".ru"];
+    let blacklist_tld_list = vec![".cn", ".ru", ".hu", ".br", ".su", ".nz", ".in", ".cz", ".be"];
     let header_from = message.from().unwrap().first().unwrap().address.clone().unwrap().to_string();
     let envelop_from = message.return_path().clone().unwrap_text().to_string();
     let target_addresses = [header_from, envelop_from];
@@ -109,7 +109,7 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         if name.contains("ヤマト運輸") {
             return r"[.@]kuronekoyamato\.co\.jp$";
         }
-        if name.contains("VIEWCARD") {
+        if name.contains("VIEWCARD") || name.contains("ビューカード") || name.contains("VIEW'SNET") || subject.contains("VIEW'SNET") {
             return r"[.@]viewsnet\.jp$";
         }
         if name.contains("東京電力") || name.contains("TEPCO") || subject.contains("東京電力"){
@@ -120,6 +120,15 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         }
         if name.contains("えきねっと") {
             return r"[.@]eki-net\.com$";
+        }
+        if name.contains("DOCOMO") || name.contains("ドコモ") || subject.contains("DOCOMO") || subject.contains("ドコモ") {
+            return r"[.@](docomo\.ne\.jp|mydocomo\.com)$";
+        }
+        if name.contains("PAYPAL") {
+            return r"[.@]paypal\.com$";
+        }
+        if name.contains("APPLE") {
+            return r"[.@]apple\.com$";
         }
         r"." // always match
     })();
@@ -133,10 +142,10 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         "マスターカード",
         "JCON", "J-COM",
         "楽天カード",
+        "VIAGRA", "CIALIS",
     ];
     let suspicious_words_in_subject = [
-        "Viagra",
-        "Cialis",
+        "VIAGRA", "CIALIS",
     ];
 
     let is_spam = (|| {
