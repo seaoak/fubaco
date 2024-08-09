@@ -82,6 +82,7 @@ fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
     let blacklist_tld_list = vec![".cn", ".ru", ".hu", ".br", ".su", ".nz", ".in", ".cz", ".be"];
     let header_from = message.from().unwrap().first().map(|addr| addr.address.clone().unwrap_or_default().to_string()).unwrap_or_default();
     let envelop_from = message.return_path().clone().unwrap_text().to_string().replace("<", "").replace(">", "");
+    println!("Evelop.from: \"{}\"", envelop_from);
     let target_addresses = [header_from, envelop_from];
     let is_spam = (|| {
         for target_address in target_addresses {
@@ -102,9 +103,13 @@ fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
 
 fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
     let name = normalize_string(message.from().unwrap().first().unwrap().name.clone().unwrap_or_default());
+    println!("From.name: \"{}\"", name);
     let address = normalize_string(message.from().unwrap().first().unwrap().address.clone().unwrap_or_default());
+    println!("From.address: \"{}\"", address);
     let subject = normalize_string(message.subject().unwrap_or_default());
+    println!("Subject: \"{}\"", subject);
     let destination = normalize_string(message.to().unwrap().first().map(|addr| addr.address.clone().unwrap()).unwrap_or_default()); // may be empty string
+    println!("To.address: \"{}\"", destination);
     let expected_from_address_pattern = (|| {
         if name.contains("AMAZON") || subject.contains("AMAZON") {
             return r"[.@]amazon(\.co\.jp|\.com)$";
@@ -195,12 +200,14 @@ fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
         if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(url) {
             host_in_href = caps[1].to_string();
         } else {
+            println!("suspicious_hyperlink: \"{}\"", url);
             return Some("suspicious_hyperlink".to_string()); // camouflaged hostname
         }
         let text = elem.inner_html();
         if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(&text) {
             let host_in_text = caps[1].to_string();
             if host_in_href != host_in_text {
+                println!("camouflage_hyperlink: \"{}\" vs \"{}\"", host_in_href, host_in_text);
                 return Some("camouflaged_hyperlink".to_string());
             }
         }
@@ -277,14 +284,14 @@ fn test_spam_checker_with_local_files() -> Result<()> {
         if !filename.starts_with("mail-sample.") || !filename.ends_with(".eml") {
             continue;
         }
-        println!("FILE: {} ----------", filename);
+        println!("------------------------------------------------------------------------------");
+        println!("FILE: {}", filename);
         let f = File::open(entry.path())?;
         let mut reader = BufReader::new(f);
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf)?;
         let fubaco_headers = make_fubaco_headers(&buf)?;
         print!("{}", fubaco_headers);
-        println!("----------");
     }
     Ok(())
 }
