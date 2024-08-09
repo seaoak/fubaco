@@ -177,6 +177,21 @@ fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
     None
 }
 
+fn spam_checker_hidden_text_in_html(message: &Message) -> Option<String> {
+    let html;
+    match message.body_html(0) {
+        Some(v) => html = v,
+        None => return None,
+    }
+    lazy_static! {
+        static ref REGEX_CSS_FOR_HIDDEN_TEXT: Regex = Regex::new(r"(?i)\bfont-size:\s*0").unwrap(); // case insensitive
+    }
+    if REGEX_CSS_FOR_HIDDEN_TEXT.is_match(&html) {
+        return Some("hidden_text_in_html".to_string());
+    }
+    None
+}
+
 fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     let message;
     if let Some(v) = MessageParser::default().parse(message_u8) {
@@ -188,6 +203,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
         spam_checker_blacklist_tld,
         spam_checker_suspicious_from,
         spam_checker_suspicious_hyperlink,
+        spam_checker_hidden_text_in_html,
     ].iter().filter_map(|f| f(&message)).collect();
 
     let mut fubaco_headers = Vec::new();
