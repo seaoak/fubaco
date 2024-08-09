@@ -37,7 +37,7 @@ fn main() {
 }
 
 fn normalize_string<S: Into<String>>(s: S) -> String {
-    // normalize string
+    // normalize string (Unicode NFKC, uppercase, no-whitespace, no-bullet)
     let mut unicode_normalized_str = String::new();
     unicode_normalized_str.extend(s.into().nfkc());
     wide2ascii(&unicode_normalized_str).to_uppercase().replace(" ", "").replace("　", "").replace("・", "")
