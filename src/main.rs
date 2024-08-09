@@ -10,6 +10,7 @@ use lazy_static::lazy_static;
 use mail_parser::{Message, MessageParser};
 use native_tls::TlsConnector;
 use regex::Regex;
+use scraper;
 use serde::{Serialize, Deserialize};
 use unicode_normalization::UnicodeNormalization;
 
@@ -142,6 +143,36 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
     None
 }
 
+fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
+    let html;
+    match message.body_html(0) {
+        Some(v) => html = v,
+        None => return None,
+    }
+    let dom = scraper::Html::parse_document(&html);
+    let selector = scraper::Selector::parse(r"a[href]").unwrap();
+    for elem in dom.select(&selector) {
+        let url = elem.value().attr("href").unwrap();
+        lazy_static! {
+            static ref REGEX_URL_WITH_NORMAL_HOST: Regex = Regex::new(r"^https?[:][/][/]([-_a-z0-9\.]+)[/]\S+$").unwrap();
+        }
+        let host_in_href;
+        if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(url) {
+            host_in_href = caps[1].to_string();
+        } else {
+            return Some("suspicious_hyperlink".to_string()); // camouflaged hostname
+        }
+        let text = elem.inner_html();
+        if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(&text) {
+            let host_in_text = caps[1].to_string();
+            if host_in_href != host_in_text {
+                return Some("camouflaged_hyperlink".to_string());
+            }
+        }
+    }
+    None
+}
+
 fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     let message;
     if let Some(v) = MessageParser::default().parse(message_u8) {
@@ -152,6 +183,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     let spam_judgement: Vec<String> = [
         spam_checker_blacklist_tld,
         spam_checker_suspicious_from,
+        spam_checker_suspicious_hyperlink,
     ].iter().filter_map(|f| f(&message)).collect();
 
     let mut fubaco_headers = Vec::new();
