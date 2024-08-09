@@ -72,7 +72,7 @@ lazy_static!{
 fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
     let blacklist_tld_list = vec![".cn", ".ru", ".hu", ".br", ".su", ".nz", ".in", ".cz", ".be"];
     let header_from = message.from().unwrap().first().unwrap().address.clone().unwrap().to_string();
-    let envelop_from = message.return_path().clone().unwrap_text().to_string();
+    let envelop_from = message.return_path().clone().unwrap_text().to_string().replace("<", "").replace(">", "");
     let target_addresses = [header_from, envelop_from];
     let is_spam = (|| {
         for target_address in target_addresses {
