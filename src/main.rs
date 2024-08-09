@@ -95,7 +95,7 @@ fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
         return false;
     })();
     if is_spam {
-        Some("blacklist_tld".to_string())
+        Some("blacklist-tld".to_string())
     } else {
         None
     }
@@ -178,7 +178,7 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         false
     })();
     if is_spam {
-        return Some("suspicious_from".to_string());
+        return Some("suspicious-from".to_string());
     }
     None
 }
@@ -200,15 +200,15 @@ fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
         if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(url) {
             host_in_href = caps[1].to_string();
         } else {
-            println!("suspicious_hyperlink: \"{}\"", url);
-            return Some("suspicious_hyperlink".to_string()); // camouflaged hostname
+            println!("suspicious-href: \"{}\"", url);
+            return Some("suspicious-href".to_string()); // camouflaged hostname
         }
         let text = elem.inner_html();
         if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(&text) {
             let host_in_text = caps[1].to_string();
             if host_in_href != host_in_text {
-                println!("camouflage_hyperlink: \"{}\" vs \"{}\"", host_in_href, host_in_text);
-                return Some("camouflaged_hyperlink".to_string());
+                println!("camouflage-hyperlink: \"{}\" vs \"{}\"", host_in_href, host_in_text);
+                return Some("camouflaged-hyperlink".to_string());
             }
         }
     }
@@ -225,7 +225,7 @@ fn spam_checker_hidden_text_in_html(message: &Message) -> Option<String> {
         static ref REGEX_CSS_FOR_HIDDEN_TEXT: Regex = Regex::new(r"(?i)\bfont-size:\s*0").unwrap(); // case insensitive
     }
     if REGEX_CSS_FOR_HIDDEN_TEXT.is_match(&html) {
-        return Some("hidden_text_in_html".to_string());
+        return Some("hidden-text-in-html".to_string());
     }
     None
 }
@@ -242,7 +242,7 @@ fn spam_checker_fully_html_encoded_text(message: &Message) -> Option<String> {
         static ref REGEX_NUMERIC_CARACTER_REFERENCE: Regex = Regex::new(r"^([&][#](\d+|x[0-9a-fA-F]+)[;])+[=]?\r?\n").unwrap();
     }
     if REGEX_NUMERIC_CARACTER_REFERENCE.is_match(&text) {
-        return Some("fully_html_encoding_text".to_string());
+        return Some("fully-html-encoding-text".to_string());
     }
     None
 }
