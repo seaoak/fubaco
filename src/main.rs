@@ -22,8 +22,17 @@ use my_text_line_stream::MyTextLineStream;
 use pop3_upstream::*;
 
 //====================================================================
+#[allow(unreachable_code)]
 fn main() {
     println!("Hello, world!");
+
+    if true {
+        match test_spam_checker_with_local_files() {
+            Ok(()) => (),
+            Err(e) => panic!("{:?}", e),
+        };
+        std::process::exit(0);
+    }
 
     match test_pop3_bridge() {
         Ok(()) => (),
@@ -254,6 +263,30 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     let nbytes = fubaco_headers.iter().fold(0, |acc, s| acc + s.len());
     fubaco_headers.push(make_fubaco_padding_header(*FUBACO_HEADER_TOTAL_SIZE - nbytes));
     Ok(fubaco_headers.join(""))
+}
+
+#[allow(unused)]
+fn test_spam_checker_with_local_files() -> Result<()> {
+    let path_to_dir = std::path::Path::new("./mail-sample");
+    for entry in path_to_dir.read_dir()? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            continue;
+        }
+        let filename = entry.file_name().to_string_lossy().to_string();
+        if !filename.starts_with("mail-sample.") || !filename.ends_with(".eml") {
+            continue;
+        }
+        println!("FILE: {} ----------", filename);
+        let f = File::open(entry.path())?;
+        let mut reader = BufReader::new(f);
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+        let fubaco_headers = make_fubaco_headers(&buf)?;
+        print!("{}", fubaco_headers);
+        println!("----------");
+    }
+    Ok(())
 }
 
 #[allow(unused)]
