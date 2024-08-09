@@ -192,6 +192,23 @@ fn spam_checker_hidden_text_in_html(message: &Message) -> Option<String> {
     None
 }
 
+fn spam_checker_fully_html_encoded_text(message: &Message) -> Option<String> {
+    // https://ja.wikipedia.org/wiki/文字参照
+    // https://ja.wikipedia.org/wiki/Quoted-printable
+    let text;
+    match message.body_text(0) {
+        Some(v) => text = v,
+        None => return None,
+    }
+    lazy_static! {
+        static ref REGEX_NUMERIC_CARACTER_REFERENCE: Regex = Regex::new(r"^([&][#](\d+|x[0-9a-fA-F]+)[;])+[=]?\r?\n").unwrap();
+    }
+    if REGEX_NUMERIC_CARACTER_REFERENCE.is_match(&text) {
+        return Some("fully_html_encoding_text".to_string());
+    }
+    None
+}
+
 fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     let message;
     if let Some(v) = MessageParser::default().parse(message_u8) {
@@ -204,6 +221,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
         spam_checker_suspicious_from,
         spam_checker_suspicious_hyperlink,
         spam_checker_hidden_text_in_html,
+        spam_checker_fully_html_encoded_text,
     ].iter().filter_map(|f| f(&message)).collect();
 
     let mut fubaco_headers = Vec::new();
