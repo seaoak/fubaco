@@ -5,11 +5,13 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
 
 use anyhow::{anyhow, Result};
+use kana::wide2ascii;
 use lazy_static::lazy_static;
 use mail_parser::{Message, MessageParser};
 use native_tls::TlsConnector;
 use regex::Regex;
 use serde::{Serialize, Deserialize};
+use unicode_normalization::UnicodeNormalization;
 
 mod my_disconnect;
 mod my_text_line_stream;
@@ -31,6 +33,13 @@ fn main() {
         Ok(()) => (),
         Err(e) => panic!("{:?}", e),
     };
+}
+
+fn normalize_string<S: Into<String>>(s: S) -> String {
+    // normalize string
+    let mut unicode_normalized_str = String::new();
+    unicode_normalized_str.extend(s.into().nfkc());
+    wide2ascii(&unicode_normalized_str).to_uppercase().replace(" ", "").replace("　", "").replace("・", "")
 }
 
 fn make_fubaco_padding_header(nbytes: usize) -> String { // generate just-nbyte-sized "X-Fubaco-Padding" header
@@ -81,6 +90,58 @@ fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
     }
 }
 
+fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
+    let name = normalize_string(message.from().unwrap().first().unwrap().name.clone().unwrap());
+    let address = normalize_string(message.from().unwrap().first().unwrap().address.clone().unwrap());
+    let subject = normalize_string(message.subject().unwrap());
+    let expected_from_address_pattern = (|| {
+        if name.contains("AMAZON") || subject.contains("AMAZON") {
+            return r"[.@]amazon(\.co\.jp|\.com)$";
+        }
+        if name.contains("JCB") {
+            return r"[.@]jcb.co.jp$";
+        }
+        if name.contains("三井住友銀行") || name.contains("三井住友カード") || name.contains("SMBC") || name.contains("VPASS") {
+            return r"[.@](vpass\.ne\.jp|smbc\.co\.jp)$";
+        }
+        if name.contains("ヤマト運輸") {
+            return r"[.@]kuronekoyamato\.co\.jp$";
+        }
+        if name.contains("VIEWCARD") {
+            return r"[.@]viewsnet\.jp$";
+        }
+        if name.contains("東京電力") || name.contains("TEPCO") || subject.contains("東京電力"){
+            return r"[.@](tepco\.co\.jp|hikkoshi-line\.jp)$";
+        }
+        r"." // always match
+    })();
+    let suspicious_words = [
+        "イオンペイ", "イオン銀行", "イオンフィナンシャルサービス", "AEON",
+        "AMERICANEXPRESS", "アメリカンエキスプレス",
+        "セゾンカード",
+        "永久不滅",
+        "ETC利用照会サービス", "マイレージサービス",
+        "エポスカード", "エポスNET",
+        "マスターカード",
+        "JCON", "J-COM",
+        "楽天カード",
+    ];
+
+    let is_spam = (|| {
+        if !Regex::new(expected_from_address_pattern).unwrap().is_match(&address) {
+            return true;
+        }
+        if suspicious_words.iter().any(|s| name.contains(s)) {
+            return true;
+        }
+        false
+    })();
+    if is_spam {
+        return Some("suspicious_from".to_string());
+    }
+    None
+}
+
 fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     let message;
     if let Some(v) = MessageParser::default().parse(message_u8) {
@@ -90,6 +151,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     }
     let spam_judgement: Vec<String> = [
         spam_checker_blacklist_tld,
+        spam_checker_suspicious_from,
     ].iter().filter_map(|f| f(&message)).collect();
 
     let mut fubaco_headers = Vec::new();
