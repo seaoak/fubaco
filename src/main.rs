@@ -158,7 +158,7 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
     ];
 
     let is_spam = (|| {
-        if !Regex::new(expected_from_address_pattern).unwrap().is_match(&address) {
+        if !Regex::new(&format!("(?i){}", expected_from_address_pattern)).unwrap().is_match(&address) {
             return true;
         }
         if suspicious_words_in_name.iter().any(|s| name.contains(s)) {
