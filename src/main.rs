@@ -142,7 +142,7 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         r"." // always match
     })();
     let suspicious_words_in_name = [
-        "イオンペイ", "イオン銀行", "イオンフィナンシャルサービス", "AEON",
+        "イオンペイ", "イオンカード", "イオン銀行", "イオンフィナンシャルサービス", "AEON",
         "AMERICANEXPRESS", "アメリカンエキスプレス",
         "セゾンカード",
         "永久不滅",
