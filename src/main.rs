@@ -92,10 +92,10 @@ fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
 }
 
 fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
-    let name = normalize_string(message.from().unwrap().first().unwrap().name.clone().unwrap());
-    let address = normalize_string(message.from().unwrap().first().unwrap().address.clone().unwrap());
-    let subject = normalize_string(message.subject().unwrap());
-    let destination = normalize_string(message.to().unwrap().first().unwrap().address.clone().unwrap());
+    let name = normalize_string(message.from().unwrap().first().unwrap().name.clone().unwrap_or_default());
+    let address = normalize_string(message.from().unwrap().first().unwrap().address.clone().unwrap_or_default());
+    let subject = normalize_string(message.subject().unwrap_or_default());
+    let destination = normalize_string(message.to().unwrap().first().map(|addr| addr.address.clone().unwrap()).unwrap_or_default()); // may be empty string
     let expected_from_address_pattern = (|| {
         if name.contains("AMAZON") || subject.contains("AMAZON") {
             return r"[.@]amazon(\.co\.jp|\.com)$";
