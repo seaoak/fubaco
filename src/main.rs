@@ -782,11 +782,7 @@ fn test_pop3_upstream() -> Result<()> {
     let port = 995;
 
     println!("open upstream connection");
-    let connector = TlsConnector::new()?;
-    let tcp_stream = TcpStream::connect((hostname.to_string(), port))?;
-    let tls_stream = connector.connect(&hostname, tcp_stream)?;
-
-    let mut pop3_upstream = POP3Upstream::connect(tls_stream)?;
+    let mut pop3_upstream = POP3Upstream::connect(&hostname, port)?;
 
     println!("wait for greeting response");
     let response = pop3_upstream.exec_command(&POP3_COMMAND_GREETING, None)?;

@@ -1,7 +1,9 @@
 use std::io::{Read, Write};
+use std::net::TcpStream;
 
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
+use native_tls::{TlsConnector, TlsStream};
 use regex::Regex;
 
 use crate::my_disconnect::MyDisconnect;
@@ -159,15 +161,21 @@ pub struct POP3Upstream<S: Read + Write + MyDisconnect> {
     state: POP3State,
 }
 
-impl<S: Read + Write + MyDisconnect> POP3Upstream<S> {
+impl POP3Upstream<TlsStream<TcpStream>> {
 
-    pub fn connect(stream: S) -> Result<POP3Upstream<S>> {
-        let stream = MyTextLineStream::<S>::connect(stream);
+    pub fn connect(hostname: &str, port: u16) -> Result<Self> {
+        let connector = TlsConnector::new()?;
+        let tcp_stream = TcpStream::connect((hostname.to_string(), port))?;
+        let tls_stream = connector.connect(hostname, tcp_stream)?;
+        let stream = MyTextLineStream::connect(tls_stream);
         Ok(POP3Upstream {
-            stream: stream,
+            stream,
             state: POP3State::GREETING,
         })
     }
+}
+
+impl<S: Read + Write + MyDisconnect> POP3Upstream<S> {
 
     pub fn disconnect(&mut self) -> Result<()> {
         self.stream.disconnect()?;
