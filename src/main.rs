@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{BufReader, BufWriter, ErrorKind, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
 use std::sync::Arc;
 
@@ -29,7 +29,23 @@ use pop3_upstream::*;
 fn main() {
     println!("Hello, world!");
 
-    if true {
+    if false {
+        match test_rustls_my_client() {
+            Ok(()) => (),
+            Err(e) => panic!("{:?}", e),
+        };
+        std::process::exit(0);
+    }
+
+    if false {
+        match test_rustls_simple_client() {
+            Ok(()) => (),
+            Err(e) => panic!("{:?}", e),
+        };
+        std::process::exit(0);
+    }
+
+    if false {
         match test_spam_checker_with_local_files() {
             Ok(()) => (),
             Err(e) => panic!("{:?}", e),
@@ -37,10 +53,13 @@ fn main() {
         std::process::exit(0);
     }
 
-    match test_pop3_bridge() {
-        Ok(()) => (),
-        Err(e) => panic!("{:?}", e),
-    };
+    if true {
+        match test_pop3_bridge() {
+            Ok(()) => (),
+            Err(e) => panic!("{:?}", e),
+        };
+        std::process::exit(0);
+    }
 
     match test_pop3_upstream() {
         Ok(()) => (),
@@ -83,6 +102,99 @@ lazy_static!{
     static ref REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS: Regex = Regex::new(r"\b([1-9][0-9]*) octets\b").unwrap();
     static ref DATABASE_FILENAME: String = "./db.json".to_string();
     static ref FUBACO_HEADER_TOTAL_SIZE: usize = 512; // (78+2)*6+(30+2)
+}
+
+fn test_rustls_my_client() -> Result<()> {
+    let upstream_hostname = "seaoak.jp".to_string();
+    let upstream_port = 443;
+
+    let tls_root_store = rustls::RootCertStore::from_iter(
+        webpki_roots::TLS_SERVER_ROOTS
+            .iter()
+            .cloned(),
+    );
+    let tls_config = Arc::new(
+        rustls::ClientConfig::builder()
+            .with_root_certificates(tls_root_store)
+            .with_no_client_auth()
+    );
+    let upstream_host = upstream_hostname.clone().try_into().unwrap();
+    let mut upstream_tls_connection = rustls::ClientConnection::new(tls_config, upstream_host)?;
+    let mut upstream_tcp_socket = TcpStream::connect(format!("{}:{}", upstream_hostname, upstream_port))?;
+    let mut upstream_tls_stream = rustls::Stream::new(&mut upstream_tls_connection, &mut upstream_tcp_socket);
+
+    println!("issue HTTP request");
+    upstream_tls_stream.write_all(
+        concat!(
+            "GET / HTTP/1.1\r\n",
+            "Host: seaoak.jp\r\n",
+            // "Connection: close\r\n",
+            "Accept-Encoding: identity\r\n",
+            "\r\n",
+        ).as_bytes(),
+    )?;
+    let ciphersuite = upstream_tls_stream.conn.negotiated_cipher_suite().unwrap();
+    eprintln!("Current ciphersuite: {:?}", ciphersuite.suite());
+    let mut plaintext = Vec::new();
+    let mut local_buf = [0u8; 1024];
+    loop {
+        let nbytes = match upstream_tls_stream.read(&mut local_buf) {
+            Ok(0) => return Err(anyhow!("steam is closed unexpectedly")),
+            Ok(len) => len,
+            Err(ref e) if e.kind() == ErrorKind::Interrupted => continue,
+            Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                eprintln!("retry read()");
+                // upstream_tls_connection.process_new_packets()?;
+                continue;
+            },
+            Err(e) => return Err(anyhow!(e)),
+        };
+        plaintext.extend(&local_buf[0..nbytes]);
+        if MyTextLineStream::<TcpStream>::ends_with_u8(&plaintext, b"</html>\n") { // allow empty line
+            eprintln!("detect last LF");
+            break;
+        }
+    }
+    eprintln!("------------------------------");
+    std::io::stdout().write_all(&plaintext)?;
+    Ok(())
+}
+
+fn test_rustls_simple_client() -> Result<()> {
+    let upstream_hostname = "seaoak.jp".to_string();
+    let upstream_port = 443;
+
+    let tls_root_store = rustls::RootCertStore::from_iter(
+        webpki_roots::TLS_SERVER_ROOTS
+            .iter()
+            .cloned(),
+    );
+    let tls_config = Arc::new(
+        rustls::ClientConfig::builder()
+            .with_root_certificates(tls_root_store)
+            .with_no_client_auth()
+    );
+    let upstream_host = upstream_hostname.clone().try_into().unwrap();
+    let mut upstream_tls_connection = rustls::ClientConnection::new(tls_config, upstream_host)?;
+    let mut upstream_tcp_socket = TcpStream::connect(format!("{}:{}", upstream_hostname, upstream_port))?;
+    let mut upstream_tls_stream = rustls::Stream::new(&mut upstream_tls_connection, &mut upstream_tcp_socket);
+
+    println!("issue HTTP request");
+    upstream_tls_stream.write_all(
+        concat!(
+            "GET / HTTP/1.1\r\n",
+            "Host: seaoak.jp\r\n",
+            "Connection: close\r\n",
+            "Accept-Encoding: identity\r\n",
+            "\r\n",
+        ).as_bytes(),
+    )?;
+    let ciphersuite = upstream_tls_stream.conn.negotiated_cipher_suite().unwrap();
+    eprintln!("Current ciphersuite: {:?}", ciphersuite.suite());
+    let mut plaintext = Vec::new();
+    upstream_tls_stream.read_to_end(&mut plaintext)?;
+    std::io::stdout().write_all(&plaintext)?;
+    Ok(())
 }
 
 fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
