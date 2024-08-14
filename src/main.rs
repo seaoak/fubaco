@@ -3,16 +3,19 @@ use std::env;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use kana::wide2ascii;
 use lazy_static::lazy_static;
 use mail_parser::{Message, MessageParser};
-use native_tls::TlsConnector;
 use regex::Regex;
+use rustls;
+use rustls_native_certs;
 use scraper;
 use serde::{Serialize, Deserialize};
 use unicode_normalization::UnicodeNormalization;
+use webpki_roots;
 
 mod my_disconnect;
 mod my_text_line_stream;
@@ -401,9 +404,30 @@ fn test_pop3_bridge() -> Result<()> {
                 println!("upstream_addr: {}:{}", upstream_hostname.0, upstream_port);
 
                 println!("open upstream connection");
-                let upstream_connector = TlsConnector::new()?;
-                let upstream_tcp_stream = TcpStream::connect(format!("{}:{}", upstream_hostname.0, upstream_port))?;
-                let upstream_tls_stream = upstream_connector.connect(&upstream_hostname.0, upstream_tcp_stream)?;
+                let tls_root_store = if false {
+                    // use "rustls-native-certs" crate
+                    let mut roots = rustls::RootCertStore::empty();
+                    for cert in rustls_native_certs::load_native_certs()? {
+                        roots.add(cert).unwrap();
+                    }
+                    roots
+                } else {
+                    // use "webpki-roots" crate
+                    rustls::RootCertStore::from_iter(
+                        webpki_roots::TLS_SERVER_ROOTS
+                            .iter()
+                            .cloned(),
+                    )
+                };
+                let tls_config = Arc::new(
+                    rustls::ClientConfig::builder()
+                        .with_root_certificates(tls_root_store)
+                        .with_no_client_auth()
+                );
+                let mut upstream_host = upstream_hostname.0.clone().try_into().unwrap();
+                let mut upstream_tls_connection = rustls::ClientConnection::new(tls_config, upstream_host)?;
+                let mut upstream_tcp_socket = TcpStream::connect(format!("{}:{}", upstream_hostname.0, upstream_port))?;
+                let mut upstream_tls_stream = rustls::Stream::new(&mut upstream_tls_connection, &mut upstream_tcp_socket);
                 let mut upstream_stream = MyTextLineStream::connect(upstream_tls_stream);
 
                 // wait for POP3 greeting message from server
