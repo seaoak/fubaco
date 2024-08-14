@@ -14,13 +14,16 @@ use rustls;
 use rustls_native_certs;
 use scraper;
 use serde::{Serialize, Deserialize};
+use tokio;
 use unicode_normalization::UnicodeNormalization;
 use webpki_roots;
 
 mod my_disconnect;
+mod my_dns_resolver;
 mod my_text_line_stream;
 mod pop3_upstream;
 
+use my_dns_resolver::MyDNSResolver;
 use my_text_line_stream::MyTextLineStream;
 use pop3_upstream::*;
 
@@ -28,6 +31,14 @@ use pop3_upstream::*;
 #[allow(unreachable_code)]
 fn main() {
     println!("Hello, world!");
+
+    if true {
+        match test_my_dns_resolver() {
+            Ok(()) => (),
+            Err(e) => panic!("{:?}", e),
+        };
+        std::process::exit(0);
+    }
 
     if false {
         match test_rustls_my_client() {
@@ -102,6 +113,30 @@ lazy_static!{
     static ref REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS: Regex = Regex::new(r"\b([1-9][0-9]*) octets\b").unwrap();
     static ref DATABASE_FILENAME: String = "./db.json".to_string();
     static ref FUBACO_HEADER_TOTAL_SIZE: usize = 512; // (78+2)*6+(30+2)
+}
+
+fn test_my_dns_resolver() -> Result<()> {
+    let mut resolver = MyDNSResolver::new();
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            println!("Hello world in tokio");
+            let queries = [
+                ("seaoak.jp", "A"),
+                ("seaoak.jp", "AAAA"),
+                ("seaoak.jp", "TXT"),
+                ("_dmarc.seaoak.jp", "TXT"),
+            ];
+            for (fqdn, query_type) in queries {
+                for result in resolver.lookup(fqdn, query_type).await? {
+                    println!("Result: {} {} \"{}\"", fqdn, query_type, result);
+                }
+            }
+            Ok::<(), anyhow::Error>(())
+        })?;
+    Ok(())
 }
 
 fn test_rustls_my_client() -> Result<()> {
