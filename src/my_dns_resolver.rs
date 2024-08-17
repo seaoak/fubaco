@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use rand;
+use regex::Regex;
 use reqwest;
 use serde_json;
 
@@ -59,7 +60,7 @@ impl MyDNSResolver {
         } else {
             Vec::new() // empty
         };
-        let results: Vec<String> = answers.into_iter().map(|v| v["data"].to_string()).collect();
+        let results: Vec<String> = answers.into_iter().map(|v| strip_string_quotation(&v["data"].to_string())).collect();
         Ok(results)
     }
 
@@ -89,4 +90,26 @@ fn get_query_type_number_from_string(s: &str) -> Option<u16> {
         "SPF"       => Some(99),
         _           => None,
     }
+}
+
+lazy_static! {
+    static ref REGEX_QUOTED_BY_DOUBLE_QUOTE: Regex = Regex::new(r#"^["](.*)["]$"#).unwrap();
+    static ref REGEX_QUOTED_BY_ESCAPED_DOUBLE_QUOTE: Regex = Regex::new(r#"^[\\]["](.*)[\\]["]$"#).unwrap();
+}
+
+fn strip_string_quotation(original: &str) -> String {
+    let mut result = original.to_string();
+    loop {
+        let prev_len = result.len();
+        if let Some(caps) = REGEX_QUOTED_BY_DOUBLE_QUOTE.captures(&result) {
+            result = caps[1].to_string();
+        }
+        if let Some(caps) = REGEX_QUOTED_BY_ESCAPED_DOUBLE_QUOTE.captures(&result) {
+            result = caps[1].to_string();
+        }
+        if result.len() == prev_len {
+            break;
+        }
+    }
+    result
 }
