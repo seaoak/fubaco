@@ -242,6 +242,17 @@ fn test_rustls_simple_client() -> Result<()> {
     Ok(())
 }
 
+fn spam_checker_suspicious_envelop_from(message: &Message) -> Option<String> {
+    let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
+    let envelop_from = envelop_from.replace("<", "").replace(">", "").to_lowercase().trim().to_string();
+    println!("Evelop.from: \"{}\"", envelop_from);
+    if envelop_from.len() == 0 {
+        Some("suspicious-envelop-from".to_string())
+    } else {
+        None
+    }
+}
+
 fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
     let blacklist_tld_list = vec![".cn", ".ru", ".hu", ".br", ".su", ".nz", ".in", ".cz", ".be", ".cl"];
     let header_from = message.from().unwrap().first().map(|addr| addr.address.clone().unwrap_or_default().to_string()).unwrap_or_default().to_lowercase();
@@ -421,6 +432,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
         return Err(anyhow!("can not parse the message"));
     }
     let mut spam_judgement: Vec<String> = [
+        spam_checker_suspicious_envelop_from,
         spam_checker_blacklist_tld,
         spam_checker_suspicious_from,
         spam_checker_suspicious_hyperlink,
