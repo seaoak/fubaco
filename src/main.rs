@@ -116,12 +116,12 @@ lazy_static!{
 }
 
 fn test_my_dns_resolver() -> Result<()> {
-    let mut resolver = MyDNSResolver::new();
+    let resolver = Arc::new(MyDNSResolver::new());
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap()
-        .block_on(async {
+        .block_on(async move {
             println!("Hello world in tokio");
             let queries = [
                 ("seaoak.jp", "A"),
@@ -129,8 +129,18 @@ fn test_my_dns_resolver() -> Result<()> {
                 ("seaoak.jp", "TXT"),
                 ("_dmarc.seaoak.jp", "TXT"),
             ];
+            let mut infos = Vec::new();
             for (fqdn, query_type) in queries {
-                for result in resolver.lookup(fqdn, query_type).await? {
+                let resolver = resolver.clone();
+                let handle = tokio::spawn(async move {
+                    resolver.lookup(fqdn.to_string(), query_type.to_string()).await
+                });
+                infos.push((fqdn, query_type, handle));
+            }
+            for info in infos {
+                let (fqdn, query_type, handle) = info;
+                let results = handle.await??;
+                for result in results {
                     println!("Result: {} {} \"{}\"", fqdn, query_type, result);
                 }
             }

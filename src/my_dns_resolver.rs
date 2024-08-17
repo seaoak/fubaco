@@ -28,20 +28,20 @@ impl MyDNSResolver {
     }
 
     #[allow(unused)]
-    pub async fn lookup(&mut self, fqdn: &str, query_type: &str) -> Result<Vec<String>> {
+    pub async fn lookup(&self, fqdn: String, query_type: String) -> Result<Vec<String>> {
         // https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/make-api-requests/dns-json/
         // https://developers.google.com/speed/public-dns/docs/doh/json?hl=ja
         let random_value: usize = rand::random();
         let headers = [
             ("Accept", "application/dns-json"),
         ];
-        let query_type_number = if let Some(v) = get_query_type_number_from_string(query_type) {
+        let query_type_number = if let Some(v) = get_query_type_number_from_string(&query_type) {
             v
         } else {
             return Err(anyhow!("invalid query type: {}", query_type));
         };
         let options = [
-            ("name", fqdn),
+            ("name", fqdn.as_str()),
             ("type", &query_type_number.to_string()),
             ("cd", "false"),
             // ("ct", "application/dns-json"),
@@ -63,14 +63,15 @@ impl MyDNSResolver {
         Ok(results)
     }
 
-    async fn issue_request_and_get_response(&mut self, url: &str, headers: &[(&str, &str)]) -> Result<String> {
+    async fn issue_request_and_get_response(&self, url: &str, headers: &[(&str, &str)]) -> Result<String> {
         let url = reqwest::Url::parse(url)?;
-        let mut request = self.client.get(url).version(reqwest::Version::HTTP_2);
+        let mut request = self.client.get(url.clone()).version(reqwest::Version::HTTP_2);
         for (k, v) in headers {
             request = request.header(*k, *v);
         }
+        println!("MyDNSResolver: issue request for: {}", url.to_string()[0..50].to_owned());
         let response = request.send().await?;
-        println!("MyDNSResolver: Response.version(): {:?}", response.version());
+        println!("MyDNSResolver: Response.version(): {:?} for {}", response.version(), url.to_string()[0..50].to_owned());
         let text = response.text().await?;
         Ok(text)
     }
