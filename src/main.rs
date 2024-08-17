@@ -32,7 +32,7 @@ use pop3_upstream::*;
 fn main() {
     println!("Hello, world!");
 
-    if true {
+    if false {
         match test_my_dns_resolver() {
             Ok(()) => (),
             Err(e) => panic!("{:?}", e),
@@ -56,7 +56,7 @@ fn main() {
         std::process::exit(0);
     }
 
-    if false {
+    if true {
         match test_spam_checker_with_local_files() {
             Ok(()) => (),
             Err(e) => panic!("{:?}", e),
@@ -245,7 +245,7 @@ fn test_rustls_simple_client() -> Result<()> {
 fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
     let blacklist_tld_list = vec![".cn", ".ru", ".hu", ".br", ".su", ".nz", ".in", ".cz", ".be", ".cl"];
     let header_from = message.from().unwrap().first().map(|addr| addr.address.clone().unwrap_or_default().to_string()).unwrap_or_default().to_lowercase();
-    let envelop_from = message.return_path().clone().unwrap_text().to_string().replace("<", "").replace(">", "").to_lowercase();
+    let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string().replace("<", "").replace(">", "").to_lowercase(); // may be empty string
     println!("Evelop.from: \"{}\"", envelop_from);
     let mut is_spam = false;
     for tld in &blacklist_tld_list {
