@@ -13,7 +13,7 @@ use regex::Regex;
 use rustls;
 use rustls_native_certs;
 use scraper;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use tokio;
 use unicode_normalization::UnicodeNormalization;
 use webpki_roots;
@@ -105,7 +105,7 @@ fn make_fubaco_padding_header(nbytes: usize) -> String { // generate just-nbyte-
     buf
 }
 
-lazy_static!{
+lazy_static! {
     static ref REGEX_POP3_COMMAND_LINE_GENERAL: Regex = Regex::new(r"^([A-Z]+)(?: +(\S+)(?: +(\S+))?)? *\r\n$").unwrap();
     static ref REGEX_POP3_COMMAND_LINE_FOR_USER: Regex = Regex::new(r"^USER +(\S+) *\r\n$").unwrap();
     static ref REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND: Regex = Regex::new(r"^\+OK +(\S+) +(\S+) *\r\n$").unwrap();
@@ -153,16 +153,18 @@ fn test_rustls_my_client() -> Result<()> {
     let upstream_hostname = "seaoak.jp".to_string();
     let upstream_port = 443;
 
-    let tls_root_store = rustls::RootCertStore::from_iter(
-        webpki_roots::TLS_SERVER_ROOTS
-            .iter()
-            .cloned(),
-    );
-    let tls_config = Arc::new(
-        rustls::ClientConfig::builder()
-            .with_root_certificates(tls_root_store)
-            .with_no_client_auth()
-    );
+    let tls_root_store =
+        rustls::RootCertStore::from_iter(
+            webpki_roots::TLS_SERVER_ROOTS
+                .iter()
+                .cloned(),
+        );
+    let tls_config =
+        Arc::new(
+            rustls::ClientConfig::builder()
+                .with_root_certificates(tls_root_store)
+                .with_no_client_auth(),
+        );
     let upstream_host = upstream_hostname.clone().try_into().unwrap();
     let mut upstream_tls_connection = rustls::ClientConnection::new(tls_config, upstream_host)?;
     let mut upstream_tcp_socket = TcpStream::connect(format!("{}:{}", upstream_hostname, upstream_port))?;
@@ -209,16 +211,18 @@ fn test_rustls_simple_client() -> Result<()> {
     let upstream_hostname = "seaoak.jp".to_string();
     let upstream_port = 443;
 
-    let tls_root_store = rustls::RootCertStore::from_iter(
-        webpki_roots::TLS_SERVER_ROOTS
-            .iter()
-            .cloned(),
-    );
-    let tls_config = Arc::new(
-        rustls::ClientConfig::builder()
-            .with_root_certificates(tls_root_store)
-            .with_no_client_auth()
-    );
+    let tls_root_store =
+        rustls::RootCertStore::from_iter(
+            webpki_roots::TLS_SERVER_ROOTS
+                .iter()
+                .cloned(),
+        );
+    let tls_config =
+        Arc::new(
+            rustls::ClientConfig::builder()
+                .with_root_certificates(tls_root_store)
+                .with_no_client_auth()
+        );
     let upstream_host = upstream_hostname.clone().try_into().unwrap();
     let mut upstream_tls_connection = rustls::ClientConnection::new(tls_config, upstream_host)?;
     let mut upstream_tcp_socket = TcpStream::connect(format!("{}:{}", upstream_hostname, upstream_port))?;
@@ -303,7 +307,7 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         if name.contains("VIEWCARD") || name.contains("ビューカード") || name.contains("VIEW'SNET") || subject.contains("VIEW'SNET") {
             return r"[.@]viewsnet\.jp$";
         }
-        if name.contains("東京電力") || name.contains("TEPCO") || subject.contains("東京電力"){
+        if name.contains("東京電力") || name.contains("TEPCO") || subject.contains("東京電力") {
             return r"[.@](tepco\.co\.jp|hikkoshi-line\.jp)$";
         }
         if name.contains("三菱UFJ") || name.contains("MUFG") {
@@ -476,17 +480,16 @@ fn test_spam_checker_with_local_files() -> Result<()> {
 
 #[allow(unused)]
 fn test_pop3_bridge() -> Result<()> {
-
-    #[derive(Clone,Debug,Eq,PartialEq,Ord,PartialOrd,Hash,Serialize,Deserialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
     struct Username(String);
 
-    #[derive(Clone,Debug,Eq,PartialEq,Ord,PartialOrd,Hash)]
+    #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
     struct Hostname(String);
 
-    #[derive(Clone,Debug,Eq,PartialEq,Ord,PartialOrd,Hash,Serialize,Deserialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
     struct UniqueID(String);
 
-    #[derive(Clone,Debug,Serialize,Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     struct MessageInfo {
         username: Username,
         unique_id: UniqueID,
@@ -494,22 +497,18 @@ fn test_pop3_bridge() -> Result<()> {
         is_deleted: bool,
     }
 
-    #[derive(Clone,Debug,Eq,PartialEq,Ord,PartialOrd,Hash)]
+    #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
     struct MessageNumber(u32);
 
     let username_to_hostname: HashMap<Username, Hostname> = vec![
         "FUBACO_Nq2DYd4cFHGZ_U",
         "FUBACO_Km2TTTAEMErD_H",
-
         "FUBACO_NC7s2kMrxDnU_U",
         "FUBACO_Fzkd5hfaTv6D_H",
-
         "FUBACO_SiwDkj2vtpqH_U",
         "FUBACO_MFhg2T3pxVRW_H",
-
         "FUBACO_GYDTwK7YTcbU_U",
         "FUBACO_QW5DV9Wko6oC_H",
-
     ].into_iter().map(|s| env::var(s).unwrap()).collect::<Vec<String>>().chunks(2).map(|v| (Username(v[0].clone()), Hostname(v[1].clone()))).collect();
 
     fn load_db_file() -> Result<String> {
@@ -542,7 +541,6 @@ fn test_pop3_bridge() -> Result<()> {
     loop {
         match listener.accept() {
             Ok((downstream_tcp_stream, remote_addr)) => {
-
                 // https://doc.rust-lang.org/std/net/enum.SocketAddr.html#method.ip
                 assert_eq!(remote_addr.ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
@@ -588,11 +586,12 @@ fn test_pop3_bridge() -> Result<()> {
                             .cloned(),
                     )
                 };
-                let tls_config = Arc::new(
-                    rustls::ClientConfig::builder()
-                        .with_root_certificates(tls_root_store)
-                        .with_no_client_auth()
-                );
+                let tls_config =
+                    Arc::new(
+                        rustls::ClientConfig::builder()
+                            .with_root_certificates(tls_root_store)
+                            .with_no_client_auth(),
+                    );
                 let mut upstream_host = upstream_hostname.0.clone().try_into().unwrap();
                 let mut upstream_tls_connection = rustls::ClientConnection::new(tls_config, upstream_host)?;
                 let mut upstream_tcp_socket = TcpStream::connect(format!("{}:{}", upstream_hostname.0, upstream_port))?;
@@ -667,7 +666,7 @@ fn test_pop3_bridge() -> Result<()> {
                     }
                     assert!(status_line.starts_with("+OK"));
                     println!("parse response body of UIDL command");
-                    let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
+                    let body_u8 = &response_lines[status_line.len()..(response_lines.len() - b".\r\n".len())];
                     let body_text = String::from_utf8_lossy(body_u8);
                     let mut table: HashMap<MessageNumber, UniqueID> = HashMap::new();
                     for line in body_text.split_terminator("\r\n") {
@@ -700,7 +699,7 @@ fn test_pop3_bridge() -> Result<()> {
                     }
                     assert!(status_line.starts_with("+OK"));
                     println!("parse response body of LIST command");
-                    let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
+                    let body_u8 = &response_lines[status_line.len()..(response_lines.len() - b".\r\n".len())];
                     let body_text = String::from_utf8_lossy(body_u8);
                     let mut table: HashMap<MessageNumber, usize> = HashMap::new();
                     for line in body_text.split_terminator("\r\n") {
@@ -721,12 +720,13 @@ fn test_pop3_bridge() -> Result<()> {
                 if (unique_id_to_message_info.len() == 0) { // at the first time only, all existed massages are treated as old messages which have no fubaco header
                     for (message_number, unique_id) in message_number_to_unique_id.iter() {
                         let nbytes = message_number_to_nbytes[message_number];
-                        let info = MessageInfo {
-                            username: username.clone(),
-                            unique_id: unique_id.clone(),
-                            fubaco_headers: "".to_string(),
-                            is_deleted: false,
-                        };
+                        let info =
+                            MessageInfo {
+                                username: username.clone(),
+                                unique_id: unique_id.clone(),
+                                fubaco_headers: "".to_string(),
+                                is_deleted: false,
+                            };
                         let ret = unique_id_to_message_info.insert(unique_id.clone(), info);
                         assert!(ret.is_none());
                     }
@@ -735,13 +735,16 @@ fn test_pop3_bridge() -> Result<()> {
 
                 let total_nbytes_of_maildrop = message_number_to_nbytes.values().fold(0, |acc, nbytes| acc + nbytes);
                 println!("total_nbytes_of_maildrop = {}", total_nbytes_of_maildrop);
-                let total_nbytes_of_modified_maildrop = message_number_to_unique_id.iter().map(|(message_number, unique_id)| {
-                    if let Some(info) = unique_id_to_message_info.get(unique_id) {
-                        message_number_to_nbytes[message_number] + info.fubaco_headers.len()
-                    } else {
-                        message_number_to_nbytes[message_number] + *FUBACO_HEADER_TOTAL_SIZE
-                    }
-                }).fold(0, |acc, nbytes| acc + nbytes);
+                let total_nbytes_of_modified_maildrop = message_number_to_unique_id
+                    .iter()
+                    .map(|(message_number, unique_id)| {
+                        if let Some(info) = unique_id_to_message_info.get(unique_id) {
+                            message_number_to_nbytes[message_number] + info.fubaco_headers.len()
+                        } else {
+                            message_number_to_nbytes[message_number] + *FUBACO_HEADER_TOTAL_SIZE
+                        }
+                    })
+                    .fold(0, |acc, nbytes| acc + nbytes);
                 println!("total_nbytes_of_modified_maildrop = {}", total_nbytes_of_modified_maildrop);
 
                 // relay POP3 commands/responses
@@ -833,14 +836,14 @@ fn test_pop3_bridge() -> Result<()> {
                                 new_nbytes = nbytes + info.fubaco_headers.len();
                             } else {
                                 new_nbytes = nbytes + *FUBACO_HEADER_TOTAL_SIZE;
-                            };
+                            }
                             response_lines.clear();
                             response_lines.extend(format!("+OK {} {}\r\n", message_number.0, new_nbytes).into_bytes());
                             println!("Done");
                         }
                         if command_name == "LIST" && command_arg1.is_none() {
                             println!("modify multi-line response for LIST command");
-                            let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
+                            let body_u8 = &response_lines[status_line.len()..(response_lines.len() - b".\r\n".len())];
                             let body_text = String::from_utf8_lossy(body_u8);
                             let mut buf = Vec::<u8>::with_capacity(body_u8.len());
                             let mut total_nbytes = 0;
@@ -890,7 +893,7 @@ fn test_pop3_bridge() -> Result<()> {
                             } else {
                                 return Err(anyhow!("unknown message number is specified: {}", arg_message_number.0));
                             }
-                            let body_u8 = &response_lines[status_line.len() .. (response_lines.len() - b".\r\n".len())];
+                            let body_u8 = &response_lines[status_line.len()..(response_lines.len() - b".\r\n".len())];
 
                             let fubaco_headers;
                             if let Some(info) = unique_id_to_message_info.get(unique_id) {
@@ -902,12 +905,15 @@ fn test_pop3_bridge() -> Result<()> {
                                 // TODO: SPAM checker
                                 fubaco_headers = make_fubaco_headers(body_u8)?;
                                 println!("add fubaco headers:\n----------\n{}----------", fubaco_headers);
-                                unique_id_to_message_info.insert(unique_id.clone(), MessageInfo {
-                                    username: username.clone(),
-                                    unique_id: unique_id.clone(),
-                                    fubaco_headers: fubaco_headers.clone(),
-                                    is_deleted: false,
-                                });
+                                unique_id_to_message_info.insert(
+                                    unique_id.clone(),
+                                    MessageInfo {
+                                        username: username.clone(),
+                                        unique_id: unique_id.clone(),
+                                        fubaco_headers: fubaco_headers.clone(),
+                                        is_deleted: false,
+                                    },
+                                );
                             };
 
                             let mut buf = Vec::<u8>::new();
