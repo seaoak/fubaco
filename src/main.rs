@@ -463,13 +463,16 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 addr = arg.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
                 bitmask_len = usize::from_str_radix(&caps[2].to_string(), 10).unwrap_or(0);
             } else {
+                println!("ip4 syntex error: \"{}\"", field);
                 return SPFResult::PERMERROR; // syntax error (abort immediately)
             }
 
             if addr == Ipv4Addr::UNSPECIFIED {
+                println!("ip4 address parse error: \"{}\"", field);
                 return SPFResult::PERMERROR; // syntax error (abort immediately)
             }
             if bitmask_len == 0 || bitmask_len > 32 {
+                println!("ip4 netmask parse error: \"{}\"", field);
                 return SPFResult::PERMERROR; // syntax error (abort immediately)
             }
             let bitmask = 0xffffffffu32 << (32 - bitmask_len);
