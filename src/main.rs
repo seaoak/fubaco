@@ -346,10 +346,18 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             }
         }
         if let Some(caps) = REGEX_SPF_INCLUDE_DOMAIN.captures(&field) {
-            let hostname = caps[1].to_string();
-
-
-
+            let domain = caps[1].to_string();
+            let result = spf_check_recursively(&domain, source_ip, envelop_from);
+            if let Some(s) = result {
+                if s == "spf-pass" {
+                    is_matched = true;
+                    break;
+                }
+                if s == "spf-permerror" {
+                    return Some("spf-permerror".to_string());
+                }
+                // "spf-temperror" and "spf-softerror" are ignored
+            }
         }
     }
     if is_matched {
