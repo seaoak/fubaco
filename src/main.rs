@@ -289,6 +289,33 @@ fn dns_query_ipv4(fqdn: &String) -> Result<Vec<String>> { // Vec may be empty
     Ok(records)
 }
 
+fn dns_query_mx(fqdn: &String) -> Result<Vec<String>> { // Vec may be empty
+    let query_result =
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let resolver = MyDNSResolver::new();
+                resolver.lookup(fqdn.to_string(), "MX".to_string()).await
+            });
+    let records = query_result?;
+    for s in &records {
+        println!("dns_MX_record: {} {}", fqdn, s);
+    }
+    lazy_static! {
+        static ref REGEX_MX_RECORD: Regex = Regex::new(r"^ *\d+ +(\S+) *$").unwrap();
+    }
+    let mut hosts = Vec::new();
+    for record in records {
+        match REGEX_MX_RECORD.captures(&record) {
+            Some(caps) => hosts.push(caps[1].to_string()),
+            None => return Err(anyhow!("invalid MX record: {}", record)),
+        }
+    }
+    Ok(hosts)
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum SPFResult {
     NONE,
@@ -360,7 +387,28 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             }
         }
         if field == "mx" {
-            // TODO
+            let hosts = match dns_query_mx(&domain.to_string()) {
+                Ok(v) => v,
+                Err(_e) => return SPFResult::TEMPERROR,
+            };
+            match source_ip {
+                IpAddr::V4(_addr) => {
+                    let mut list = Vec::new();
+                    for host in hosts {
+                        match dns_query_ipv4(&host) {
+                            Ok(v) => list.extend(v.into_iter()),
+                            Err(_e) => return SPFResult::TEMPERROR,
+                        }
+                    }
+                    for ip in list {
+                        fields.push(format!("+ipv4:{}", ip));
+                    }
+                    continue;
+                },
+                IpAddr::V6(_addr) => {
+                    // TODO
+                },
+            }
         }
         if field == "ptr" {
             // TODO
