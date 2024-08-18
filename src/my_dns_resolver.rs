@@ -94,7 +94,7 @@ fn get_query_type_number_from_string(s: &str) -> Option<u16> {
 
 lazy_static! {
     static ref REGEX_QUOTED_BY_DOUBLE_QUOTE: Regex = Regex::new(r#"^["](.*)["]$"#).unwrap();
-    static ref REGEX_QUOTED_BY_ESCAPED_DOUBLE_QUOTE: Regex = Regex::new(r#"^[\\]["](.*)[\\]["]$"#).unwrap();
+    static ref REGEX_QUOTED_BY_ESCAPED_DOUBLE_QUOTE: Regex = Regex::new(r#"^(.*?)[\\]["]([^"]+?)[\\]["](.*)$"#).unwrap();
 }
 
 fn strip_string_quotation(original: &str) -> String {
@@ -105,7 +105,7 @@ fn strip_string_quotation(original: &str) -> String {
             result = caps[1].to_string();
         }
         if let Some(caps) = REGEX_QUOTED_BY_ESCAPED_DOUBLE_QUOTE.captures(&result) {
-            result = caps[1].to_string();
+            result = format!("{}{}{}", caps[1].to_string(), caps[2].to_string(), caps[3].to_string());
         }
         if result.len() == prev_len {
             break;
