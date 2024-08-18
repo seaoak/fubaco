@@ -367,18 +367,21 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             return SPFResult::FAIL;
         }
         if field == "a" {
-            if let IpAddr::V4(target) = source_ip {
-                if let Ok(records) = dns_query_simple(domain, "A") {
-                    for record in records {
-                        fields.push(format!("+ip4:{}", record));
+            match source_ip {
+                IpAddr::V4(_target) => {
+                    match dns_query_simple(domain, "A") {
+                        Ok(records) => {
+                            for record in records {
+                                fields.push(format!("+ip4:{}", record));
+                            }
+                            continue;
+                        },
+                        Err(_e) => return SPFResult::TEMPERROR,
                     }
-                    continue;
-                } else {
-                    return SPFResult::TEMPERROR;
+                },
+                IpAddr::V6(_target) => {
+                    // TODO
                 }
-            }
-            if let IpAddr::V6(_target) = source_ip {
-                // TODO
             }
         }
         if field == "mx" {
