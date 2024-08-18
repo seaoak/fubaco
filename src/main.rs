@@ -277,52 +277,9 @@ fn dns_query_spf(fqdn: &String) -> Option<String> {
     Some(spf_record)
 }
 
-fn spam_checker_spf(message: &Message) -> Option<String> {
-    let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
-    let envelop_from = envelop_from.replace("<", "").replace(">", "").to_lowercase().trim().to_string();
-    println!("Evelop.from: \"{}\"", envelop_from);
-    if envelop_from.len() == 0 {
-        return None;
-    }
-    let mut source_ip = None;
-    {
-        for value in message.header_values("Received") {
-            if let mail_parser::HeaderValue::Received(received) = value {
-                if let Some(mail_parser::Host::Name(s)) = received.by() {
-                    if s.ends_with(".nifty.com") || s.ends_with(".mailbox.org") || s.ends_with(".gandi.net") || s.ends_with(".mxrouting.net") || s.ends_with(".google.com") {
-                        match received.from_ip() {
-                            Some(IpAddr::V4(addr)) => {
-                                source_ip = Some(IpAddr::V4(addr));
-                                break;
-                            }
-                            Some(IpAddr::V6(addr)) => {
-                                source_ip = Some(IpAddr::V6(addr));
-                                break;
-                            }
-                            _ => {
-                                // empty
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
-    if source_ip.is_none() {
-        return None;
-    }
-    let source_ip = source_ip.unwrap();
-    println!("source_ip: {}", source_ip);
-
-    let domain;
-    if let Some(caps) = REGEX_MAIL_ADDRESS.captures(&envelop_from) {
-        domain = caps[2].to_string();
-    } else {
-        return Some("invalid-envelop-from".to_string());
-    }
-
+fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -> Option<String> {
     let spf_record;
-    if let Some(s) = dns_query_spf(&domain) {
+    if let Some(s) = dns_query_spf(&domain.to_string()) {
         spf_record = s;
     } else {
         return None;
@@ -352,7 +309,7 @@ fn spam_checker_spf(message: &Message) -> Option<String> {
                 return Some("spf-permerror".to_string()); // abort immediately
             }
             if let IpAddr::V4(target) = source_ip {
-                if target == addr {
+                if *target == addr {
                     is_matched = true;
                     break;
                 }
@@ -399,6 +356,53 @@ fn spam_checker_spf(message: &Message) -> Option<String> {
         return Some("spf-pass".to_string());
     }
     Some("spf-fail".to_string())
+}
+
+fn spam_checker_spf(message: &Message) -> Option<String> {
+    let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
+    let envelop_from = envelop_from.replace("<", "").replace(">", "").to_lowercase().trim().to_string();
+    println!("Evelop.from: \"{}\"", envelop_from);
+    if envelop_from.len() == 0 {
+        return None;
+    }
+    let mut source_ip = None;
+    {
+        for value in message.header_values("Received") {
+            if let mail_parser::HeaderValue::Received(received) = value {
+                if let Some(mail_parser::Host::Name(s)) = received.by() {
+                    if s.ends_with(".nifty.com") || s.ends_with(".mailbox.org") || s.ends_with(".gandi.net") || s.ends_with(".mxrouting.net") || s.ends_with(".google.com") {
+                        match received.from_ip() {
+                            Some(IpAddr::V4(addr)) => {
+                                source_ip = Some(IpAddr::V4(addr));
+                                break;
+                            }
+                            Some(IpAddr::V6(addr)) => {
+                                source_ip = Some(IpAddr::V6(addr));
+                                break;
+                            }
+                            _ => {
+                                // empty
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    if source_ip.is_none() {
+        return None;
+    }
+    let source_ip = source_ip.unwrap();
+    println!("source_ip: {}", source_ip);
+
+    let domain;
+    if let Some(caps) = REGEX_MAIL_ADDRESS.captures(&envelop_from) {
+        domain = caps[2].to_string();
+    } else {
+        return Some("invalid-envelop-from".to_string());
+    }
+
+    return spf_check_recursively(&domain, &source_ip, &envelop_from);
 }
 
 fn spam_checker_suspicious_envelop_from(message: &Message) -> Option<String> {
