@@ -332,11 +332,13 @@ fn spam_checker_spf(message: &Message) -> Option<String> {
         static ref REGEX_SPF_INCLUDE_IPV6_SINGLE: Regex = Regex::new(r"^[+]?ip6:([:0-9a-f]+)$").unwrap();
         static ref REGEX_SPF_INCLUDE_IPV4_SINGLE: Regex = Regex::new(r"^[+]?ip4:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$").unwrap();
         static ref REGEX_SPF_INCLUDE_IPV4_RANGE: Regex = Regex::new(r"^[+]?ip4:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)[/]([1-9][0-9]*)$").unwrap();
-        static ref REGEX_SPF_INCLUDE_DOMAIN: Regex = Regex::new(r"^include:([a-z0-9]([-_a-z0-9]*[a-z0-9])?([.][a-z0-9]([-_a-z0-9]*[a-z0-9])?)*)$").unwrap();
+        static ref REGEX_SPF_REDIRECT_DOMAIN: Regex = Regex::new(r"^redirect=([_a-z0-9]([-_a-z0-9]*[a-z0-9])?([.][a-z0-9]([-_a-z0-9]*[a-z0-9])?)*)$").unwrap();
+        static ref REGEX_SPF_INCLUDE_DOMAIN: Regex = Regex::new(r"^include:([_a-z0-9]([-_a-z0-9]*[a-z0-9])?([.][a-z0-9]([-_a-z0-9]*[a-z0-9])?)*)$").unwrap();
     }
-    let fields: Vec<String> = spf_record.split(" ").filter(|s| s.len() > 0).map(|s| s.to_string()).collect();
+    let mut fields: Vec<String> = spf_record.split(" ").filter(|s| s.len() > 0).map(|s| s.to_string()).collect();
+    fields.reverse();
     let mut is_matched = false;
-    for field in fields {
+    while let Some(field) = fields.pop() {
         if let Some(caps) = REGEX_SPF_INCLUDE_IPV6_SINGLE.captures(&field) {
             let addr = caps[1].to_string();
 
@@ -363,6 +365,18 @@ fn spam_checker_spf(message: &Message) -> Option<String> {
                     is_matched = true;
                     break;
                 }
+            }
+        }
+        if let Some(caps) = REGEX_SPF_REDIRECT_DOMAIN.captures(&field) {
+            let domain = caps[1].to_string();
+            if let Some(s) = dns_query_spf(&domain) {
+                let nested_spf = s;
+                let mut nested_fields: Vec<String> = nested_spf.split(" ").filter(|s| s.len() > 0).map(|s| s.to_string()).collect();
+                nested_fields.reverse();
+                fields.extend(nested_fields.into_iter());
+                continue;
+            } else {
+                return Some("spf-permerror".to_string()); // abort immediately
             }
         }
         if let Some(caps) = REGEX_SPF_INCLUDE_DOMAIN.captures(&field) {
