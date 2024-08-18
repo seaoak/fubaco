@@ -247,6 +247,36 @@ fn test_rustls_simple_client() -> Result<()> {
     Ok(())
 }
 
+fn dns_query_spf(fqdn: &String) -> Option<String> {
+    let query_result =
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let resolver = MyDNSResolver::new();
+                resolver.lookup(fqdn.to_string(), "TXT".to_string()).await
+            });
+    let spf_records: Vec<String>;
+    if let Ok(txt_records) = query_result {
+        spf_records = txt_records.into_iter().filter(|s| s.starts_with("v=spf1 ")).collect();
+    } else {
+        return None;
+    }
+    if spf_records.len() == 0 {
+        return None;
+    }
+    {
+        let mut remark = "";
+        for s in &spf_records {
+            println!("spf_record: {}{}", s, remark);
+            remark = " *IGNORED*";
+        }
+    }
+    let spf_record = spf_records[0].clone(); // ignore multiple records (invalid DNS setting)
+    Some(spf_record)
+}
+
 fn spam_checker_spf(message: &Message) -> Option<String> {
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
     let envelop_from = envelop_from.replace("<", "").replace(">", "").to_lowercase().trim().to_string();
@@ -291,26 +321,13 @@ fn spam_checker_spf(message: &Message) -> Option<String> {
         return Some("invalid-envelop-from".to_string());
     }
 
-    let query_result =
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                let resolver = MyDNSResolver::new();
-                resolver.lookup(domain, "TXT".to_string()).await
-            });
     let spf_record;
-    if let Ok(txt_records) = query_result {
-        let spf_records: Vec<String> = txt_records.into_iter().filter(|s| s.starts_with("v=spf1 ")).collect();
-        if spf_records.len() == 0 {
-            return None;
-        }
-        spf_record = spf_records[0].clone(); // ignore multiple records (invalid DNS setting)
+    if let Some(s) = dns_query_spf(&domain) {
+        spf_record = s;
     } else {
         return None;
     }
-    println!("spf_record: {}", spf_record);
+
     lazy_static! {
         static ref REGEX_SPF_INCLUDE_IPV6_SINGLE: Regex = Regex::new(r"^[+]?ip6:([:0-9a-f]+)$").unwrap();
         static ref REGEX_SPF_INCLUDE_IPV4_SINGLE: Regex = Regex::new(r"^[+]?ip4:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$").unwrap();
