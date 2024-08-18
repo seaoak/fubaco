@@ -370,14 +370,9 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             if let IpAddr::V4(target) = source_ip {
                 if let Ok(records) = dns_query_simple(domain, "A") {
                     for record in records {
-                        if let Ok(addr) = record.parse::<Ipv4Addr>() {
-                            if addr == *target {
-                                return SPFResult::PASS;
-                            }
-                        } else {
-                            // ignore parse error of A record
-                        }
+                        fields.push(format!("+ip4:{}", record));
                     }
+                    continue;
                 } else {
                     return SPFResult::TEMPERROR;
                 }
