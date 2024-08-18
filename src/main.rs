@@ -331,6 +331,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
     }
     let mut fields: Vec<String> = spf_record.split(" ").filter(|s| s.len() > 0).map(|s| s.to_string()).collect();
     fields.reverse();
+    assert_eq!(fields.pop(), Some("v=spf1".to_string()));
     while let Some(field) = fields.pop() {
         if field == "~all" {
             return SPFResult::SOFTFAIL;
