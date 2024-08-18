@@ -306,7 +306,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             let addr = caps[1].to_string();
             let addr = addr.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
             if addr == Ipv4Addr::UNSPECIFIED {
-                return Some("spf-permerror".to_string()); // abort immediately
+                return Some("spf-permerror".to_string()); // syntax error (abort immediately)
             }
             if let IpAddr::V4(target) = source_ip {
                 if *target == addr {
@@ -319,11 +319,11 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             let addr = caps[1].to_string();
             let addr = addr.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
             if addr == Ipv4Addr::UNSPECIFIED {
-                return Some("spf-permerror".to_string()); // abort immediately
+                return Some("spf-permerror".to_string()); // syntax error (abort immediately)
             }
             let bitmask_len = usize::from_str_radix(&caps[2].to_string(), 10).unwrap_or(0);
             if bitmask_len == 0 || bitmask_len > 32 {
-                return Some("spf-permerror".to_string()); // abort immediately
+                return Some("spf-permerror".to_string()); // syntax error (abort immediately)
             }
             let bitmask = 0xffffffffu32 << (32 - bitmask_len);
             if let IpAddr::V4(target) = source_ip {
@@ -342,7 +342,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 fields.extend(nested_fields.into_iter());
                 continue;
             } else {
-                return Some("spf-permerror".to_string()); // abort immediately
+                return Some("spf-permerror".to_string()); // invalid field (abort immediately)
             }
         }
         if let Some(caps) = REGEX_SPF_INCLUDE_DOMAIN.captures(&field) {
