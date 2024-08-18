@@ -312,6 +312,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
 
     lazy_static! {
         static ref REGEX_SPF_INCLUDE_IPV6_SINGLE: Regex = Regex::new(r"^[+]?ip6:([:0-9a-f]+)$").unwrap();
+        static ref REGEX_SPF_INCLUDE_IPV6_RANGE: Regex = Regex::new(r"^[+]?ip6:([:0-9a-f]+)[/]([1-9][0-9]*)$").unwrap();
         static ref REGEX_SPF_INCLUDE_IPV4_SINGLE: Regex = Regex::new(r"^[+]?ip4:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$").unwrap();
         static ref REGEX_SPF_INCLUDE_IPV4_RANGE: Regex = Regex::new(r"^[+]?ip4:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)[/]([1-9][0-9]*)$").unwrap();
         static ref REGEX_SPF_REDIRECT_DOMAIN: Regex = Regex::new(r"^redirect=([_a-z0-9]([-_a-z0-9]*[a-z0-9])?([.][a-z0-9]([-_a-z0-9]*[a-z0-9])?)*)$").unwrap();
@@ -346,11 +347,20 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 // TODO
             }
         }
-        if let Some(caps) = REGEX_SPF_INCLUDE_IPV6_SINGLE.captures(&field) {
-            let addr = caps[1].to_string();
-
-
-
+        if field == "mx" {
+            // TODO
+        }
+        if field == "ptr" {
+            // TODO
+        }
+        if field.starts_with("+ip6:") || field.starts_with("ip6:") {
+            if let Some(caps) = REGEX_SPF_INCLUDE_IPV6_SINGLE.captures(&field) {
+                // TODO
+            } else if let Some(caps) = REGEX_SPF_INCLUDE_IPV6_RANGE.captures(&field) {
+                // TODO
+            } else {
+                return Some("spf-permerror".to_string()); // syntax error (abort immediately)
+            }
         }
         if let Some(caps) = REGEX_SPF_INCLUDE_IPV4_SINGLE.captures(&field) {
             let addr = caps[1].to_string();
