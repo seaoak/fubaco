@@ -247,7 +247,7 @@ fn test_rustls_simple_client() -> Result<()> {
     Ok(())
 }
 
-fn dns_query_spf(fqdn: &String) -> Option<String> {
+fn dns_query_spf(fqdn: &String) -> Result<Option<String>> {
     let query_result =
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -257,14 +257,9 @@ fn dns_query_spf(fqdn: &String) -> Option<String> {
                 let resolver = MyDNSResolver::new();
                 resolver.lookup(fqdn.to_string(), "TXT".to_string()).await
             });
-    let spf_records: Vec<String>;
-    if let Ok(txt_records) = query_result {
-        spf_records = txt_records.into_iter().filter(|s| s.starts_with("v=spf1 ")).collect();
-    } else {
-        return None;
-    }
+    let spf_records: Vec<String> = query_result?.into_iter().filter(|s| s.starts_with("v=spf1 ")).collect();
     if spf_records.len() == 0 {
-        return None;
+        return Ok(None);
     }
     {
         let mut remark = "";
@@ -274,10 +269,10 @@ fn dns_query_spf(fqdn: &String) -> Option<String> {
         }
     }
     let spf_record = spf_records[0].clone(); // ignore multiple records (invalid DNS setting)
-    Some(spf_record)
+    Ok(Some(spf_record))
 }
 
-fn dns_query_ipv4(fqdn: &String) -> Option<Vec<String>> {
+fn dns_query_ipv4(fqdn: &String) -> Result<Vec<String>> { // Vec may be empty
     let query_result =
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -287,19 +282,11 @@ fn dns_query_ipv4(fqdn: &String) -> Option<Vec<String>> {
                 let resolver = MyDNSResolver::new();
                 resolver.lookup(fqdn.to_string(), "A".to_string()).await
             });
-    let records: Vec<String>;
-    if let Ok(txt_records) = query_result {
-        records = txt_records;
-    } else {
-        return None;
-    }
-    if records.len() == 0 {
-        return None;
-    }
+    let records = query_result?; // may be empty
     for s in &records {
         println!("dns_A_record: {} {}", fqdn, s);
     }
-    Some(records)
+    Ok(records)
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -328,10 +315,10 @@ impl std::fmt::Display for SPFResult {
 
 fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -> Option<SPFResult> {
     let spf_record;
-    if let Some(s) = dns_query_spf(&domain.to_string()) {
-        spf_record = s;
-    } else {
-        return None;
+    match dns_query_spf(&domain.to_string()) {
+        Ok(Some(s)) => spf_record = s,
+        Ok(None) => return None,
+        Err(_e) => return Some(SPFResult::TEMPERROR),
     }
 
     lazy_static! {
@@ -354,7 +341,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
         }
         if field == "a" {
             if let IpAddr::V4(target) = source_ip {
-                if let Some(records) = dns_query_ipv4(&domain.to_string()) {
+                if let Ok(records) = dns_query_ipv4(&domain.to_string()) {
                     for record in records {
                         if let Ok(addr) = record.parse::<Ipv4Addr>() {
                             if addr == *target {
@@ -365,6 +352,8 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                             // ignore parse error of A record
                         }
                     }
+                } else {
+                    return Some(SPFResult::TEMPERROR);
                 }
             }
             if let IpAddr::V6(target) = source_ip {
@@ -417,15 +406,16 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
         }
         if let Some(caps) = REGEX_SPF_REDIRECT_DOMAIN.captures(&field) {
             let domain = caps[1].to_string();
-            if let Some(s) = dns_query_spf(&domain) {
-                let nested_spf = s;
-                let mut nested_fields: Vec<String> = nested_spf.split(" ").filter(|s| s.len() > 0).map(|s| s.to_string()).collect();
-                nested_fields.reverse();
-                fields.extend(nested_fields.into_iter());
-                continue;
-            } else {
-                return Some(SPFResult::PERMERROR); // invalid field (abort immediately)
+            let nested_spf;
+            match dns_query_spf(&domain) {
+                Ok(Some(s)) => nested_spf = s,
+                Ok(None) => return Some(SPFResult::PERMERROR), // invalid field (abort immediately)
+                Err(_e) => return Some(SPFResult::TEMPERROR), // internal error
             }
+            let mut nested_fields: Vec<String> = nested_spf.split(" ").filter(|s| s.len() > 0).map(|s| s.to_string()).collect();
+            nested_fields.reverse();
+            fields.extend(nested_fields.into_iter());
+            continue;
         }
         if let Some(caps) = REGEX_SPF_INCLUDE_DOMAIN.captures(&field) {
             let domain = caps[1].to_string();
@@ -438,7 +428,10 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 if s == SPFResult::PERMERROR {
                     return Some(SPFResult::PERMERROR);
                 }
-                // "spf-temperror" and "spf-softfail" are ignored
+                if s == SPFResult::TEMPERROR {
+                    return Some(SPFResult::TEMPERROR);
+                }
+                // "spf-fail" and "spf-softfail" are ignored
             }
         }
     }
