@@ -277,6 +277,31 @@ fn dns_query_spf(fqdn: &String) -> Option<String> {
     Some(spf_record)
 }
 
+fn dns_query_ipv4(fqdn: &String) -> Option<Vec<String>> {
+    let query_result =
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let resolver = MyDNSResolver::new();
+                resolver.lookup(fqdn.to_string(), "A".to_string()).await
+            });
+    let records: Vec<String>;
+    if let Ok(txt_records) = query_result {
+        records = txt_records;
+    } else {
+        return None;
+    }
+    if records.len() == 0 {
+        return None;
+    }
+    for s in &records {
+        println!("dns_A_record: {} {}", fqdn, s);
+    }
+    Some(records)
+}
+
 fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -> Option<String> {
     let spf_record;
     if let Some(s) = dns_query_spf(&domain.to_string()) {
@@ -301,6 +326,25 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
         }
         if field == "-all" {
             return Some("spf-fail".to_string());
+        }
+        if field == "a" {
+            if let IpAddr::V4(target) = source_ip {
+                if let Some(records) = dns_query_ipv4(&domain.to_string()) {
+                    for record in records {
+                        if let Ok(addr) = record.parse::<Ipv4Addr>() {
+                            if addr == *target {
+                                is_matched = true;
+                                break;
+                            }
+                        } else {
+                            // ignore parse error of A record
+                        }
+                    }
+                }
+            }
+            if let IpAddr::V6(target) = source_ip {
+                // TODO
+            }
         }
         if let Some(caps) = REGEX_SPF_INCLUDE_IPV6_SINGLE.captures(&field) {
             let addr = caps[1].to_string();
