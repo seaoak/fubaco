@@ -247,7 +247,7 @@ fn test_rustls_simple_client() -> Result<()> {
     Ok(())
 }
 
-fn dns_query_spf(fqdn: &String) -> Result<Option<String>> {
+fn dns_query_spf(fqdn: &str) -> Result<Option<String>> {
     let query_result =
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -272,7 +272,7 @@ fn dns_query_spf(fqdn: &String) -> Result<Option<String>> {
     Ok(Some(spf_record))
 }
 
-fn dns_query_ipv4(fqdn: &String) -> Result<Vec<String>> { // Vec may be empty
+fn dns_query_ipv4(fqdn: &str) -> Result<Vec<String>> { // Vec may be empty
     let query_result =
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -289,7 +289,7 @@ fn dns_query_ipv4(fqdn: &String) -> Result<Vec<String>> { // Vec may be empty
     Ok(records)
 }
 
-fn dns_query_mx(fqdn: &String) -> Result<Vec<String>> { // Vec may be empty
+fn dns_query_mx(fqdn: &str) -> Result<Vec<String>> { // Vec may be empty
     let query_result =
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -342,7 +342,7 @@ impl std::fmt::Display for SPFResult {
 
 fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -> SPFResult {
     let spf_record;
-    match dns_query_spf(&domain.to_string()) {
+    match dns_query_spf(domain) {
         Ok(Some(s)) => spf_record = s,
         Ok(None) => return SPFResult::NONE,
         Err(_e) => return SPFResult::TEMPERROR,
@@ -368,7 +368,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
         }
         if field == "a" {
             if let IpAddr::V4(target) = source_ip {
-                if let Ok(records) = dns_query_ipv4(&domain.to_string()) {
+                if let Ok(records) = dns_query_ipv4(domain) {
                     for record in records {
                         if let Ok(addr) = record.parse::<Ipv4Addr>() {
                             if addr == *target {
@@ -387,7 +387,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             }
         }
         if field == "mx" {
-            let hosts = match dns_query_mx(&domain.to_string()) {
+            let hosts = match dns_query_mx(domain) {
                 Ok(v) => v,
                 Err(_e) => return SPFResult::TEMPERROR,
             };
