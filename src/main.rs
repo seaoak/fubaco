@@ -382,7 +382,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                     return SPFResult::TEMPERROR;
                 }
             }
-            if let IpAddr::V6(target) = source_ip {
+            if let IpAddr::V6(_target) = source_ip {
                 // TODO
             }
         }
@@ -414,9 +414,9 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             // TODO
         }
         if field.starts_with("+ip6:") || field.starts_with("ip6:") {
-            if let Some(caps) = REGEX_SPF_INCLUDE_IPV6_SINGLE.captures(&field) {
+            if let Some(_caps) = REGEX_SPF_INCLUDE_IPV6_SINGLE.captures(&field) {
                 // TODO
-            } else if let Some(caps) = REGEX_SPF_INCLUDE_IPV6_RANGE.captures(&field) {
+            } else if let Some(_caps) = REGEX_SPF_INCLUDE_IPV6_RANGE.captures(&field) {
                 // TODO
             } else {
                 return SPFResult::PERMERROR; // syntax error (abort immediately)
