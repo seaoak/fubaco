@@ -411,7 +411,36 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             }
         }
         if field == "ptr" {
-            // TODO
+            match source_ip {
+                IpAddr::V4(addr) => {
+                    let [u0, u1, u2, u3] = addr.octets();
+                    let name = format!("{}.{}.{}.{}.in-addr.arpa.", u3, u2, u1, u0);
+                    let mut hosts = Vec::new();
+                    match dns_query_simple(&name, "PTR") {
+                        Ok(v) => hosts.extend(v.into_iter()),
+                        Err(_e) => return SPFResult::TEMPERROR,
+                    }
+                    if hosts.len() != 1 {
+                        println!("can not get PTR record of: {} {}", name, hosts.len());
+                        return SPFResult::PERMERROR; // invalid DNS info
+                    }
+                    let host = hosts.pop().unwrap();
+                    if host.ends_with(domain) {
+                        let mut list = Vec::new();
+                        match dns_query_simple(&host, "A") {
+                            Ok(v) => list.extend(v.into_iter()),
+                            Err(_e) => return SPFResult::TEMPERROR,
+                        }
+                        for ip in list {
+                            fields.push(format!("+ip4:{}", ip));
+                        }
+                        continue;
+                    }
+                },
+                IpAddr::V6(_addr) => {
+                    // TODO
+                }
+            }
         }
         if field.starts_with("+ip6:") || field.starts_with("ip6:") {
             if let Some(_caps) = REGEX_SPF_INCLUDE_IPV6_SINGLE.captures(&field) {
