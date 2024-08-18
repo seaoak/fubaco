@@ -348,6 +348,9 @@ fn spam_checker_spf(message: &Message) -> Option<String> {
         if let Some(caps) = REGEX_SPF_INCLUDE_IPV4_SINGLE.captures(&field) {
             let addr = caps[1].to_string();
             let addr = addr.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
+            if addr == Ipv4Addr::UNSPECIFIED {
+                return Some("spf-permerror".to_string()); // abort immediately
+            }
             if let IpAddr::V4(target) = source_ip {
                 if target == addr {
                     is_matched = true;
@@ -358,7 +361,13 @@ fn spam_checker_spf(message: &Message) -> Option<String> {
         if let Some(caps) = REGEX_SPF_INCLUDE_IPV4_RANGE.captures(&field) {
             let addr = caps[1].to_string();
             let addr = addr.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
+            if addr == Ipv4Addr::UNSPECIFIED {
+                return Some("spf-permerror".to_string()); // abort immediately
+            }
             let bitmask_len = usize::from_str_radix(&caps[2].to_string(), 10).unwrap_or(0);
+            if bitmask_len == 0 || bitmask_len > 32 {
+                return Some("spf-permerror".to_string()); // abort immediately
+            }
             let bitmask = 0xffffffffu32 << (32 - bitmask_len);
             if let IpAddr::V4(target) = source_ip {
                 if target.to_bits() & bitmask == addr.to_bits() & bitmask {
