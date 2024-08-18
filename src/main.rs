@@ -106,6 +106,7 @@ fn make_fubaco_padding_header(nbytes: usize) -> String { // generate just-nbyte-
 }
 
 lazy_static! {
+    static ref REGEX_MAIL_ADDRESS: Regex = Regex::new(r"^([-._+=a-z0-9]+)[@]([0-9a-z]([-_0-9a-z]*[0-9a-z])?([.][0-9a-z]([-_0-9a-z]*[0-9a-z])?)+)$").unwrap();
     static ref REGEX_POP3_COMMAND_LINE_GENERAL: Regex = Regex::new(r"^([A-Z]+)(?: +(\S+)(?: +(\S+))?)? *\r\n$").unwrap();
     static ref REGEX_POP3_COMMAND_LINE_FOR_USER: Regex = Regex::new(r"^USER +(\S+) *\r\n$").unwrap();
     static ref REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND: Regex = Regex::new(r"^\+OK +(\S+) +(\S+) *\r\n$").unwrap();
@@ -244,6 +245,120 @@ fn test_rustls_simple_client() -> Result<()> {
     upstream_tls_stream.read_to_end(&mut plaintext)?;
     std::io::stdout().write_all(&plaintext)?;
     Ok(())
+}
+
+fn spam_checker_spf(message: &Message) -> Option<String> {
+    let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
+    let envelop_from = envelop_from.replace("<", "").replace(">", "").to_lowercase().trim().to_string();
+    println!("Evelop.from: \"{}\"", envelop_from);
+    if envelop_from.len() == 0 {
+        return None;
+    }
+    let mut source_ip = None;
+    {
+        for value in message.header_values("Received") {
+            if let mail_parser::HeaderValue::Received(received) = value {
+                if let Some(mail_parser::Host::Name(s)) = received.by() {
+                    if s.ends_with(".nifty.com") || s.ends_with(".mailbox.org") || s.ends_with(".gandi.net") || s.ends_with(".mxrouting.net") || s.ends_with(".google.com") {
+                        match received.from_ip() {
+                            Some(IpAddr::V4(addr)) => {
+                                source_ip = Some(IpAddr::V4(addr));
+                                break;
+                            }
+                            Some(IpAddr::V6(addr)) => {
+                                source_ip = Some(IpAddr::V6(addr));
+                                break;
+                            }
+                            _ => {
+                                // empty
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    if source_ip.is_none() {
+        return None;
+    }
+    let source_ip = source_ip.unwrap();
+    println!("source_ip: {}", source_ip);
+
+    let domain;
+    if let Some(caps) = REGEX_MAIL_ADDRESS.captures(&envelop_from) {
+        domain = caps[2].to_string();
+    } else {
+        return Some("invalid-envelop-from".to_string());
+    }
+
+    let query_result =
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let resolver = MyDNSResolver::new();
+                resolver.lookup(domain, "TXT".to_string()).await
+            });
+    let spf_record;
+    if let Ok(txt_records) = query_result {
+        let spf_records: Vec<String> = txt_records.into_iter().filter(|s| s.starts_with("v=spf1 ")).collect();
+        if spf_records.len() == 0 {
+            return None;
+        }
+        spf_record = spf_records[0].clone(); // ignore multiple records (invalid DNS setting)
+    } else {
+        return None;
+    }
+    println!("spf_record: {}", spf_record);
+    lazy_static! {
+        static ref REGEX_SPF_INCLUDE_IPV6_SINGLE: Regex = Regex::new(r"^[+]?ip6:([:0-9a-f]+)$").unwrap();
+        static ref REGEX_SPF_INCLUDE_IPV4_SINGLE: Regex = Regex::new(r"^[+]?ip4:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$").unwrap();
+        static ref REGEX_SPF_INCLUDE_IPV4_RANGE: Regex = Regex::new(r"^[+]?ip4:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)[/]([1-9][0-9]*)$").unwrap();
+        static ref REGEX_SPF_INCLUDE_DOMAIN: Regex = Regex::new(r"^include:([a-z0-9]([-_a-z0-9]*[a-z0-9])?([.][a-z0-9]([-_a-z0-9]*[a-z0-9])?)*)$").unwrap();
+    }
+    let fields: Vec<String> = spf_record.split(" ").filter(|s| s.len() > 0).map(|s| s.to_string()).collect();
+    let mut is_matched = false;
+    for field in fields {
+        if let Some(caps) = REGEX_SPF_INCLUDE_IPV6_SINGLE.captures(&field) {
+            let addr = caps[1].to_string();
+
+
+
+        }
+        if let Some(caps) = REGEX_SPF_INCLUDE_IPV4_SINGLE.captures(&field) {
+            let addr = caps[1].to_string();
+            let addr = addr.parse::<Ipv4Addr>().unwrap_or_else(|_err| Ipv4Addr::new(0, 0, 0, 0));
+            if let IpAddr::V4(target) = source_ip {
+                if target == addr {
+                    is_matched = true;
+                    break;
+                }
+            }
+        }
+        if let Some(caps) = REGEX_SPF_INCLUDE_IPV4_RANGE.captures(&field) {
+            let addr = caps[1].to_string();
+            let addr = addr.parse::<Ipv4Addr>().unwrap_or_else(|_err| Ipv4Addr::new(0, 0, 0, 0));
+            let bitmask_len = usize::from_str_radix(&caps[2].to_string(), 10).unwrap_or(0);
+            let bitmask = 0xffffffffu32 << (32 - bitmask_len);
+            if let IpAddr::V4(target) = source_ip {
+                if target.to_bits() & bitmask == addr.to_bits() & bitmask {
+                    is_matched = true;
+                    break;
+                }
+            }
+        }
+        if let Some(caps) = REGEX_SPF_INCLUDE_DOMAIN.captures(&field) {
+            let hostname = caps[1].to_string();
+
+
+
+        }
+    }
+    if is_matched {
+        return Some("spf-pass".to_string());
+    }
+    Some("spf-fail".to_string())
 }
 
 fn spam_checker_suspicious_envelop_from(message: &Message) -> Option<String> {
@@ -436,6 +551,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
         return Err(anyhow!("can not parse the message"));
     }
     let mut spam_judgement: Vec<String> = [
+        spam_checker_spf,
         spam_checker_suspicious_envelop_from,
         spam_checker_blacklist_tld,
         spam_checker_suspicious_from,
