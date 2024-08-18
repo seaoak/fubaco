@@ -309,16 +309,16 @@ impl std::fmt::Display for SPFResult {
             Self::PERMERROR => "spf-permerror",
             Self::TEMPERROR => "spf-temperror",
         };
-        write!(dest, "{:?}", s)
+        write!(dest, "{}", s)
     }
 }
 
-fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -> Option<SPFResult> {
+fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -> SPFResult {
     let spf_record;
     match dns_query_spf(&domain.to_string()) {
         Ok(Some(s)) => spf_record = s,
-        Ok(None) => return None,
-        Err(_e) => return Some(SPFResult::TEMPERROR),
+        Ok(None) => return SPFResult::NONE,
+        Err(_e) => return SPFResult::TEMPERROR,
     }
 
     lazy_static! {
@@ -331,13 +331,12 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
     }
     let mut fields: Vec<String> = spf_record.split(" ").filter(|s| s.len() > 0).map(|s| s.to_string()).collect();
     fields.reverse();
-    let mut is_matched = false;
     while let Some(field) = fields.pop() {
         if field == "~all" {
-            return Some(SPFResult::SOFTFAIL);
+            return SPFResult::SOFTFAIL;
         }
         if field == "-all" {
-            return Some(SPFResult::FAIL);
+            return SPFResult::FAIL;
         }
         if field == "a" {
             if let IpAddr::V4(target) = source_ip {
@@ -345,15 +344,14 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                     for record in records {
                         if let Ok(addr) = record.parse::<Ipv4Addr>() {
                             if addr == *target {
-                                is_matched = true;
-                                break;
+                                return SPFResult::PASS;
                             }
                         } else {
                             // ignore parse error of A record
                         }
                     }
                 } else {
-                    return Some(SPFResult::TEMPERROR);
+                    return SPFResult::TEMPERROR;
                 }
             }
             if let IpAddr::V6(target) = source_ip {
@@ -372,7 +370,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             } else if let Some(caps) = REGEX_SPF_INCLUDE_IPV6_RANGE.captures(&field) {
                 // TODO
             } else {
-                return Some(SPFResult::PERMERROR); // syntax error (abort immediately)
+                return SPFResult::PERMERROR; // syntax error (abort immediately)
             }
         }
         if field.starts_with("+ip4:") || field.starts_with("ip4:") {
@@ -387,20 +385,19 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 addr = arg.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
                 bitmask_len = usize::from_str_radix(&caps[2].to_string(), 10).unwrap_or(0);
             } else {
-                return Some(SPFResult::PERMERROR); // syntax error (abort immediately)
+                return SPFResult::PERMERROR; // syntax error (abort immediately)
             }
 
             if addr == Ipv4Addr::UNSPECIFIED {
-                return Some(SPFResult::PERMERROR); // syntax error (abort immediately)
+                return SPFResult::PERMERROR; // syntax error (abort immediately)
             }
             if bitmask_len == 0 || bitmask_len > 32 {
-                return Some(SPFResult::PERMERROR); // syntax error (abort immediately)
+                return SPFResult::PERMERROR; // syntax error (abort immediately)
             }
             let bitmask = 0xffffffffu32 << (32 - bitmask_len);
             if let IpAddr::V4(target) = source_ip {
                 if target.to_bits() & bitmask == addr.to_bits() & bitmask {
-                    is_matched = true;
-                    break;
+                    return SPFResult::PASS;
                 }
             }
         }
@@ -409,8 +406,8 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             let nested_spf;
             match dns_query_spf(&domain) {
                 Ok(Some(s)) => nested_spf = s,
-                Ok(None) => return Some(SPFResult::PERMERROR), // invalid field (abort immediately)
-                Err(_e) => return Some(SPFResult::TEMPERROR), // internal error
+                Ok(None) => return SPFResult::PERMERROR, // invalid field (abort immediately)
+                Err(_e) => return SPFResult::TEMPERROR, // internal error
             }
             let mut nested_fields: Vec<String> = nested_spf.split(" ").filter(|s| s.len() > 0).map(|s| s.to_string()).collect();
             nested_fields.reverse();
@@ -420,25 +417,17 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
         if let Some(caps) = REGEX_SPF_INCLUDE_DOMAIN.captures(&field) {
             let domain = caps[1].to_string();
             let result = spf_check_recursively(&domain, source_ip, envelop_from);
-            if let Some(s) = result {
-                if s == SPFResult::PASS {
-                    is_matched = true;
-                    break;
-                }
-                if s == SPFResult::PERMERROR {
-                    return Some(SPFResult::PERMERROR);
-                }
-                if s == SPFResult::TEMPERROR {
-                    return Some(SPFResult::TEMPERROR);
-                }
-                // "spf-fail" and "spf-softfail" are ignored
+            match result {
+                r @ SPFResult::PASS      => return r,
+                r @ SPFResult::PERMERROR => return r,
+                r @ SPFResult::TEMPERROR => return r,
+                SPFResult::NONE      => (), // ignored
+                SPFResult::FAIL      => (), // ignored
+                SPFResult::SOFTFAIL  => (), // ignored
             }
         }
     }
-    if is_matched {
-        return Some(SPFResult::PASS);
-    }
-    Some(SPFResult::NONE)
+    SPFResult::NONE
 }
 
 fn spam_checker_spf(message: &Message) -> Option<String> {
@@ -485,7 +474,7 @@ fn spam_checker_spf(message: &Message) -> Option<String> {
         return Some("invalid-envelop-from".to_string());
     }
 
-    return spf_check_recursively(&domain, &source_ip, &envelop_from).map(|r| r.to_string());
+    return Some(spf_check_recursively(&domain, &source_ip, &envelop_from).to_string());
 }
 
 fn spam_checker_suspicious_envelop_from(message: &Message) -> Option<String> {
