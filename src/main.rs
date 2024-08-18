@@ -296,6 +296,12 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
     fields.reverse();
     let mut is_matched = false;
     while let Some(field) = fields.pop() {
+        if field == "~all" {
+            return Some("spf-softfail".to_string());
+        }
+        if field == "-all" {
+            return Some("spf-fail".to_string());
+        }
         if let Some(caps) = REGEX_SPF_INCLUDE_IPV6_SINGLE.captures(&field) {
             let addr = caps[1].to_string();
 
@@ -356,14 +362,14 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 if s == "spf-permerror" {
                     return Some("spf-permerror".to_string());
                 }
-                // "spf-temperror" and "spf-softerror" are ignored
+                // "spf-temperror" and "spf-softfail" are ignored
             }
         }
     }
     if is_matched {
         return Some("spf-pass".to_string());
     }
-    Some("spf-fail".to_string())
+    Some("spf-none".to_string())
 }
 
 fn spam_checker_spf(message: &Message) -> Option<String> {
