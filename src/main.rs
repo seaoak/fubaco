@@ -362,26 +362,24 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 return Some("spf-permerror".to_string()); // syntax error (abort immediately)
             }
         }
-        if let Some(caps) = REGEX_SPF_INCLUDE_IPV4_SINGLE.captures(&field) {
-            let addr = caps[1].to_string();
-            let addr = addr.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
+        if field.starts_with("+ip4:") || field.starts_with("ip4:") {
+            let addr;
+            let bitmask_len;
+            if let Some(caps) = REGEX_SPF_INCLUDE_IPV4_SINGLE.captures(&field) {
+                let arg = caps[1].to_string();
+                addr = arg.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
+                bitmask_len = 32;
+            } else if let Some(caps) = REGEX_SPF_INCLUDE_IPV4_RANGE.captures(&field) {
+                let arg = caps[1].to_string();
+                addr = arg.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
+                bitmask_len = usize::from_str_radix(&caps[2].to_string(), 10).unwrap_or(0);
+            } else {
+                return Some("spf-permerror".to_string()); // syntax error (abort immediately)
+            }
+
             if addr == Ipv4Addr::UNSPECIFIED {
                 return Some("spf-permerror".to_string()); // syntax error (abort immediately)
             }
-            if let IpAddr::V4(target) = source_ip {
-                if *target == addr {
-                    is_matched = true;
-                    break;
-                }
-            }
-        }
-        if let Some(caps) = REGEX_SPF_INCLUDE_IPV4_RANGE.captures(&field) {
-            let addr = caps[1].to_string();
-            let addr = addr.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
-            if addr == Ipv4Addr::UNSPECIFIED {
-                return Some("spf-permerror".to_string()); // syntax error (abort immediately)
-            }
-            let bitmask_len = usize::from_str_radix(&caps[2].to_string(), 10).unwrap_or(0);
             if bitmask_len == 0 || bitmask_len > 32 {
                 return Some("spf-permerror".to_string()); // syntax error (abort immediately)
             }
