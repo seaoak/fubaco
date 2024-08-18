@@ -272,7 +272,7 @@ fn dns_query_spf(fqdn: &str) -> Result<Option<String>> {
     Ok(Some(spf_record))
 }
 
-fn dns_query_ipv4(fqdn: &str) -> Result<Vec<String>> { // Vec may be empty
+fn dns_query_simple(fqdn: &str, query_type: &str) -> Result<Vec<String>> { // Vec may be empty
     let query_result =
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -280,11 +280,11 @@ fn dns_query_ipv4(fqdn: &str) -> Result<Vec<String>> { // Vec may be empty
             .unwrap()
             .block_on(async {
                 let resolver = MyDNSResolver::new();
-                resolver.lookup(fqdn.to_string(), "A".to_string()).await
+                resolver.lookup(fqdn.to_string(), query_type.to_string()).await
             });
     let records = query_result?; // may be empty
     for s in &records {
-        println!("dns_A_record: {} {}", fqdn, s);
+        println!("dns_{}_record: {} {}", query_type, fqdn, s);
     }
     Ok(records)
 }
@@ -368,7 +368,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
         }
         if field == "a" {
             if let IpAddr::V4(target) = source_ip {
-                if let Ok(records) = dns_query_ipv4(domain) {
+                if let Ok(records) = dns_query_simple(domain, "A") {
                     for record in records {
                         if let Ok(addr) = record.parse::<Ipv4Addr>() {
                             if addr == *target {
@@ -395,7 +395,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 IpAddr::V4(_addr) => {
                     let mut list = Vec::new();
                     for host in hosts {
-                        match dns_query_ipv4(&host) {
+                        match dns_query_simple(&host, "A") {
                             Ok(v) => list.extend(v.into_iter()),
                             Err(_e) => return SPFResult::TEMPERROR,
                         }
