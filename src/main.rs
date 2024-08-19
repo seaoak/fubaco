@@ -394,24 +394,29 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 Ok(v) => v,
                 Err(_e) => return SPFResult::TEMPERROR,
             };
+            let query_type;
+            let prefix;
             match source_ip {
-                IpAddr::V4(_addr) => {
-                    let mut list = Vec::new();
-                    for host in hosts {
-                        match dns_query_simple(&host, "A") {
-                            Ok(v) => list.extend(v.into_iter()),
-                            Err(_e) => return SPFResult::TEMPERROR,
-                        }
-                    }
-                    for ip in list {
-                        fields.push(format!("+ipv4:{}", ip));
-                    }
-                    continue;
+                IpAddr::V4(_target) => {
+                    query_type = "A";
+                    prefix = "+ip4:";
                 },
-                IpAddr::V6(_addr) => {
-                    // TODO
-                },
+                IpAddr::V6(_target) => {
+                    query_type = "AAAA";
+                    prefix = "+ip6:";
+                }
             }
+            for host in hosts {
+                match dns_query_simple(&host, query_type) {
+                    Ok(records) => {
+                        for record in records {
+                            fields.push(format!("{}{}", prefix, record));
+                        }
+                    },
+                    Err(_e) => return SPFResult::TEMPERROR,
+                }
+            }
+            continue;
         }
         if field == "+exists" || field == "exists" {
             let hosts = match dns_query_simple(domain, "A") {
