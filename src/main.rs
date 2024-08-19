@@ -428,37 +428,46 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             }
         }
         if field == "+ptr" || field == "ptr" {
+            let name;
+            let query_type;
+            let prefix;
             match source_ip {
                 IpAddr::V4(addr) => {
                     let [u0, u1, u2, u3] = addr.octets();
-                    let name = format!("{}.{}.{}.{}.in-addr.arpa.", u3, u2, u1, u0);
-                    let mut hosts = Vec::new();
-                    match dns_query_simple(&name, "PTR") {
-                        Ok(v) => hosts.extend(v.into_iter()),
-                        Err(_e) => return SPFResult::TEMPERROR,
-                    }
-                    if hosts.len() != 1 {
-                        println!("can not get PTR record of: {} {}", name, hosts.len());
-                        return SPFResult::PERMERROR; // invalid DNS info
-                    }
-                    let host = hosts.pop().unwrap();
-                    let postfix = if host.ends_with(".") { "." } else { "" };
-                    let target = format!("{}{}", domain, postfix);
-                    if host.ends_with(&target) {
-                        let mut list = Vec::new();
-                        match dns_query_simple(&host, "A") {
-                            Ok(v) => list.extend(v.into_iter()),
-                            Err(_e) => return SPFResult::TEMPERROR,
-                        }
-                        for ip in list {
-                            fields.push(format!("+ip4:{}", ip));
-                        }
-                        continue;
-                    }
+                    name = format!("{}.{}.{}.{}.in-addr.arpa.", u3, u2, u1, u0);
+                    query_type = "A";
+                    prefix = "+ip4:";
                 },
-                IpAddr::V6(_addr) => {
-                    // TODO
+                IpAddr::V6(addr) => {
+                    let s = format!("{:032x}", addr.to_bits());
+                    let list: Vec<String> = s.chars().rev().map(|c| String::from(c)).collect();
+                    name = format!("{}.ip6.arpa.", list.join("."));
+                    query_type = "AAAA";
+                    prefix = "+ip6:";
                 }
+            }
+            let mut hosts = Vec::new();
+            match dns_query_simple(&name, "PTR") {
+                Ok(v) => hosts.extend(v.into_iter()),
+                Err(_e) => return SPFResult::TEMPERROR,
+            }
+            if hosts.len() != 1 {
+                println!("can not get PTR record of: {} {}", name, hosts.len());
+                return SPFResult::PERMERROR; // invalid DNS info
+            }
+            let host = hosts.pop().unwrap();
+            let postfix = if host.ends_with(".") { "." } else { "" };
+            let target = format!("{}{}", domain, postfix);
+            if host.ends_with(&target) {
+                let mut list = Vec::new();
+                match dns_query_simple(&host, query_type) {
+                    Ok(v) => list.extend(v.into_iter()),
+                    Err(_e) => return SPFResult::TEMPERROR,
+                }
+                for ip in list {
+                    fields.push(format!("{}{}", prefix, ip));
+                }
+                continue;
             }
         }
         if field.starts_with("+ip6:") || field.starts_with("ip6:") {
