@@ -423,7 +423,9 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                         return SPFResult::PERMERROR; // invalid DNS info
                     }
                     let host = hosts.pop().unwrap();
-                    if host.ends_with(domain) {
+                    let postfix = if host.ends_with(".") { "." } else { "" };
+                    let target = format!("{}{}", domain, postfix);
+                    if host.ends_with(&target) {
                         let mut list = Vec::new();
                         match dns_query_simple(&host, "A") {
                             Ok(v) => list.extend(v.into_iter()),
