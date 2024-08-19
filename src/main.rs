@@ -476,11 +476,11 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             if let Some(caps) = REGEX_SPF_INCLUDE_IPV4_SINGLE.captures(&field) {
                 let arg = caps[1].to_string();
                 addr = arg.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
-                bitmask_len = 32;
+                bitmask_len = Ipv4Addr::BITS;
             } else if let Some(caps) = REGEX_SPF_INCLUDE_IPV4_RANGE.captures(&field) {
                 let arg = caps[1].to_string();
                 addr = arg.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
-                bitmask_len = usize::from_str_radix(&caps[2].to_string(), 10).unwrap_or(0);
+                bitmask_len = u32::from_str_radix(&caps[2].to_string(), 10).unwrap_or(0);
             } else {
                 println!("ip4 syntex error: \"{}\"", field);
                 return SPFResult::PERMERROR; // syntax error (abort immediately)
@@ -490,11 +490,11 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 println!("ip4 address parse error: \"{}\"", field);
                 return SPFResult::PERMERROR; // syntax error (abort immediately)
             }
-            if bitmask_len == 0 || bitmask_len > 32 {
+            if bitmask_len == 0 || bitmask_len > Ipv4Addr::BITS {
                 println!("ip4 netmask parse error: \"{}\"", field);
                 return SPFResult::PERMERROR; // syntax error (abort immediately)
             }
-            let bitmask = 0xffffffffu32 << (32 - bitmask_len);
+            let bitmask = (!0u32) << (Ipv4Addr::BITS - bitmask_len);
             if let IpAddr::V4(target) = source_ip {
                 if target.to_bits() & bitmask == addr.to_bits() & bitmask {
                     return SPFResult::PASS;
