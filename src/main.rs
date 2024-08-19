@@ -366,7 +366,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
         if field == "-all" {
             return SPFResult::FAIL;
         }
-        if field == "a" {
+        if field == "+a" || field == "a" {
             match source_ip {
                 IpAddr::V4(_target) => {
                     match dns_query_simple(domain, "A") {
@@ -384,7 +384,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 }
             }
         }
-        if field == "mx" {
+        if field == "+mx" || field == "mx" {
             let hosts = match dns_query_mx(domain) {
                 Ok(v) => v,
                 Err(_e) => return SPFResult::TEMPERROR,
@@ -408,7 +408,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 },
             }
         }
-        if field == "ptr" {
+        if field == "+ptr" || field == "ptr" {
             match source_ip {
                 IpAddr::V4(addr) => {
                     let [u0, u1, u2, u3] = addr.octets();
