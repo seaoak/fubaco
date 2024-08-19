@@ -408,6 +408,15 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 },
             }
         }
+        if field == "+exists" || field == "exists" {
+            let hosts = match dns_query_simple(domain, "A") {
+                Ok(v) => v,
+                Err(_e) => return SPFResult::TEMPERROR,
+            };
+            if hosts.len() > 0 {
+                return SPFResult::PASS;
+            }
+        }
         if field == "+ptr" || field == "ptr" {
             match source_ip {
                 IpAddr::V4(addr) => {
