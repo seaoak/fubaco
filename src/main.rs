@@ -367,23 +367,28 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             return SPFResult::FAIL;
         }
         if field == "+a" || field == "a" {
+            let query_type;
+            let prefix;
             match source_ip {
                 IpAddr::V4(_target) => {
-                    match dns_query_simple(domain, "A") {
-                        Ok(records) => {
-                            for record in records {
-                                fields.push(format!("+ip4:{}", record));
-                            }
-                            continue;
-                        },
-                        Err(_e) => return SPFResult::TEMPERROR,
-                    }
+                    query_type = "A";
+                    prefix = "+ip4:";
                 },
                 IpAddr::V6(_target) => {
-                    // TODO
+                    query_type = "AAAA";
+                    prefix = "+ip6:";
                 }
             }
-        }
+            match dns_query_simple(domain, query_type) {
+                Ok(records) => {
+                    for record in records {
+                        fields.push(format!("{}{}", prefix, record));
+                    }
+                    continue;
+                },
+                Err(_e) => return SPFResult::TEMPERROR,
+            }
+}
         if field == "+mx" || field == "mx" {
             let hosts = match dns_query_mx(domain) {
                 Ok(v) => v,
