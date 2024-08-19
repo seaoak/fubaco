@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, ErrorKind, Read, Write};
-use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpListener, TcpStream};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -462,12 +462,34 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             }
         }
         if field.starts_with("+ip6:") || field.starts_with("ip6:") {
-            if let Some(_caps) = REGEX_SPF_INCLUDE_IPV6_SINGLE.captures(&field) {
-                // TODO
-            } else if let Some(_caps) = REGEX_SPF_INCLUDE_IPV6_RANGE.captures(&field) {
-                // TODO
+            let addr;
+            let bitmask_len;
+            if let Some(caps) = REGEX_SPF_INCLUDE_IPV6_SINGLE.captures(&field) {
+                let arg = caps[1].to_string();
+                addr = arg.parse::<Ipv6Addr>().unwrap_or(Ipv6Addr::UNSPECIFIED);
+                bitmask_len = Ipv6Addr::BITS;
+            } else if let Some(caps) = REGEX_SPF_INCLUDE_IPV6_RANGE.captures(&field) {
+                let arg = caps[1].to_string();
+                addr = arg.parse::<Ipv6Addr>().unwrap_or(Ipv6Addr::UNSPECIFIED);
+                bitmask_len = u32::from_str_radix(&caps[2].to_string(), 10).unwrap_or(0);
             } else {
+                println!("ip6 syntax error: \"{}\"", field);
                 return SPFResult::PERMERROR; // syntax error (abort immediately)
+            }
+
+            if addr == Ipv6Addr::UNSPECIFIED {
+                println!("ip6 address parse error: \"{}\"", field);
+                return SPFResult::PERMERROR;
+            }
+            if bitmask_len == 0 || bitmask_len > Ipv6Addr::BITS {
+                println!("ip6 netmask parse error: \"{}\"", field);
+                return SPFResult::PERMERROR;
+            }
+            let bitmask = (!0u128) << (Ipv6Addr::BITS - bitmask_len);
+            if let IpAddr::V6(target) = source_ip {
+                if target.to_bits() & bitmask == addr.to_bits() & bitmask {
+                    return SPFResult::PASS;
+                }
             }
         }
         if field.starts_with("+ip4:") || field.starts_with("ip4:") {
