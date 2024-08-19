@@ -388,7 +388,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 },
                 Err(_e) => return SPFResult::TEMPERROR,
             }
-}
+        }
         if field == "+mx" || field == "mx" {
             let hosts = match dns_query_mx(domain) {
                 Ok(v) => v,
