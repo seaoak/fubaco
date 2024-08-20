@@ -573,7 +573,17 @@ fn spam_checker_spf(message: &Message) -> Option<String> {
         for value in message.header_values("Received") {
             if let mail_parser::HeaderValue::Received(received) = value {
                 if let Some(mail_parser::Host::Name(s)) = received.by() {
-                    if s.ends_with(".nifty.com") || s.ends_with(".mailbox.org") || s.ends_with(".gandi.net") || s.ends_with(".mxrouting.net") || s.ends_with(".google.com") {
+                    if s == "niftygreeting" || s.ends_with(".nifty.com") || s.ends_with(".mailbox.org") || s.ends_with(".gandi.net") || s.ends_with(".mxrouting.net") || s.ends_with(".google.com") {
+                        println!("DEBUG: received.from(): \"{:?}\"", received.from());
+                        if let Some(mail_parser::Host::Name(ss)) = received.from() {
+                            lazy_static! {
+                                static ref REGEX_NIFTY_MAILSERVER: Regex = Regex::new(r"^concspmx-\d+$").unwrap();
+                            }
+                            if s.ends_with(".nifty.com") && REGEX_NIFTY_MAILSERVER.is_match(ss) {
+                                println!("skip \"Receivec\" header (internal relay in nifty)");
+                                continue; // skip (internal relay in nifty)
+                            }
+                        }
                         match received.from_ip() {
                             Some(IpAddr::V4(addr)) => {
                                 source_ip = Some(IpAddr::V4(addr));
