@@ -558,6 +558,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             }
             let mut nested_fields: Vec<String> = nested_spf.split(" ").filter(|s| s.len() > 0).map(|s| s.to_string()).collect();
             nested_fields.reverse();
+            assert_eq!(nested_fields.pop(), Some("v=spf1".to_string()));
             fields.extend(nested_fields.into_iter());
             continue;
         }
