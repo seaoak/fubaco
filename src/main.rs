@@ -3,6 +3,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, ErrorKind, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpListener, TcpStream};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -466,66 +467,85 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 continue;
             }
         }
-        if field.starts_with("+ip6:") || field.starts_with("ip6:") {
-            lazy_static! {
-                static ref REGEX_SPF_INCLUDE_IPV6: Regex = Regex::new(r"^[+]?ip6:([:0-9a-f]+)([/]([1-9][0-9]*))?$").unwrap();
-            }
-            let addr;
-            let bitmask_len;
-            if let Some(caps) = REGEX_SPF_INCLUDE_IPV6.captures(&field) {
-                let arg1 = caps[1].to_string();
-                addr = arg1.parse::<Ipv6Addr>().unwrap_or(Ipv6Addr::UNSPECIFIED);
-                let arg3 = caps.get(3).map_or(Ipv6Addr::BITS.to_string(), |s| s.as_str().to_string());
-                bitmask_len = u32::from_str_radix(&arg3, 10).unwrap_or(0);
-            } else {
-                println!("ip6 syntax error: \"{}\"", field);
-                return SPFResult::PERMERROR; // syntax error (abort immediately)
-            }
 
-            if addr == Ipv6Addr::UNSPECIFIED {
-                println!("ip6 address parse error: \"{}\"", field);
-                return SPFResult::PERMERROR;
-            }
-            if bitmask_len == 0 || bitmask_len > Ipv6Addr::BITS {
-                println!("ip6 netmask parse error: \"{}\"", field);
-                return SPFResult::PERMERROR;
-            }
-            let bitmask = (!0u128) << (Ipv6Addr::BITS - bitmask_len);
-            if let IpAddr::V6(target) = source_ip {
-                if target.to_bits() & bitmask == addr.to_bits() & bitmask {
-                    return SPFResult::PASS;
-                }
+        trait MyIpAddr where Self: Eq + FromStr {
+            const BITS: u32;
+            const UNSPECIFIED: Self;
+            fn to_bits(self) -> u128;
+        }
+        impl MyIpAddr for Ipv4Addr {
+            const BITS: u32 = Ipv4Addr::BITS;
+            const UNSPECIFIED: Self = Ipv4Addr::UNSPECIFIED;
+            fn to_bits(self) -> u128 {
+                Ipv4Addr::to_bits(self) as u128
             }
         }
-        if field.starts_with("+ip4:") || field.starts_with("ip4:") {
-            lazy_static! {
-                static ref REGEX_SPF_INCLUDE_IPV4: Regex = Regex::new(r"^[+]?ip4:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)([/]([1-9][0-9]*))?$").unwrap();
+        impl MyIpAddr for Ipv6Addr {
+            const BITS: u32 = Ipv6Addr::BITS;
+            const UNSPECIFIED: Self = Ipv6Addr::UNSPECIFIED;
+            fn to_bits(self) -> u128 {
+                Ipv6Addr::to_bits(self)
             }
+        }
+        fn process_ip_field<I: MyIpAddr>(prefix: &str, regex: &Regex, source_ip: &IpAddr, field: &str) -> Option<SPFResult> {
             let addr;
             let bitmask_len;
-            if let Some(caps) = REGEX_SPF_INCLUDE_IPV4.captures(&field) {
+            if let Some(caps) = regex.captures(field) {
                 let arg1 = caps[1].to_string();
-                addr = arg1.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
-                let arg3 = caps.get(3).map_or(Ipv4Addr::BITS.to_string(), |s| s.as_str().to_string());
+                addr = arg1.parse::<I>().unwrap_or(I::UNSPECIFIED);
+                let arg3 = caps.get(3).map_or(I::BITS.to_string(), |s| s.as_str().to_string());
                 bitmask_len = u32::from_str_radix(&arg3, 10).unwrap_or(0);
             } else {
-                println!("ip4 syntex error: \"{}\"", field);
-                return SPFResult::PERMERROR; // syntax error (abort immediately)
+                println!("{} syntax error: \"{}\"", prefix, field);
+                return Some(SPFResult::PERMERROR); // syntax error (abort immediately)
             }
 
-            if addr == Ipv4Addr::UNSPECIFIED {
-                println!("ip4 address parse error: \"{}\"", field);
-                return SPFResult::PERMERROR; // syntax error (abort immediately)
+            if addr == I::UNSPECIFIED {
+                println!("{} address parse error: \"{}\"", prefix, field);
+                return Some(SPFResult::PERMERROR);
             }
-            if bitmask_len == 0 || bitmask_len > Ipv4Addr::BITS {
-                println!("ip4 netmask parse error: \"{}\"", field);
-                return SPFResult::PERMERROR; // syntax error (abort immediately)
+            if bitmask_len == 0 || bitmask_len > I::BITS {
+                println!("{} netmask parse error: \"{}\"", prefix, field);
+                return Some(SPFResult::PERMERROR);
             }
-            let bitmask = (!0u32) << (Ipv4Addr::BITS - bitmask_len);
-            if let IpAddr::V4(target) = source_ip {
-                if target.to_bits() & bitmask == addr.to_bits() & bitmask {
-                    return SPFResult::PASS;
-                }
+            let bits;
+            let bit_expression;
+            match source_ip {
+                IpAddr::V4(target) => {
+                    bits = Ipv4Addr::BITS;
+                    bit_expression = target.to_bits() as u128;
+                },
+                IpAddr::V6(target) => {
+                    bits = Ipv6Addr::BITS;
+                    bit_expression = target.to_bits();
+                },
+            }
+            if bits != I::BITS {
+                return None;
+            }
+            let bitmask = (!0u128) << (I::BITS - bitmask_len);
+            let left = bit_expression;
+            let right = addr.to_bits() as u128; // may be cast
+            if left & bitmask == right & bitmask {
+                return Some(SPFResult::PASS);
+            }
+            None
+        }
+
+        if field.starts_with("+ip4:") || field.starts_with("ip4:") {
+            lazy_static! {
+                static ref REGEX_SPF_IPV4: Regex = Regex::new(r"^[+]?ip4:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)([/]([1-9][0-9]*))?$").unwrap();
+            }
+            if let Some(result) = process_ip_field::<Ipv4Addr>("ip4", &REGEX_SPF_IPV4, source_ip, &field) {
+                return result;
+            }
+        }
+        if field.starts_with("+ip6:") || field.starts_with("ip6:") {
+            lazy_static! {
+                static ref REGEX_SPF_IPV6: Regex = Regex::new(r"^[+]?ip6:([:0-9a-f]+)([/]([1-9][0-9]*))?$").unwrap();
+            }
+            if let Some(result) = process_ip_field::<Ipv6Addr>("ip6", &REGEX_SPF_IPV6, source_ip, &field) {
+                return result;
             }
         }
         if let Some(caps) = REGEX_SPF_REDIRECT_DOMAIN.captures(&field) {
