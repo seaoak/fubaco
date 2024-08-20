@@ -349,10 +349,6 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
     }
 
     lazy_static! {
-        static ref REGEX_SPF_INCLUDE_IPV6_SINGLE: Regex = Regex::new(r"^[+]?ip6:([:0-9a-f]+)$").unwrap();
-        static ref REGEX_SPF_INCLUDE_IPV6_RANGE: Regex = Regex::new(r"^[+]?ip6:([:0-9a-f]+)[/]([1-9][0-9]*)$").unwrap();
-        static ref REGEX_SPF_INCLUDE_IPV4_SINGLE: Regex = Regex::new(r"^[+]?ip4:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$").unwrap();
-        static ref REGEX_SPF_INCLUDE_IPV4_RANGE: Regex = Regex::new(r"^[+]?ip4:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)[/]([1-9][0-9]*)$").unwrap();
         static ref REGEX_SPF_REDIRECT_DOMAIN: Regex = Regex::new(r"^redirect=([_a-z0-9]([-_a-z0-9]*[a-z0-9])?([.][a-z0-9]([-_a-z0-9]*[a-z0-9])?)*)$").unwrap();
         static ref REGEX_SPF_INCLUDE_DOMAIN: Regex = Regex::new(r"^include:([_a-z0-9]([-_a-z0-9]*[a-z0-9])?([.][a-z0-9]([-_a-z0-9]*[a-z0-9])?)*)$").unwrap();
     }
@@ -471,16 +467,16 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             }
         }
         if field.starts_with("+ip6:") || field.starts_with("ip6:") {
+            lazy_static! {
+                static ref REGEX_SPF_INCLUDE_IPV6: Regex = Regex::new(r"^[+]?ip6:([:0-9a-f]+)([/]([1-9][0-9]*))?$").unwrap();
+            }
             let addr;
             let bitmask_len;
-            if let Some(caps) = REGEX_SPF_INCLUDE_IPV6_SINGLE.captures(&field) {
-                let arg = caps[1].to_string();
-                addr = arg.parse::<Ipv6Addr>().unwrap_or(Ipv6Addr::UNSPECIFIED);
-                bitmask_len = Ipv6Addr::BITS;
-            } else if let Some(caps) = REGEX_SPF_INCLUDE_IPV6_RANGE.captures(&field) {
-                let arg = caps[1].to_string();
-                addr = arg.parse::<Ipv6Addr>().unwrap_or(Ipv6Addr::UNSPECIFIED);
-                bitmask_len = u32::from_str_radix(&caps[2].to_string(), 10).unwrap_or(0);
+            if let Some(caps) = REGEX_SPF_INCLUDE_IPV6.captures(&field) {
+                let arg1 = caps[1].to_string();
+                addr = arg1.parse::<Ipv6Addr>().unwrap_or(Ipv6Addr::UNSPECIFIED);
+                let arg3 = caps.get(3).map_or(Ipv6Addr::BITS.to_string(), |s| s.as_str().to_string());
+                bitmask_len = u32::from_str_radix(&arg3, 10).unwrap_or(0);
             } else {
                 println!("ip6 syntax error: \"{}\"", field);
                 return SPFResult::PERMERROR; // syntax error (abort immediately)
@@ -502,16 +498,16 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             }
         }
         if field.starts_with("+ip4:") || field.starts_with("ip4:") {
+            lazy_static! {
+                static ref REGEX_SPF_INCLUDE_IPV4: Regex = Regex::new(r"^[+]?ip4:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)([/]([1-9][0-9]*))?$").unwrap();
+            }
             let addr;
             let bitmask_len;
-            if let Some(caps) = REGEX_SPF_INCLUDE_IPV4_SINGLE.captures(&field) {
-                let arg = caps[1].to_string();
-                addr = arg.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
-                bitmask_len = Ipv4Addr::BITS;
-            } else if let Some(caps) = REGEX_SPF_INCLUDE_IPV4_RANGE.captures(&field) {
-                let arg = caps[1].to_string();
-                addr = arg.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
-                bitmask_len = u32::from_str_radix(&caps[2].to_string(), 10).unwrap_or(0);
+            if let Some(caps) = REGEX_SPF_INCLUDE_IPV4.captures(&field) {
+                let arg1 = caps[1].to_string();
+                addr = arg1.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::UNSPECIFIED);
+                let arg3 = caps.get(3).map_or(Ipv4Addr::BITS.to_string(), |s| s.as_str().to_string());
+                bitmask_len = u32::from_str_radix(&arg3, 10).unwrap_or(0);
             } else {
                 println!("ip4 syntex error: \"{}\"", field);
                 return SPFResult::PERMERROR; // syntax error (abort immediately)
