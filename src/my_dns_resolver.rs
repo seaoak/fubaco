@@ -1,3 +1,8 @@
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::sync::{Arc, Mutex};
+
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use rand;
@@ -12,6 +17,7 @@ lazy_static! {
 #[derive(Debug)]
 pub struct MyDNSResolver {
     client: reqwest::Client,
+    cache: Arc<Mutex<HashMap<String, Vec<String>>>>,
 }
 
 impl MyDNSResolver {
@@ -23,8 +29,11 @@ impl MyDNSResolver {
             .https_only(true)
             .build()
             .unwrap();
+        let cache: HashMap<String, Vec<String>> = serde_json::from_str(&load_cache_file().unwrap()).unwrap();
+        let cache = Arc::new(Mutex::new(cache));
         Self {
             client,
+            cache,
         }
     }
 
@@ -32,6 +41,13 @@ impl MyDNSResolver {
     pub async fn lookup(&self, fqdn: String, query_type: String) -> Result<Vec<String>> {
         // https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/make-api-requests/dns-json/
         // https://developers.google.com/speed/public-dns/docs/doh/json?hl=ja
+        {
+            let key = format!("{}&{}", fqdn, query_type);
+            let mut guard = self.cache.lock().unwrap();
+            if let Some(v) = guard.get(&key) {
+                return Ok(v.clone());
+            }
+        }
         let random_value: usize = rand::random();
         let headers = [
             ("Accept", "application/dns-json"),
@@ -61,7 +77,19 @@ impl MyDNSResolver {
             Vec::new() // empty
         };
         let results: Vec<String> = answers.into_iter().map(|v| strip_string_quotation(&v["data"].to_string())).collect();
+        {
+            let key = format!("{}&{}", fqdn, query_type);
+            let mut guard = self.cache.lock().unwrap();
+            guard.insert(key, results.clone()); // drop old value if exists
+        }
         Ok(results)
+    }
+
+    #[allow(unused)]
+    pub fn save_cache(&self) -> Result<()> {
+        let guard = self.cache.lock().unwrap();
+        save_cache_file(&serde_json::to_string(&*guard).unwrap())?;
+        Ok(())
     }
 
     async fn issue_request_and_get_response(&self, url: &str, headers: &[(&str, &str)]) -> Result<String> {
@@ -112,4 +140,24 @@ fn strip_string_quotation(original: &str) -> String {
         }
     }
     result
+}
+
+lazy_static! {
+    static ref CACHE_FILENAME: String = "./dns_cache.json".to_string();
+}
+
+fn load_cache_file() -> Result<String> {
+    let f = File::open(&*CACHE_FILENAME)?;
+    let mut reader = BufReader::new(f);
+    let mut buf = String::new();
+    reader.read_to_string(&mut buf)?;
+    Ok(buf)
+}
+
+fn save_cache_file(s: &str) -> Result<()> {
+    let f = File::create(&*CACHE_FILENAME)?;
+    let mut writer = BufWriter::new(f);
+    writer.write_all(s.as_bytes())?;
+    writer.flush()?;
+    Ok(())
 }

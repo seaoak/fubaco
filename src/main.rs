@@ -117,8 +117,11 @@ lazy_static! {
     static ref FUBACO_HEADER_TOTAL_SIZE: usize = 512; // (78+2)*6+(30+2)
 }
 
+lazy_static! {
+    static ref MY_DNS_RESOLVER: Arc<MyDNSResolver> = Arc::new(MyDNSResolver::new());
+}
+
 fn test_my_dns_resolver() -> Result<()> {
-    let resolver = Arc::new(MyDNSResolver::new());
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -133,7 +136,7 @@ fn test_my_dns_resolver() -> Result<()> {
             ];
             let mut infos = Vec::new();
             for (fqdn, query_type) in queries {
-                let resolver = resolver.clone();
+                let resolver = MY_DNS_RESOLVER.clone();
                 let handle = tokio::spawn(async move {
                     resolver.lookup(fqdn.to_string(), query_type.to_string()).await
                 });
@@ -255,7 +258,7 @@ fn dns_query_spf(fqdn: &str) -> Result<Option<String>> {
             .build()
             .unwrap()
             .block_on(async {
-                let resolver = MyDNSResolver::new();
+                let resolver = MY_DNS_RESOLVER.clone();
                 resolver.lookup(fqdn.to_string(), "TXT".to_string()).await
             });
     let spf_records: Vec<String> = query_result?.into_iter().filter(|s| s.starts_with("v=spf1 ")).collect();
@@ -280,7 +283,7 @@ fn dns_query_simple(fqdn: &str, query_type: &str) -> Result<Vec<String>> { // Ve
             .build()
             .unwrap()
             .block_on(async {
-                let resolver = MyDNSResolver::new();
+                let resolver = MY_DNS_RESOLVER.clone();
                 resolver.lookup(fqdn.to_string(), query_type.to_string()).await
             });
     let records = query_result?; // may be empty
@@ -297,7 +300,7 @@ fn dns_query_mx(fqdn: &str) -> Result<Vec<String>> { // Vec may be empty
             .build()
             .unwrap()
             .block_on(async {
-                let resolver = MyDNSResolver::new();
+                let resolver = MY_DNS_RESOLVER.clone();
                 resolver.lookup(fqdn.to_string(), "MX".to_string()).await
             });
     let records = query_result?;
@@ -865,6 +868,7 @@ fn test_spam_checker_with_local_files() -> Result<()> {
         let fubaco_headers = make_fubaco_headers(&buf)?;
         print!("{}", fubaco_headers);
     }
+    MY_DNS_RESOLVER.save_cache()?;
     Ok(())
 }
 
