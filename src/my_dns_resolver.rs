@@ -53,7 +53,7 @@ impl MyDNSResolver {
         let query_string = options.into_iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<String>>().join("&");
         let url = format!("{}?{}", *DNS_PROVIDER_BASE_URL, query_string);
         let response_text = self.issue_request_and_get_response(&url, &headers).await?;
-        println!("response_text: \"{}\"", response_text);
+        // println!("response_text: \"{}\"", response_text);
         let json: serde_json::Value = serde_json::from_str(&response_text)?;
         let answers = if let serde_json::Value::Array(v) = &json["Answer"] {
             v.clone()
@@ -70,9 +70,9 @@ impl MyDNSResolver {
         for (k, v) in headers {
             request = request.header(*k, *v);
         }
-        println!("MyDNSResolver: issue request for: {}", url.to_string()[0..50].to_owned());
+        // println!("MyDNSResolver: issue request for: {}", url.to_string()[0..50].to_owned());
         let response = request.send().await?;
-        println!("MyDNSResolver: Response.version(): {:?} for {}", response.version(), url.to_string()[0..50].to_owned());
+        // println!("MyDNSResolver: Response.version(): {:?} for {}", response.version(), url.to_string()[0..50].to_owned());
         let text = response.text().await?;
         Ok(text)
     }
