@@ -820,6 +820,66 @@ fn spam_checker_fully_html_encoded_text(message: &Message) -> Option<String> {
     None
 }
 
+fn spam_checker_suspicious_delivery_report(message: &Message) -> Option<String> {
+    let from_address = message.from().unwrap().first().unwrap().address.clone().unwrap_or_default().to_ascii_lowercase();
+    if !from_address.starts_with("postmaster@") {
+        return None;
+    }
+    for part in message.parts.iter() {
+        let mut is_target_part = false;
+        for header in part.headers.iter() {
+            match header.name {
+                mail_parser::HeaderName::ContentType => {
+                    match header.value() {
+                        mail_parser::HeaderValue::ContentType(ctype) => {
+                            if ctype.ctype() == "message" && ctype.subtype() == Some("delivery-status") {
+                                is_target_part = true;
+                                break;
+                            }
+                        },
+                        _ => (), // skip
+                    }
+                },
+                _ => (), // skip
+            }
+        }
+        if !is_target_part {
+            continue;
+        }
+        let text = part.text_contents().unwrap();
+
+        lazy_static! {
+            static ref REGEX_REPORT_DOMAIN: Regex = Regex::new(r"^Reporting-MTA: [^;]+;\s*(\S+)\s*$").unwrap();
+            static ref REGEX_DESTINATION_DOMAIN: Regex = Regex::new(r"^Final-Recipient: [^;]+;\s*([-_.+=0-9a-zA-Z]+@([-_.0-9a-zA-Z]+))\s*$").unwrap();
+        }
+
+        let mut report_domain = None;
+        let mut destination_domain = None;
+        for line in text.lines() {
+            if let Some(caps) = REGEX_REPORT_DOMAIN.captures(line) {
+                report_domain = Some(caps[1].to_string().to_ascii_lowercase());
+            }
+            if let Some(caps) = REGEX_DESTINATION_DOMAIN.captures(line) {
+                destination_domain = Some(caps[2].to_string().to_ascii_lowercase());
+            }
+        }
+        match (&report_domain, &destination_domain) {
+            (Some(domain1), Some(domain2)) => {
+                println!("delivery_report: report_domain={} destination_domain={}", domain1, domain2);
+                if domain1 != domain2 {
+                    // report_domain may be an "open relay" mail server
+                    return Some("suspicious-delivery-report".to_string());
+                }
+            },
+            _ => {
+                println!("delivery report syntax error");
+                return Some("invalid-delivery-report-format".to_string());
+            }
+        }
+    }
+    None
+}
+
 fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     let message;
     if let Some(v) = MessageParser::default().parse(message_u8) {
@@ -835,6 +895,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
         spam_checker_suspicious_hyperlink,
         spam_checker_hidden_text_in_html,
         spam_checker_fully_html_encoded_text,
+        spam_checker_suspicious_delivery_report,
     ].iter().filter_map(|f| f(&message)).collect();
     if spam_judgement.len() == 0 {
         spam_judgement.push("none".to_string());
