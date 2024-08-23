@@ -497,10 +497,25 @@ fn dkim_verify(message: &Message) -> DKIMResult {
         }
     };
 
+    let timestamp_at_gateway;
+    {
+        let now = SystemTime::UNIX_EPOCH.elapsed().unwrap().as_secs();
+        if let Some(received) = get_received_header_of_gateway(message) {
+            if let Some(datetime) = received.date() {
+                let seconds = datetime.to_timestamp();
+                assert!(seconds >= 0);
+                timestamp_at_gateway = seconds as u64;
+            } else {
+                println!("WARNING: \"Received\" header has no timestamp: {:?}", received);
+                timestamp_at_gateway = now;
+            }
+        } else {
+            timestamp_at_gateway = now;
+        }
+    }
+
     // check signature timestamp
     {
-        // TODO: may use the timestamp of "Received" header of the gateway
-        let elapsed_seconds_from_epoch = SystemTime::UNIX_EPOCH.elapsed().unwrap().as_secs();
         let timestamp = match u64::from_str_radix(&dkim_signature_fields["t"], 10) {
             Ok(v) => v,
             Err(_e) => {
@@ -508,7 +523,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
                 return DKIMResult::PERMERROR;
             }
         };
-        if elapsed_seconds_from_epoch < timestamp {
+        if timestamp_at_gateway < timestamp {
             println!("DKIM_Signature is in the future");
             return DKIMResult::FAIL;
         }
@@ -516,8 +531,6 @@ fn dkim_verify(message: &Message) -> DKIMResult {
 
     // check expiration date
     {
-        // TODO: may use the timestamp of "Received" header of the gateway
-        let elapsed_seconds_from_epoch = SystemTime::UNIX_EPOCH.elapsed().unwrap().as_secs();
         let limit = match u64::from_str_radix(&dkim_signature_fields["x"], 10) {
             Ok(v) => v,
             Err(_e) => {
@@ -525,7 +538,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
                 return DKIMResult::PERMERROR;
             }
         };
-        if elapsed_seconds_from_epoch > limit {
+        if timestamp_at_gateway > limit {
             println!("DKIM_Signature is expired");
             return DKIMResult::FAIL;
         }
