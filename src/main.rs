@@ -319,6 +319,32 @@ fn dns_query_mx(fqdn: &str) -> Result<Vec<String>> { // Vec may be empty
     Ok(hosts)
 }
 
+fn get_received_header_of_gateway<'a>(message: &'a Message) -> Option<Box<mail_parser::Received<'a>>> {
+    for header_value in message.header_values("Received") {
+        if let mail_parser::HeaderValue::Received(received) = header_value {
+            if let Some(mail_parser::Host::Name(s)) = received.by() {
+                if s == "niftygreeting" || s.ends_with(".nifty.com") || s.ends_with(".mailbox.org") || s.ends_with(".gandi.net") || s.ends_with(".mxrouting.net") || s.ends_with(".google.com") {
+                    println!("DEBUG: received.from(): \"{:?}\"", received.from());
+                    if let Some(mail_parser::Host::Name(ss)) = received.from() {
+                        lazy_static! {
+                            static ref REGEX_NIFTY_MAILSERVER: Regex = Regex::new(r"^concspmx-\d+$").unwrap();
+                        }
+                        if s.ends_with(".nifty.com") && REGEX_NIFTY_MAILSERVER.is_match(ss) {
+                            println!("skip \"Receivec\" header (internal relay in nifty)");
+                            continue; // skip (internal relay in nifty)
+                        }
+                    }
+                    if received.from_ip().is_none() {
+                        continue;
+                    }
+                    return Some(received.clone());
+                }
+            }
+        }
+    }
+    None
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum SPFResult {
     NONE,
@@ -593,44 +619,15 @@ fn spam_checker_spf(message: &Message) -> Option<String> {
     if envelop_from.len() == 0 {
         return None;
     }
-    let mut source_ip = None;
-    {
-        for value in message.header_values("Received") {
-            if let mail_parser::HeaderValue::Received(received) = value {
-                if let Some(mail_parser::Host::Name(s)) = received.by() {
-                    if s == "niftygreeting" || s.ends_with(".nifty.com") || s.ends_with(".mailbox.org") || s.ends_with(".gandi.net") || s.ends_with(".mxrouting.net") || s.ends_with(".google.com") {
-                        println!("DEBUG: received.from(): \"{:?}\"", received.from());
-                        if let Some(mail_parser::Host::Name(ss)) = received.from() {
-                            lazy_static! {
-                                static ref REGEX_NIFTY_MAILSERVER: Regex = Regex::new(r"^concspmx-\d+$").unwrap();
-                            }
-                            if s.ends_with(".nifty.com") && REGEX_NIFTY_MAILSERVER.is_match(ss) {
-                                println!("skip \"Receivec\" header (internal relay in nifty)");
-                                continue; // skip (internal relay in nifty)
-                            }
-                        }
-                        match received.from_ip() {
-                            Some(IpAddr::V4(addr)) => {
-                                source_ip = Some(IpAddr::V4(addr));
-                                break;
-                            }
-                            Some(IpAddr::V6(addr)) => {
-                                source_ip = Some(IpAddr::V6(addr));
-                                break;
-                            }
-                            _ => {
-                                // empty
-                            }
-                        }
-                    }
-                }
+    let source_ip = match get_received_header_of_gateway(message) {
+        Some(received) => {
+            match received.from_ip() {
+                Some(v) => v,
+                None => return None,
             }
-        }
+        },
+        None => return None,
     };
-    if source_ip.is_none() {
-        return None;
-    }
-    let source_ip = source_ip.unwrap();
     println!("source_ip: {}", source_ip);
 
     let domain;
