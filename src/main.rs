@@ -355,7 +355,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
         static ref REGEX_SPF_REDIRECT_DOMAIN: Regex = Regex::new(r"^redirect=([_a-z0-9]([-_a-z0-9]*[a-z0-9])?([.][a-z0-9]([-_a-z0-9]*[a-z0-9])?)*)$").unwrap();
         static ref REGEX_SPF_INCLUDE_DOMAIN: Regex = Regex::new(r"^include:([_a-z0-9]([-_a-z0-9]*[a-z0-9])?([.][a-z0-9]([-_a-z0-9]*[a-z0-9])?)*)$").unwrap();
     }
-    let mut fields: Vec<String> = spf_record.split(" ").filter(|s| s.len() > 0).map(|s| s.to_string()).collect();
+    let mut fields: Vec<String> = spf_record.split_ascii_whitespace().map(ToString::to_string).collect();
     fields.reverse();
     let first_field = fields.pop().unwrap();
     if first_field != "v=spf1" {
@@ -561,7 +561,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
                 Ok(None) => return SPFResult::PERMERROR, // invalid field (abort immediately)
                 Err(_e) => return SPFResult::TEMPERROR, // internal error
             }
-            let mut nested_fields: Vec<String> = nested_spf.split(" ").filter(|s| s.len() > 0).map(|s| s.to_string()).collect();
+            let mut nested_fields: Vec<String> = nested_spf.split_ascii_whitespace().map(ToString::to_string).collect();
             nested_fields.reverse();
             let first_field = nested_fields.pop().unwrap();
             if first_field != "v=spf1" {
