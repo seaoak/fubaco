@@ -5,6 +5,7 @@ use std::io::{BufReader, BufWriter, ErrorKind, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpListener, TcpStream};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use anyhow::{anyhow, Result};
 use kana::wide2ascii;
@@ -343,6 +344,299 @@ fn get_received_header_of_gateway<'a>(message: &'a Message) -> Option<Box<mail_p
         }
     }
     None
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum DKIMResult {
+    NONE,
+    PASS,
+    FAIL,
+    PERMERROR,
+    TEMPERROR,
+}
+
+impl std::fmt::Display for DKIMResult {
+    fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let s = match self {
+            Self::NONE      => "dkim-none",
+            Self::PASS      => "dkim-pass",
+            Self::FAIL      => "dkim-fail",
+            Self::PERMERROR => "dkim-permerror",
+            Self::TEMPERROR => "dkim-temperror",
+        };
+        write!(dest, "{}", s)
+    }
+}
+
+fn get_dkim_signature_header(message: &Message) -> Option<String> {
+    let header_value = match message.header("DKIM-Signature") {
+        Some(mail_parser::HeaderValue::Text(s)) => s,
+        _ => return None,
+    };
+    println!("DKIM-Signature: {}", header_value);
+    Some(header_value.to_string())
+}
+
+fn parse_dkim_signature(header_value: &str) -> Result<HashMap<String, String>> {
+    lazy_static! {
+        static ref REGEX_LINE_BREAK: Regex = Regex::new(r"\r\n[ \t]+").unwrap();
+    }
+    let mut table = HashMap::<String, String>::new();
+    let s = REGEX_LINE_BREAK.replace_all(header_value, "");
+    let fields = s.split(";").map(str::trim);
+    for field in fields {
+        let parts = field.split("=").collect::<Vec<&str>>();
+        if parts.len() != 2 {
+            return Err(anyhow!("DKIM_Signature header value syntax error: \"{}\"", field));
+        }
+        table.insert(parts[0].to_string(), parts[1].to_string());
+    }
+    let mandatory_field_names = [
+        "v",
+        "a",
+        "b",
+        "bh",
+        "d",
+        "h",
+        "s",
+    ];
+    let lack_of_mandatory_field_names = mandatory_field_names.into_iter().filter(|s| !table.contains_key(*s)).collect::<Vec<&str>>();
+    if lack_of_mandatory_field_names.len() > 0 {
+        return Err(anyhow!("DKIM: lack of mandatory fields: {:?}", lack_of_mandatory_field_names));
+    }
+    let complement_list = [
+        ("c", "simple/simple".to_string()),
+        ("i", format!("@{}", table.get("d").unwrap())),
+        ("l", u32::MAX.to_string()), // "unlimited"
+        ("q", "dns/txt".to_string()),
+        ("t", 0.to_string()), // "UNIX EPOCH"
+        ("x", "1000000000000".to_string()), // "unlimited" (=10^12)
+        ("z", "dummy".to_string()), // dummy
+    ];
+    for (tag, value) in complement_list {
+        if !table.contains_key(tag) {
+            table.insert(tag.to_string(), value);
+        }
+    }
+    Ok(table)
+}
+
+fn dkim_canonicalization_for_body(mode: &str, body_u8: &[u8]) -> Result<String> {
+    let is_simple = match mode {
+        "simple/simple" | "relaxed/simple" | "simple" | "relaxed" => true,
+        "simple/relaxed" | "relaxed/relaxed" => false,
+        _ => return Err(anyhow!("DKIM_Signature canonicalization mode is invalid: {}", mode)),
+    };
+    let body_text = String::from_utf8_lossy(body_u8);
+    let mut text = if is_simple {
+        body_text.to_string()
+    } else {
+        lazy_static! {
+            static ref REGEX_WHITESPACE_AT_THE_END_OF_LINE: Regex = Regex::new(r"[ \t]+\r\n").unwrap();
+            static ref REGEX_SEQUENCE_OF_WHITESPACE: Regex = Regex::new(r"[ \t]+").unwrap();
+        }
+        let text = REGEX_WHITESPACE_AT_THE_END_OF_LINE.replace_all(&body_text, "\r\n");
+        let text = REGEX_SEQUENCE_OF_WHITESPACE.replace_all(&text, " ");
+        text.to_string()
+    };
+
+    // remove empty lines at the end of body
+    while text.ends_with("\r\n\r\n") {
+        text.truncate(text.len() - "\r\n".len());
+    }
+    if text.as_str() == "\r\n" {
+        text.truncate(0);
+    }
+    if is_simple && text.len() == 0 {
+        return Ok("\r\n".to_string()); // see "sectionn 3.4.3" in RFC6376
+    }
+    Ok(text)
+}
+
+fn dkim_canonicalization_for_headers(mode: &str, headers: &[String]) -> Result<String> {
+    let is_simple = match mode {
+        "simple/simple" | "simple/relaxed" | "simple" => true,
+        "relaxed/simple" | "relaxed/relaxed" | "relaxed" => false,
+        _ => return Err(anyhow!("DKIM_Signature canonicalization mode is invalid: {}", mode)),
+    };
+    let mut lines = Vec::new();
+    for header in headers {
+        let (tag, text) = header.split_once(":").unwrap();
+        if is_simple {
+            lines.push(header.to_owned());
+        } else {
+            // see "section 3.4.2" in RFC6376
+            let tag = tag.to_ascii_lowercase();
+            lazy_static! {
+                static ref REGEX_CONTINUATION_LINE_PATTERN: Regex = Regex::new(r"\r\n[ \t]+").unwrap();
+                static ref REGEX_SEQUENCE_OF_WHITESPACE: Regex = Regex::new(r"[ \t]+").unwrap();
+                static ref REGEX_WHITESPACE_AT_THE_END_OF_VALUE: Regex = Regex::new(r"[ \t]*(\r\n)?$").unwrap();
+                static ref REGEX_WHITESPACE_AT_THE_HEAD_OF_VALUE: Regex = Regex::new(r"^[ \t]+").unwrap();
+            }
+            let text = REGEX_CONTINUATION_LINE_PATTERN.replace_all(&text, "");
+            let text = REGEX_SEQUENCE_OF_WHITESPACE.replace_all(&text, " ");
+            let text = REGEX_WHITESPACE_AT_THE_END_OF_VALUE.replace_all(&text, ""); // remove CRLF at the end of value
+            let text = REGEX_WHITESPACE_AT_THE_HEAD_OF_VALUE.replace(&text, "");
+            lines.push(format!("{}:{}\r\n", tag, text));
+        }
+    }
+    let text = lines.join("");
+    Ok(text)
+}
+
+fn dkim_verify(message: &Message) -> DKIMResult {
+    let dkim_signature_header_value = match get_dkim_signature_header(message) {
+        Some(s) => s,
+        None => return DKIMResult::NONE,
+    };
+    let dkim_signature_fields = match parse_dkim_signature(&dkim_signature_header_value) {
+        Ok(v) => v,
+        Err(e) => {
+            println!("DKIM_Signature header value parse error: {}", e);
+            return DKIMResult::PERMERROR;
+        }
+    };
+
+    // check signature timestamp
+    {
+        // TODO: may use the timestamp of "Received" header of the gateway
+        let elapsed_seconds_from_epoch = SystemTime::UNIX_EPOCH.elapsed().unwrap().as_secs();
+        let timestamp = match u64::from_str_radix(&dkim_signature_fields["t"], 10) {
+            Ok(v) => v,
+            Err(_e) => {
+                println!("DKIM_Signature field \"t\" has invalid value: \"{}\"", &dkim_signature_fields["t"]);
+                return DKIMResult::PERMERROR;
+            }
+        };
+        if elapsed_seconds_from_epoch < timestamp {
+            println!("DKIM_Signature is in the future");
+            return DKIMResult::FAIL;
+        }
+    }
+
+    // check expiration date
+    {
+        // TODO: may use the timestamp of "Received" header of the gateway
+        let elapsed_seconds_from_epoch = SystemTime::UNIX_EPOCH.elapsed().unwrap().as_secs();
+        let limit = match u64::from_str_radix(&dkim_signature_fields["x"], 10) {
+            Ok(v) => v,
+            Err(_e) => {
+                println!("DKIM_Signature field \"x\" has invalid value: \"{}\"", &dkim_signature_fields["x"]);
+                return DKIMResult::PERMERROR;
+            }
+        };
+        if elapsed_seconds_from_epoch > limit {
+            println!("DKIM_Signature is expired");
+            return DKIMResult::FAIL;
+        }
+    }
+
+    // body canonicalization and limitation (limitation is effective after canonicalization)
+    let pos_of_top_of_body = message.raw_message().windows(4).enumerate()
+        .skip_while(|(_, arr)| !(arr[0] == b'\r' && arr[1] == b'\n' && arr[2] == b'\r' && arr[3] == b'\n'))
+        .map(|(i, _)| i + 4)
+        .next()
+        .unwrap_or(message.raw_message().len());
+    let body_u8_limited = {
+        let body_u8_raw = if pos_of_top_of_body >= message.raw_message().len() {
+            b""
+        } else {
+            &message.raw_message()[pos_of_top_of_body..]
+        };
+        let mut body_u8_canonicalized = match dkim_canonicalization_for_body(&dkim_signature_fields["c"], body_u8_raw) {
+            Ok(s) => s,
+            Err(e) => {
+                println!("DKIM canonicalizatino error: {}", e);
+                return DKIMResult::PERMERROR;
+            },
+        };
+        let limit = match usize::from_str_radix(&dkim_signature_fields["l"], 10) {
+            Ok(v) => v,
+            Err(_e) => {
+                println!("DKIM_Signature field \"l\" has invalid value: \"{}\"", dkim_signature_fields["l"]);
+                return DKIMResult::PERMERROR;
+            },
+        };
+        body_u8_canonicalized.truncate(limit);
+        body_u8_canonicalized.into_bytes()
+    };
+
+    // header select
+    let mut selected_headers = Vec::<String>::new();
+    {
+        let mut header_table = HashMap::<String, Vec<String>>::new();
+        {
+            // parse all headers
+            fn update_table(table: &mut HashMap<String, Vec<String>>, buf: &[String]) {
+                assert_ne!(buf.len(), 1); // >= 2
+                let tag = &buf[0];
+                let mut text = buf[1..].join("\r\n");
+                text.push_str("\r\n");
+                if let Some(v) = table.get_mut(tag) {
+                    v.push(text);
+                } else {
+                    let v = vec![text];
+                    table.insert(tag.clone(), v);
+                }
+            }
+
+            let header_u8 = &message.raw_message()[..(pos_of_top_of_body - b"\r\n".len())];
+            let header_text = String::from_utf8_lossy(header_u8);
+            let lines = header_text.split("\r\n").filter(|s| s.len() > 0); // CRLF is removed
+            let mut buf = Vec::<String>::new();
+            for line in lines {
+                if line.starts_with(" ") || line.starts_with("\t") {
+                    assert_ne!(buf.len(), 0); // >= 2
+                    buf.push(line.to_owned());
+                } else {
+                    if buf.len() > 0 {
+                        update_table(&mut header_table, &buf);
+                        buf.clear();
+                    }
+                    if let Some((tag, _value)) = line.split_once(":") {
+                        buf.push(tag.to_ascii_lowercase()); // case-insensitive
+                        buf.push(line.to_owned());
+                    } else {
+                        println!("DIKM all headers parse error: {}", line);
+                        return DKIMResult::PERMERROR;
+                    }
+                }
+            }
+            if buf.len() > 0 {
+                update_table(&mut header_table, &buf);
+                buf.clear();
+            }
+        }
+        lazy_static! {
+            static ref REGEX_SEQUENCE_OF_WHITESPACE: Regex = Regex::new(r"[ \t]+").unwrap();
+        }
+        let stripped_selectors = REGEX_SEQUENCE_OF_WHITESPACE.replace_all(&dkim_signature_fields["h"], "");
+        let tags = stripped_selectors.split(":").map(str::to_ascii_lowercase); // case-insensitive
+        for tag in tags {
+            if header_table.contains_key(&tag) {
+                if let Some(header_text) = header_table.get_mut(&tag).unwrap().pop() { // "Last-In-First-Out" order (see "section 5.4.2" in RFC6376)
+                    selected_headers.push(header_text);
+                } else {
+                    // ignore nonexistent header fields (see "section 3.5" in RFC6376)
+                }
+            } else {
+                // ignore nonexistent header fields (see "section 3.5" in RFC6376)
+            }
+        }
+    }
+
+
+
+
+
+
+
+    DKIMResult::NONE
+}
+
+fn spam_checker_dkim(message: &Message) -> Option<String> {
+    let result = dkim_verify(message);
+    Some(result.to_string())
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -914,6 +1208,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
         return Err(anyhow!("can not parse the message"));
     }
     let mut spam_judgement: Vec<String> = [
+        spam_checker_dkim,
         spam_checker_spf,
         spam_checker_suspicious_envelop_from,
         spam_checker_blacklist_tld,
