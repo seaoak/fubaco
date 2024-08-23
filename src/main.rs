@@ -265,14 +265,13 @@ fn dns_query_spf(fqdn: &str) -> Result<Option<String>> {
     if spf_records.len() == 0 {
         return Ok(None);
     }
-    {
-        let mut remark = "";
-        for s in &spf_records {
-            println!("spf_record: {}{}", s, remark);
-            remark = " *IGNORED*";
-        }
+    if spf_records.len() > 1 {
+        // invalid SPF setting
+        println!("detect invalid SPF setting (multiple SPF records): {:?}", spf_records);
+        return Ok(Some("*INVALID_SPF_SETTING*".to_string())); // dummy string
     }
     let spf_record = spf_records[0].clone(); // ignore multiple records (invalid DNS setting)
+    println!("spf_record: {}", spf_record);
     Ok(Some(spf_record))
 }
 
@@ -358,7 +357,10 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
     }
     let mut fields: Vec<String> = spf_record.split(" ").filter(|s| s.len() > 0).map(|s| s.to_string()).collect();
     fields.reverse();
-    assert_eq!(fields.pop(), Some("v=spf1".to_string()));
+    let first_field = fields.pop().unwrap();
+    if first_field != "v=spf1" {
+        return SPFResult::PERMERROR; // invalid SPF record (abort immediately)
+    }
     while let Some(field) = fields.pop() {
         if field == "~all" {
             return SPFResult::SOFTFAIL;
@@ -561,7 +563,10 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str) -
             }
             let mut nested_fields: Vec<String> = nested_spf.split(" ").filter(|s| s.len() > 0).map(|s| s.to_string()).collect();
             nested_fields.reverse();
-            assert_eq!(nested_fields.pop(), Some("v=spf1".to_string()));
+            let first_field = nested_fields.pop().unwrap();
+            if first_field != "v=spf1" {
+                return SPFResult::PERMERROR; // invalid SPF record (abort immediately)
+            }
             fields.extend(nested_fields.into_iter());
             continue;
         }
