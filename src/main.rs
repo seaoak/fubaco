@@ -383,13 +383,13 @@ fn parse_dkim_signature(header_value: &str) -> Result<HashMap<String, String>> {
     }
     let mut table = HashMap::<String, String>::new();
     let s = REGEX_LINE_BREAK.replace_all(header_value, "");
-    let fields = s.split(";").map(str::trim);
+    let fields = s.split(";").filter(|s| s.len() > 0).map(str::trim);
     for field in fields {
-        let parts = field.split("=").collect::<Vec<&str>>();
-        if parts.len() != 2 {
+        if let Some((tag, value)) = field.split_once("=") {
+            table.insert(tag.to_owned(), value.to_owned());
+        } else {
             return Err(anyhow!("DKIM_Signature header value syntax error: \"{}\"", field));
         }
-        table.insert(parts[0].to_string(), parts[1].to_string());
     }
     let mandatory_field_names = [
         "v",
