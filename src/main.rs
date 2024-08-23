@@ -880,6 +880,30 @@ fn spam_checker_suspicious_delivery_report(message: &Message) -> Option<String> 
     None
 }
 
+fn get_authentication_results(message: &Message) -> Option<HashMap<String, String>> {
+    let header_value = match message.header("Authentication-Results") {
+        Some(mail_parser::HeaderValue::Text(s)) => s,
+        _ => return None,
+    };
+    println!("Authenticatino-Results: {}", header_value);
+    let mut table = HashMap::<String, String>::new();
+    let records = header_value.split(";").map(str::trim);
+    for record in records {
+        if table.get("mx").is_none() {
+            // first record is MX (mail server)
+            table.insert("mx".to_string(), record.to_string());
+            continue;
+        }
+        for field in record.split_ascii_whitespace() {
+            let pair = field.split("=").collect::<Vec<&str>>();
+            assert_eq!(pair.len(), 2);
+            table.insert(pair[0].to_string(), pair[1].to_string());
+            break; // ignore following fields
+        }
+    }
+    Some(table)
+}
+
 fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     let message;
     if let Some(v) = MessageParser::default().parse(message_u8) {
@@ -899,6 +923,20 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     ].iter().filter_map(|f| f(&message)).collect();
     if spam_judgement.len() == 0 {
         spam_judgement.push("none".to_string());
+    }
+
+    if let Some(table) = get_authentication_results(&message) {
+        // check if my SPF checker matches "Authentication-Results" header
+        if let Some(spf_result) = table.get("spf") {
+            let v = spam_judgement.iter().filter(|s| s.starts_with("spf-")).map(|s| &s[4..]).collect::<Vec<&str>>();
+            if v.len() > 0 {
+                assert_eq!(v.len(), 1);
+                let my_result = v[0];
+                if my_result != spf_result {
+                    println!("WARNING: my SPF checker says different result to \"Authentication-Results\" header: my_spf={} vs header={}", my_result, spf_result);
+                }
+            }
+        }
     }
 
     let mut fubaco_headers = Vec::new();
