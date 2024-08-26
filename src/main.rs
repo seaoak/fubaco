@@ -638,6 +638,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
         {
             // parse all headers
             fn update_table(table: &mut HashMap<String, Vec<String>>, buf: &[String]) {
+                assert_ne!(buf.len(), 0); // >= 2
                 assert_ne!(buf.len(), 1); // >= 2
                 let tag = &buf[0];
                 let mut text = buf[1..].join("\r\n");
