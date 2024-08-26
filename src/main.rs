@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use anyhow::{anyhow, Result};
+use base64::prelude::*;
 use kana::wide2ascii;
 use lazy_static::lazy_static;
 use mail_parser::{Message, MessageParser};
@@ -20,6 +21,7 @@ use tokio;
 use unicode_normalization::UnicodeNormalization;
 use webpki_roots;
 
+mod my_crypto;
 mod my_disconnect;
 mod my_dns_resolver;
 mod my_text_line_stream;
@@ -33,6 +35,14 @@ use pop3_upstream::*;
 #[allow(unreachable_code)]
 fn main() {
     println!("Hello, world!");
+
+    if true {
+        match test_my_crypto() {
+            Ok(()) => (),
+            Err(e) => panic!("{:?}", e),
+        };
+        std::process::exit(0);
+    }
 
     if false {
         match test_my_dns_resolver() {
@@ -120,6 +130,38 @@ lazy_static! {
 
 lazy_static! {
     static ref MY_DNS_RESOLVER: Arc<MyDNSResolver> = Arc::new(MyDNSResolver::new());
+}
+
+fn test_my_crypto() -> Result<()> {
+    {
+        let input_text = "";
+        let sha1_vec = my_crypto::my_calc_sha1(input_text.as_bytes());
+        let base64_string = BASE64_STANDARD.encode(sha1_vec);
+        println!("input: \"{}\" => base64 of sha1: {}", input_text, base64_string);
+        assert_eq!(base64_string, "2jmj7l5rSw0yVb/vlWAYkK/YBwk="); // see "section 3.4.4" in RFC6376
+    }
+    {
+        let input_text = "\r\n"; // CRLF
+        let sha1_vec = my_crypto::my_calc_sha1(input_text.as_bytes());
+        let base64_string = BASE64_STANDARD.encode(sha1_vec);
+        println!("input: \"{}\" => base64 of sha1: {}", input_text, base64_string);
+        assert_eq!(base64_string, "uoq1oCgLlTqpdDX/iUbLy7J1Wic="); // see "section 3.4.3" in RFC6376
+    }
+    {
+        let input_text = "";
+        let sha1_vec = my_crypto::my_calc_sha256(input_text.as_bytes());
+        let base64_string = BASE64_STANDARD.encode(sha1_vec);
+        println!("input: \"{}\" => base64 of sha1: {}", input_text, base64_string);
+        assert_eq!(base64_string, "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="); // see "section 3.4.4" in RFC6376
+    }
+    {
+        let input_text = "\r\n"; // CRLF
+        let sha1_vec = my_crypto::my_calc_sha256(input_text.as_bytes());
+        let base64_string = BASE64_STANDARD.encode(sha1_vec);
+        println!("input: \"{}\" => base64 of sha1: {}", input_text, base64_string);
+        assert_eq!(base64_string, "frcCV1k9oG9oKj3dpUqdJg1PxRT2RSN/XKdLCPjaYaY="); // see "section 3.4.3" in RFC6376
+    }
+    Ok(())
 }
 
 fn test_my_dns_resolver() -> Result<()> {
