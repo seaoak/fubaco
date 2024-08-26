@@ -658,6 +658,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             for line in lines {
                 if line.starts_with(" ") || line.starts_with("\t") {
                     assert_ne!(buf.len(), 0); // >= 2
+                    assert_ne!(buf.len(), 1); // >= 2
                     buf.push(line.to_owned());
                 } else {
                     if buf.len() > 0 {
