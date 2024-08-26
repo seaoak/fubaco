@@ -524,13 +524,15 @@ fn dkim_canonicalization_for_headers(mode: &str, headers: &[String]) -> Result<S
         } else {
             // see "section 3.4.2" in RFC6376
             let tag = tag.to_ascii_lowercase();
+            let tag = tag.trim();
             lazy_static! {
                 static ref REGEX_CONTINUATION_LINE_PATTERN: Regex = Regex::new(r"\r\n[ \t]+").unwrap();
                 static ref REGEX_SEQUENCE_OF_WHITESPACE: Regex = Regex::new(r"[ \t]+").unwrap();
-                static ref REGEX_WHITESPACE_AT_THE_END_OF_VALUE: Regex = Regex::new(r"[ \t]*(\r\n)?$").unwrap();
+                static ref REGEX_WHITESPACE_AT_THE_END_OF_VALUE: Regex = Regex::new(r"[ \t]*\r\n$").unwrap();
                 static ref REGEX_WHITESPACE_AT_THE_HEAD_OF_VALUE: Regex = Regex::new(r"^[ \t]+").unwrap();
             }
             let text = REGEX_CONTINUATION_LINE_PATTERN.replace_all(&text, "");
+            assert!(!text[..(text.len() - "\r\n".len())].contains("\r\n"));
             let text = REGEX_SEQUENCE_OF_WHITESPACE.replace_all(&text, " ");
             let text = REGEX_WHITESPACE_AT_THE_END_OF_VALUE.replace_all(&text, ""); // remove CRLF at the end of value
             let text = REGEX_WHITESPACE_AT_THE_HEAD_OF_VALUE.replace(&text, "");
