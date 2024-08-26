@@ -36,7 +36,7 @@ use pop3_upstream::*;
 fn main() {
     println!("Hello, world!");
 
-    if true {
+    if false {
         match test_my_crypto() {
             Ok(()) => (),
             Err(e) => panic!("{:?}", e),
@@ -470,6 +470,18 @@ fn dkim_canonicalization_for_body(mode: &str, body_u8: &[u8]) -> Result<String> 
         _ => return Err(anyhow!("DKIM_Signature canonicalization mode is invalid: {}", mode)),
     };
     let body_text = String::from_utf8_lossy(body_u8);
+    {
+        lazy_static! {
+            static ref REGEX_ALONE_LF: Regex = Regex::new(r"\r[^\n]").unwrap();
+            static ref REGEX_ALONE_CR: Regex = Regex::new(r"[^\r]\n").unwrap();
+        }
+        if REGEX_ALONE_LF.is_match(&body_text) {
+            println!("WARNING: alone LF is detected");
+        }
+        if REGEX_ALONE_CR.is_match(&body_text) {
+            println!("WARNING: alone CR is detected");
+        }
+    }
     let mut text = if is_simple {
         body_text.to_string()
     } else {
@@ -481,6 +493,9 @@ fn dkim_canonicalization_for_body(mode: &str, body_u8: &[u8]) -> Result<String> 
         let text = REGEX_SEQUENCE_OF_WHITESPACE.replace_all(&text, " ");
         text.to_string()
     };
+    if text.len() > 0 && !text.ends_with("\r\n") {
+        text.push_str("\r\n");
+    }
 
     // remove empty lines at the end of body
     while text.ends_with("\r\n\r\n") {
@@ -680,6 +695,26 @@ fn dkim_verify(message: &Message) -> DKIMResult {
         }
     }
 
+    // check hash value of body
+    {
+        let (_pubkey_algorithm_name, hash_algorithm_name) = dkim_signature_fields["a"].split_once("-").unwrap_or(("", ""));
+        let body_hash_value = match hash_algorithm_name {
+            "sha1" => my_crypto::my_calc_sha1(&body_u8_limited),
+            "sha256" => my_crypto::my_calc_sha256(&body_u8_limited),
+            _ => {
+                println!("unknown hash algorithm: \"{}\"", hash_algorithm_name);
+                return DKIMResult::PERMERROR;
+            },
+        };
+        let base64_value = BASE64_STANDARD.encode(&body_hash_value);
+        let bh_value = &dkim_signature_fields["bh"];
+        if base64_value == *bh_value {
+            println!("DKIM-Signature Body Hash is OK");
+        } else {
+            println!("DKIM-Signature Body Hash is not matched: {} vs {}", base64_value, bh_value);
+            return DKIMResult::FAIL;
+        }
+    }
 
 
 
