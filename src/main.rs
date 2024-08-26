@@ -668,7 +668,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
                         buf.clear();
                     }
                     if let Some((tag, _value)) = line.split_once(":") {
-                        buf.push(tag.to_ascii_lowercase()); // case-insensitive
+                        buf.push(tag.trim().to_ascii_lowercase()); // case-insensitive
                         buf.push(line.to_owned());
                     } else {
                         println!("DIKM all headers parse error: {}", line);
