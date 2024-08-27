@@ -661,6 +661,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
 
     // header select
     let mut selected_headers = Vec::<String>::new();
+    let dkim_signature_header_raw;
     {
         let mut header_table = HashMap::<String, Vec<String>>::new();
         {
@@ -707,6 +708,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
                 buf.clear();
             }
         }
+        dkim_signature_header_raw = header_table.get(&"DKIM-Signature".to_ascii_lowercase()).unwrap()[0].clone(); // must exist
         lazy_static! {
             static ref REGEX_SEQUENCE_OF_WHITESPACE: Regex = Regex::new(r"[ \t]+").unwrap();
         }
@@ -756,6 +758,35 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             }
             return DKIMResult::FAIL;
         }
+    }
+
+    // calculate header hash value (see "section 3.7" in RFC6376)
+    let header_hash_value;
+    {
+        let mut headers = selected_headers.to_vec();
+        lazy_static! {
+            static ref REGEX_B_FIELD: Regex = Regex::new(r";\s*b=[^;\r]+").unwrap(); // include whitespace
+        }
+        let dkim_signature_header_modified = REGEX_B_FIELD.replace(&dkim_signature_header_raw, ";b=").to_string();
+        headers.push(dkim_signature_header_modified);
+        let mut header_canonicalized = match dkim_canonicalization_for_headers(&dkim_signature_fields["c"], &headers) {
+            Ok(s) => s,
+            Err(e) => {
+                println!("DKIM canonicalization for headers is failed: {}", e);
+                return DKIMResult::PERMERROR;
+            },
+        };
+        assert!(header_canonicalized.ends_with("\r\n"));
+        header_canonicalized.truncate(header_canonicalized.len() - "\r\n".len()); // remove CRLF at the end of DKIM-Signature header
+        let header_u8 = header_canonicalized.as_bytes();
+        header_hash_value = match dkim_signature_hash_algo.as_str() {
+            "sha1" => my_crypto::my_calc_sha1(header_u8),
+            "sha256" => my_crypto::my_calc_sha256(header_u8),
+            _ => {
+                println!("unkonwn hash algorithm: \"{}\"", dkim_signature_hash_algo);
+                return DKIMResult::PERMERROR;
+            },
+        };
     }
 
     // refer DNS record
