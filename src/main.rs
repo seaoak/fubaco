@@ -757,7 +757,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
                 return DKIMResult::TEMPERROR;
             },
         };
-        let text_raw = match query_responses.into_iter().next() { // use first record (see section "3.6.2.2" in RFC6376)
+        let text_raw = match query_responses.into_iter().next() { // use first record even if there are multiple records (see section "3.6.2.2" in RFC6376)
             Some(s) => s,
             None => {
                 println!("DKIM record is not found in DNS: {}", query_key);
