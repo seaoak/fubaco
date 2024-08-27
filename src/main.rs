@@ -746,6 +746,110 @@ fn dkim_verify(message: &Message) -> DKIMResult {
         }
     }
 
+    // refer DNS record
+    let mut dkim_dns_fields = HashMap::<String, String>::new();
+    {
+        let query_key = format!("{}._domainkey.{}", dkim_signature_fields["s"], dkim_signature_fields["d"]); // see "section 3.6.2.1" in RFC6376
+        let query_responses = match dns_query_simple(&query_key, "TXT") {
+            Ok(v) => v,
+            Err(e) => {
+                println!("DNS query falied: {}", e);
+                return DKIMResult::TEMPERROR;
+            },
+        };
+        let text_raw = match query_responses.into_iter().next() { // use first record (see section "3.6.2.2" in RFC6376)
+            Some(s) => s,
+            None => {
+                println!("DKIM record is not found in DNS: {}", query_key);
+                return DKIMResult::PERMERROR;
+            },
+        };
+        let fields = text_raw.split(";").filter(|s| s.len() > 0).map(str::trim);
+        for field in fields {
+            let (tag, value) = field.split_once("=").unwrap_or(("", ""));
+            let tag = tag.trim();
+            let value = value.trim();
+            if tag == "" {
+                println!("DKIM record in DNS is syntax error: {}", text_raw);
+                return DKIMResult::PERMERROR;
+            }
+            assert!(dkim_dns_fields.get(tag).is_none());
+            dkim_dns_fields.insert(tag.to_owned(), value.to_owned());
+        }
+    }
+    let dkim_dns_fields = dkim_dns_fields; // frozen
+    {
+        // validation (see "section 3.6.1" in RFC6376)
+        if let Some(v) = dkim_dns_fields.get("v") {
+            if v == "DKIM1" {
+                // OK
+            } else {
+                println!("DKIM record in DNS has invalid \"v\" field: \"{}\"", v);
+                return DKIMResult::PERMERROR;
+            }
+        } else {
+            // OK (not specified)
+        }
+        if let Some(v) = dkim_dns_fields.get("h") {
+            if v.split(":").any(|s| s == dkim_signature_hash_algo) {
+                // OK
+            } else {
+                println!("DKIM record in DNS specifies other hash algorithm: {} vs {}", v, dkim_signature_hash_algo);
+                return DKIMResult::PERMERROR;
+            }
+        } else {
+            // OK (not specified)
+        }
+        if let Some(v) = dkim_dns_fields.get("k") {
+            if *v == dkim_signature_pubkey_algo {
+                // OK
+            } else {
+                println!("DKIM record in DNS has different pubkey algorithm: {} vs {}", v, dkim_signature_pubkey_algo);
+                return DKIMResult::PERMERROR;
+            }
+        } else {
+            // OK (not specified)
+        }
+        if let Some(v) = dkim_dns_fields.get("p") {
+            if v.len() > 0 {
+                // OK
+            }  else {
+                println!("DKIM record in DNS has ivalid \"p\" field (empty)");
+                return DKIMResult::PERMERROR;
+            }
+        } else {
+            println!("DKIM record in DNS has no \"p\" field");
+            return DKIMResult::PERMERROR;
+        }
+        if let Some(v) = dkim_dns_fields.get("s") {
+            if v.split(":").any(|s| s == "email" || s == "*") {
+                // OK
+            } else {
+                println!("DKIM record in DNS has invalid \"s\" field: \"{}\"", v);
+                return DKIMResult::PERMERROR;
+            }
+        } else {
+            // OK (not specified)
+        }
+        if let Some(v) = dkim_dns_fields.get("t") {
+            if v.split(":").any(|s| s == "y") {
+                // ignore (always enforce to verify signature)
+            }
+            if v.split(":").any(|s| s == "s") {
+                let (_localpart, domain) = dkim_signature_fields["i"].split_once("@").unwrap_or(("", ""));
+                if domain == dkim_signature_fields["d"] {
+                    // OK
+                } else {
+                    println!("DKIM record in DNS specifies not to allow subdomain as DKIM-Signature \"i\" field: {} vs {}", domain, dkim_signature_fields["d"]);
+                    return DKIMResult::PERMERROR;
+                }
+            } else {
+                // OK (not specified)
+            }
+        }
+
+        // NOTE: ignore "g" field (because it is obsoleted) (see "section C.1" in RFC6376)
+    }
 
 
 
