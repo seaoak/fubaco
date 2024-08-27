@@ -412,7 +412,7 @@ impl std::fmt::Display for DKIMResult {
 
 fn get_dkim_signature_header(message: &Message) -> Option<String> {
     let header_value = match message.header("DKIM-Signature") {
-        Some(mail_parser::HeaderValue::Text(s)) => s,
+        Some(mail_parser::HeaderValue::Text(s)) => s, // there is no CRLF at the end
         _ => return None,
     };
     println!("DKIM-Signature: {}", header_value);
@@ -422,10 +422,16 @@ fn get_dkim_signature_header(message: &Message) -> Option<String> {
 fn parse_dkim_signature(header_value: &str) -> Result<HashMap<String, String>> {
     lazy_static! {
         static ref REGEX_LINE_BREAK: Regex = Regex::new(r"\r\n[ \t]+").unwrap();
+        static ref REGEX_SEQUENCE_OF_WHITESPACE: Regex = Regex::new(r"[ \t]+").unwrap();
+        static ref REGEX_CRLF_AT_THE_END: Regex = Regex::new(r"\r\n$").unwrap();
     }
     let mut table = HashMap::<String, String>::new();
     let s = REGEX_LINE_BREAK.replace_all(header_value, "");
-    let fields = s.split(";").filter(|s| s.len() > 0).map(str::trim);
+    let s = REGEX_SEQUENCE_OF_WHITESPACE.replace_all(&s, "");
+    let s = REGEX_CRLF_AT_THE_END.replace(&s, ""); // remove CRLF (may be not exists)
+    assert!(!s.contains("\r"));
+    assert!(!s.contains("\n"));
+    let fields = s.split(";").filter(|s| s.len() > 0);
     for field in fields {
         if let Some((tag, value)) = field.split_once("=") {
             table.insert(tag.to_owned(), value.to_owned());
