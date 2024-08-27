@@ -561,6 +561,13 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             return DKIMResult::PERMERROR;
         }
     };
+    let (dkim_signature_pubkey_algo, dkim_signature_hash_algo) = match dkim_signature_fields["a"].split_once("-") {
+        Some((x, y)) => (x.to_owned(), y.to_owned()),
+        None => {
+            println!("DKIM-Signature has invalid \"a\" field: \"{}\"", dkim_signature_fields["a"]);
+            return DKIMResult::PERMERROR;
+        }
+    };
 
     // check "i" tag of "DKIM-Signature" header against "d" tag
     {
@@ -721,12 +728,11 @@ fn dkim_verify(message: &Message) -> DKIMResult {
 
     // check hash value of body
     {
-        let (_pubkey_algorithm_name, hash_algorithm_name) = dkim_signature_fields["a"].split_once("-").unwrap_or(("", ""));
-        let body_hash_value = match hash_algorithm_name {
+        let body_hash_value = match dkim_signature_hash_algo.as_str() {
             "sha1" => my_crypto::my_calc_sha1(&body_u8_limited),
             "sha256" => my_crypto::my_calc_sha256(&body_u8_limited),
             _ => {
-                println!("unknown hash algorithm: \"{}\"", hash_algorithm_name);
+                println!("unknown hash algorithm: \"{}\"", dkim_signature_hash_algo);
                 return DKIMResult::PERMERROR;
             },
         };
