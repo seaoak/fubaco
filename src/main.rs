@@ -717,6 +717,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             }
         }
     }
+    let selected_headers = selected_headers; // frozen
 
     // check hash value of body
     {
