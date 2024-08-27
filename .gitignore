@@ -16,8 +16,10 @@ Cargo.lock
 #----------------------------------------------------------------------
 /.env
 /db.json
+/debug_*
 /dns_cache.json
 /mail-sample
+/nodejs_dkim
 /sample-*
 
 # backup files
