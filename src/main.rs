@@ -562,6 +562,19 @@ fn dkim_verify(message: &Message) -> DKIMResult {
         }
     };
 
+    // check "i" tag of "DKIM-Signature" header against "d" tag
+    {
+        let (_localpart, domain) = dkim_signature_fields["i"].split_once("@").unwrap_or(("", ""));
+        if domain == dkim_signature_fields["d"] {
+            // OK (same domain)
+        } else if domain.ends_with(&format!(".{}", dkim_signature_fields["d"])) {
+            // OK (subdomain)
+        } else {
+            println!("DKIM_Signature header \"i\" is invalid: \"{}\" vs \"{}\"", dkim_signature_fields["i"], dkim_signature_fields["d"]);
+            return DKIMResult::PERMERROR;
+        }
+    }
+
     let timestamp_at_gateway;
     {
         let now = SystemTime::UNIX_EPOCH.elapsed().unwrap().as_secs();
