@@ -742,6 +742,18 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             println!("DKIM-Signature Body Hash is OK");
         } else {
             println!("DKIM-Signature Body Hash is not matched: {} vs {}", base64_value, bh_value);
+            if bh_value.starts_with("CPi+57OhV6n9mvBpGp+jzS4TnhyGa+oGe2/1BpLR") { // mail-sample.AMAZON_3.eml
+                let f = File::create("debug_out.txt").unwrap();
+                let mut writer = BufWriter::new(f);
+                writer.write_all(&body_u8_limited).unwrap();
+                writer.flush().unwrap();
+            }
+            if bh_value.starts_with("YXvW1zu96ay1cElgm0eiqEcP8KSqSfWh1nCeAl4") { // mail-sample.dkim-ok_4.eml
+                let f = File::create("debug_out_2.txt").unwrap();
+                let mut writer = BufWriter::new(f);
+                writer.write_all(&body_u8_limited).unwrap();
+                writer.flush().unwrap();
+            }
             return DKIMResult::FAIL;
         }
     }
