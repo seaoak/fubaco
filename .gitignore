@@ -20,6 +20,7 @@ Cargo.lock
 /dns_cache.json
 /mail-sample
 /nodejs_dkim
+/pubkey.der
 /sample-*
 
 # backup files

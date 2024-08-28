@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.86"
 base64 = "0.22.1"
+der-parser = "9.0.0"
 encoding_rs = { version = "0.8.34", optional = true }
 lazy_static = "1.5.0"
 mail-parser = { version = "0.9.3", features = ["full_encoding"] }
@@ -13,6 +14,7 @@ native-tls = "0.2.12"
 rand = "0.8.5"
 regex = "1.10.5"
 reqwest = { version = "0.12.5", features = ["http2", "rustls-tls"] }
+rsa = "0.9.6"
 rustls = { version = "0.23.12", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-native-certs = "0.7.1"
 scraper = "0.20.0"

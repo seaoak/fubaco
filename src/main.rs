@@ -894,11 +894,53 @@ fn dkim_verify(message: &Message) -> DKIMResult {
         // NOTE: ignore "g" field (because it is obsoleted) (see "section C.1" in RFC6376)
     }
 
+    // verify signature
+    {
+        let pubkey_u8 = match BASE64_STANDARD.decode(&dkim_dns_fields["p"]) {
+            Ok(v) => v,
+            Err(e) => {
+                println!("DKIM record in DNS has invalid \"p\" field (can not decode as Base64): \"{}\" for \"{}\"", e, dkim_dns_fields["p"]);
+                return DKIMResult::PERMERROR;
+            },
+        };
+        let expected_pubkey_length = match 8 * pubkey_u8.len() {
+            512..1024 => 512,
+            1024..2048 => 1024,
+            2048..4096 => 2048,
+            4096..5000 => 4096,
+            _ => {
+                println!("unexpected pubkey length: {}", pubkey_u8.len());
+                return DKIMResult::PERMERROR;
+            },
+        };
+        let signature_u8 = match BASE64_STANDARD.decode(&dkim_signature_fields["b"]) {
+            Ok(v) => v,
+            Err(e) => {
+                println!("DKIM-Signature has invalid \"b\" field (can not decode as Base64): \"{}\" for \"{}\"", e, dkim_signature_fields["b"]);
+                return DKIMResult::PERMERROR;
+            },
+        };
+        if signature_u8.len() != expected_pubkey_length / 8 {
+            println!("DEBUG: invalid signature length: {}", signature_u8.len());
+            return DKIMResult::PERMERROR;
+        }
+        println!("DEBUG: signature_u8({})={:?}", signature_u8.len(), signature_u8);
+        match my_crypto::my_verify_rsa_sign(pubkey_u8.as_slice(), header_hash_value.as_slice(), signature_u8.as_slice()) {
+            Ok(true) => {
+                println!("DKIM signature is OK");
+            },
+            Ok(false) => {
+                println!("DKIM signature is NG");
+                return DKIMResult::FAIL;
+            },
+            Err(e) => {
+                println!("DKIM signature verification is failed: {}", e);
+                return DKIMResult::PERMERROR;
+            },
+        };
+    }
 
-
-
-
-    DKIMResult::NONE
+    DKIMResult::PASS
 }
 
 fn spam_checker_dkim(message: &Message) -> Option<String> {
