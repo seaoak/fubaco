@@ -857,7 +857,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             if v.len() > 0 {
                 // OK
             }  else {
-                println!("DKIM record in DNS has ivalid \"p\" field (empty)");
+                println!("DKIM record in DNS has empty \"p\" field (means \"revoked\")"); // see "section 3.6.1" in RFC6376
                 return DKIMResult::PERMERROR;
             }
         } else {
