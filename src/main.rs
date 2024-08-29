@@ -781,6 +781,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
         };
         assert!(header_canonicalized.ends_with("\r\n"));
         header_canonicalized.truncate(header_canonicalized.len() - "\r\n".len()); // remove CRLF at the end of DKIM-Signature header
+        println!("----------\n{}\n----------", header_canonicalized);
         let header_u8 = header_canonicalized.as_bytes();
         header_hash_value = match dkim_signature_hash_algo.as_str() {
             "sha1" => my_crypto::my_calc_sha1(header_u8),
@@ -790,6 +791,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
                 return DKIMResult::PERMERROR;
             },
         };
+        println!("DEBUG: header_hash: {}", BASE64_STANDARD.encode(&header_hash_value));
     }
 
     // refer DNS record
