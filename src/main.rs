@@ -908,7 +908,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
                 return DKIMResult::PERMERROR;
             },
         };
-        let expected_pubkey_length = match 8 * pubkey_u8.len() {
+        let expected_pubkey_bit_length = match 8 * pubkey_u8.len() {
             512..1024 => 512,
             1024..2048 => 1024,
             2048..4096 => 2048,
@@ -925,7 +925,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
                 return DKIMResult::PERMERROR;
             },
         };
-        if signature_u8.len() != expected_pubkey_length / 8 {
+        if signature_u8.len() != expected_pubkey_bit_length / 8 {
             println!("DEBUG: invalid signature length: {}", signature_u8.len());
             return DKIMResult::PERMERROR;
         }
