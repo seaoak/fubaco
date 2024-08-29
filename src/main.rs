@@ -27,6 +27,7 @@ mod my_dns_resolver;
 mod my_text_line_stream;
 mod pop3_upstream;
 
+use my_crypto::*;
 use my_dns_resolver::MyDNSResolver;
 use my_text_line_stream::MyTextLineStream;
 use pop3_upstream::*;
@@ -135,28 +136,28 @@ lazy_static! {
 fn test_my_crypto() -> Result<()> {
     {
         let input_text = "";
-        let sha1_vec = my_crypto::my_calc_sha1(input_text.as_bytes());
+        let sha1_vec = my_calc_hash(MyHashAlgo::Sha1, input_text.as_bytes());
         let base64_string = BASE64_STANDARD.encode(sha1_vec);
         println!("input: \"{}\" => base64 of sha1: {}", input_text, base64_string);
         assert_eq!(base64_string, "2jmj7l5rSw0yVb/vlWAYkK/YBwk="); // see "section 3.4.4" in RFC6376
     }
     {
         let input_text = "\r\n"; // CRLF
-        let sha1_vec = my_crypto::my_calc_sha1(input_text.as_bytes());
+        let sha1_vec = my_calc_hash(MyHashAlgo::Sha1, input_text.as_bytes());
         let base64_string = BASE64_STANDARD.encode(sha1_vec);
         println!("input: \"{}\" => base64 of sha1: {}", input_text, base64_string);
         assert_eq!(base64_string, "uoq1oCgLlTqpdDX/iUbLy7J1Wic="); // see "section 3.4.3" in RFC6376
     }
     {
         let input_text = "";
-        let sha1_vec = my_crypto::my_calc_sha256(input_text.as_bytes());
+        let sha1_vec = my_calc_hash(MyHashAlgo::Sha256, input_text.as_bytes());
         let base64_string = BASE64_STANDARD.encode(sha1_vec);
         println!("input: \"{}\" => base64 of sha256: {}", input_text, base64_string);
         assert_eq!(base64_string, "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="); // see "section 3.4.4" in RFC6376
     }
     {
         let input_text = "\r\n"; // CRLF
-        let sha1_vec = my_crypto::my_calc_sha256(input_text.as_bytes());
+        let sha1_vec = my_calc_hash(MyHashAlgo::Sha256, input_text.as_bytes());
         let base64_string = BASE64_STANDARD.encode(sha1_vec);
         println!("input: \"{}\" => base64 of sha256: {}", input_text, base64_string);
         assert_eq!(base64_string, "frcCV1k9oG9oKj3dpUqdJg1PxRT2RSN/XKdLCPjaYaY="); // see "section 3.4.3" in RFC6376
@@ -568,6 +569,13 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             return DKIMResult::PERMERROR;
         }
     };
+    let dkim_signature_hash_algo = match MyHashAlgo::try_from(dkim_signature_hash_algo.as_str()) {
+        Ok(v) => v,
+        Err(e) => {
+            println!("DKIM-Signature hash algorithm is invalid: {}", e);
+            return DKIMResult::PERMERROR;
+        },
+    };
 
     // check "i" tag of "DKIM-Signature" header against "d" tag
     {
@@ -730,14 +738,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
 
     // check hash value of body
     {
-        let body_hash_value = match dkim_signature_hash_algo.as_str() {
-            "sha1" => my_crypto::my_calc_sha1(&body_u8_limited),
-            "sha256" => my_crypto::my_calc_sha256(&body_u8_limited),
-            _ => {
-                println!("unknown hash algorithm: \"{}\"", dkim_signature_hash_algo);
-                return DKIMResult::PERMERROR;
-            },
-        };
+        let body_hash_value = my_calc_hash(dkim_signature_hash_algo, &body_u8_limited);
         let base64_value = BASE64_STANDARD.encode(&body_hash_value);
         let bh_value = &dkim_signature_fields["bh"];
         if base64_value == *bh_value {
@@ -783,14 +784,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
         header_canonicalized.truncate(header_canonicalized.len() - "\r\n".len()); // remove CRLF at the end of DKIM-Signature header
         println!("----------\n{}\n----------", header_canonicalized);
         let header_u8 = header_canonicalized.as_bytes();
-        header_hash_value = match dkim_signature_hash_algo.as_str() {
-            "sha1" => my_crypto::my_calc_sha1(header_u8),
-            "sha256" => my_crypto::my_calc_sha256(header_u8),
-            _ => {
-                println!("unkonwn hash algorithm: \"{}\"", dkim_signature_hash_algo);
-                return DKIMResult::PERMERROR;
-            },
-        };
+        header_hash_value = my_calc_hash(dkim_signature_hash_algo, header_u8);
         println!("DEBUG: header_hash: {}", BASE64_STANDARD.encode(&header_hash_value));
     }
 
@@ -839,7 +833,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             // OK (not specified)
         }
         if let Some(v) = dkim_dns_fields.get("h") {
-            if v.split(":").any(|s| s == dkim_signature_hash_algo) {
+            if v.split(":").any(|s| s == dkim_signature_hash_algo.to_string()) {
                 // OK
             } else {
                 println!("DKIM record in DNS specifies other hash algorithm: {} vs {}", v, dkim_signature_hash_algo);
@@ -929,7 +923,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             println!("DEBUG: invalid signature length: {}", signature_u8.len());
             return DKIMResult::PERMERROR;
         }
-        match my_crypto::my_verify_rsa_sign(pubkey_u8.as_slice(), &dkim_signature_hash_algo, header_hash_value.as_slice(), signature_u8.as_slice()) {
+        match my_verify_rsa_sign(pubkey_u8.as_slice(), dkim_signature_hash_algo, header_hash_value.as_slice(), signature_u8.as_slice()) {
             Ok(true) => {
                 println!("DKIM signature is OK");
             },
