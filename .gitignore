@@ -21,6 +21,8 @@ Cargo.lock
 /mail-sample
 /nodejs_dkim
 /pubkey.der
+/rust_dkimdo
+/rust_viadkim
 /sample-*
 
 # backup files
