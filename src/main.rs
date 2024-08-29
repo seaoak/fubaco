@@ -537,7 +537,7 @@ fn dkim_canonicalization_for_headers(mode: &str, headers: &[String]) -> Result<S
                 static ref REGEX_WHITESPACE_AT_THE_END_OF_VALUE: Regex = Regex::new(r"[ \t]*\r\n$").unwrap();
                 static ref REGEX_WHITESPACE_AT_THE_HEAD_OF_VALUE: Regex = Regex::new(r"^[ \t]+").unwrap();
             }
-            let text = REGEX_CONTINUATION_LINE_PATTERN.replace_all(&text, "");
+            let text = REGEX_CONTINUATION_LINE_PATTERN.replace_all(&text, " ");
             assert!(!text[..(text.len() - "\r\n".len())].contains("\r\n"));
             let text = REGEX_SEQUENCE_OF_WHITESPACE.replace_all(&text, " ");
             let text = REGEX_WHITESPACE_AT_THE_END_OF_VALUE.replace_all(&text, ""); // remove CRLF at the end of value
@@ -765,9 +765,12 @@ fn dkim_verify(message: &Message) -> DKIMResult {
     {
         let mut headers = selected_headers.to_vec();
         lazy_static! {
-            static ref REGEX_B_FIELD: Regex = Regex::new(r";\s*b=[^;\r]+").unwrap(); // include whitespace
+            static ref REGEX_B_FIELD: Regex = Regex::new(r"\bb=([^;]|\r\n)+").unwrap(); // include whitespace and CRLF
         }
-        let dkim_signature_header_modified = REGEX_B_FIELD.replace(&dkim_signature_header_raw, ";b=").to_string();
+        let mut dkim_signature_header_modified = REGEX_B_FIELD.replace(&dkim_signature_header_raw, "b=").to_string();
+        if !dkim_signature_header_modified.ends_with("\r\n") {
+            dkim_signature_header_modified.push_str("\r\n");
+        }
         headers.push(dkim_signature_header_modified);
         let mut header_canonicalized = match dkim_canonicalization_for_headers(&dkim_signature_fields["c"], &headers) {
             Ok(s) => s,
