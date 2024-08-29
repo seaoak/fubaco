@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use ed25519_dalek::{Verifier};
 use rsa::{RsaPublicKey, pkcs1::DecodeRsaPublicKey, pkcs1v15::Pkcs1v15Sign, pkcs8::DecodePublicKey};
 use sha1::{Digest, Sha1};
 use sha2::Sha256;
@@ -93,7 +94,7 @@ impl TryFrom<&str> for MyAsymmetricAlgo {
 pub fn my_verify_sign(pubkey_algo: MyAsymmetricAlgo, pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_value: &[u8], signature: &[u8]) -> Result<bool> {
     match pubkey_algo {
         MyAsymmetricAlgo::Rsa => my_verify_rsa_sign(pubkey_u8_encoded, hash_algo, hash_value, signature),
-        MyAsymmetricAlgo::Ed25519 => my_verify_ed25519_sign(pubkey_u8_encoded, hash_algo, hash_value, signature),
+        MyAsymmetricAlgo::Ed25519 => my_verify_ed25519_sign(pubkey_u8_encoded, hash_value, signature),
     }
 }
 
@@ -119,6 +120,16 @@ fn my_verify_rsa_sign(pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_valu
     }
 }
 
-fn my_verify_ed25519_sign(pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_value: &[u8], signature: &[u8]) -> Result<bool> {
-    Err(anyhow!("*NOT IMPLEMENT YET*\n{:?} {:?} {:?} {:?}", pubkey_u8_encoded, hash_algo, hash_value, signature))
+fn my_verify_ed25519_sign(pubkey_u8_encoded: &[u8], hash_value: &[u8], signature: &[u8]) -> Result<bool> {
+    // refer the definition "read_ed25519_verifying_key()" in "src/crypto/ed25519.rs" in "viadkim" crate
+    let verifying_key = ed25519_dalek::VerifyingKey::try_from(pubkey_u8_encoded).or_else(|e| {
+        ed25519_dalek::VerifyingKey::from_public_key_der(pubkey_u8_encoded).map_err(|_| e)
+    })?;
+
+    // refer the definition "verify_ed25519()" in "src/crypto/ed25519.rs" in "viadkim" crate
+    let signature = ed25519_dalek::Signature::from_slice(signature)?;
+    match verifying_key.verify(hash_value, &signature) {
+        Ok(()) => Ok(true),
+        Err(_) => Ok(false),
+    }
 }
