@@ -562,6 +562,8 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             return DKIMResult::PERMERROR;
         }
     };
+
+    // check "a" tag of "DKIM-Signature" header
     let (dkim_signature_pubkey_algo, dkim_signature_hash_algo) = match dkim_signature_fields["a"].split_once("-") {
         Some((x, y)) => (x.to_owned(), y.to_owned()),
         None => {
@@ -583,6 +585,15 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             return DKIMResult::PERMERROR;
         },
     };
+    match (dkim_signature_pubkey_algo, dkim_signature_hash_algo) {
+        (MyAsymmetricAlgo::Rsa, MyHashAlgo::Sha1) |
+        (MyAsymmetricAlgo::Rsa, MyHashAlgo::Sha256) |
+        (MyAsymmetricAlgo::Ed25519, MyHashAlgo::Sha256) => (), // OK
+        _ => {
+            println!("DKIM-Signature algorithm is invalid combination: {}", dkim_signature_fields["a"]);
+            return DKIMResult::PERMERROR;
+        },
+    }
 
     // check "i" tag of "DKIM-Signature" header against "d" tag
     {
