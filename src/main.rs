@@ -929,7 +929,6 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             println!("DEBUG: invalid signature length: {}", signature_u8.len());
             return DKIMResult::PERMERROR;
         }
-        println!("DEBUG: signature_u8({})={:?}", signature_u8.len(), signature_u8);
         match my_crypto::my_verify_rsa_sign(pubkey_u8.as_slice(), &dkim_signature_hash_algo, header_hash_value.as_slice(), signature_u8.as_slice()) {
             Ok(true) => {
                 println!("DKIM signature is OK");
