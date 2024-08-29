@@ -91,14 +91,14 @@ impl TryFrom<&str> for MyAsymmetricAlgo {
 
 //====================================================================
 #[allow(unused)]
-pub fn my_verify_sign(pubkey_algo: MyAsymmetricAlgo, pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_value: &[u8], signature: &[u8]) -> Result<bool> {
+pub fn my_verify_sign(pubkey_algo: MyAsymmetricAlgo, pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_value: &[u8], signature_u8: &[u8]) -> Result<bool> {
     match pubkey_algo {
-        MyAsymmetricAlgo::Rsa => my_verify_rsa_sign(pubkey_u8_encoded, hash_algo, hash_value, signature),
-        MyAsymmetricAlgo::Ed25519 => my_verify_ed25519_sign(pubkey_u8_encoded, hash_value, signature),
+        MyAsymmetricAlgo::Rsa => my_verify_rsa_sign(pubkey_u8_encoded, hash_algo, hash_value, signature_u8),
+        MyAsymmetricAlgo::Ed25519 => my_verify_ed25519_sign(pubkey_u8_encoded, hash_value, signature_u8),
     }
 }
 
-fn my_verify_rsa_sign(pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_value: &[u8], signature: &[u8]) -> Result<bool> {
+fn my_verify_rsa_sign(pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_value: &[u8], signature_u8: &[u8]) -> Result<bool> {
     // refer the definition "pub fn read_rsa_public_key()" in "src/crypto/rsa.rs" in "viadkim" crate
     let pubkey =  RsaPublicKey::from_public_key_der(pubkey_u8_encoded).or_else(|e| {
         // Supply initial error if fallback fails, too.
@@ -110,7 +110,7 @@ fn my_verify_rsa_sign(pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_valu
         MyHashAlgo::Sha1 => Pkcs1v15Sign::new::<Sha1>(),
         MyHashAlgo::Sha256 => Pkcs1v15Sign::new::<Sha256>(),
     };
-    let result = pubkey.verify(scheme, hash_value, signature);
+    let result = pubkey.verify(scheme, hash_value, signature_u8);
     match result {
         Ok(()) => return Ok(true),
         Err(e) => {
@@ -120,14 +120,14 @@ fn my_verify_rsa_sign(pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_valu
     }
 }
 
-fn my_verify_ed25519_sign(pubkey_u8_encoded: &[u8], hash_value: &[u8], signature: &[u8]) -> Result<bool> {
+fn my_verify_ed25519_sign(pubkey_u8_encoded: &[u8], hash_value: &[u8], signature_u8: &[u8]) -> Result<bool> {
     // refer the definition "read_ed25519_verifying_key()" in "src/crypto/ed25519.rs" in "viadkim" crate
     let verifying_key = ed25519_dalek::VerifyingKey::try_from(pubkey_u8_encoded).or_else(|e| {
         ed25519_dalek::VerifyingKey::from_public_key_der(pubkey_u8_encoded).map_err(|_| e)
     })?;
 
     // refer the definition "verify_ed25519()" in "src/crypto/ed25519.rs" in "viadkim" crate
-    let signature = ed25519_dalek::Signature::from_slice(signature)?;
+    let signature = ed25519_dalek::Signature::from_slice(signature_u8)?;
     match verifying_key.verify(hash_value, &signature) {
         Ok(()) => Ok(true),
         Err(_) => Ok(false),
