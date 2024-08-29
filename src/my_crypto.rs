@@ -60,8 +60,44 @@ fn my_calc_sha256(input: &[u8]) -> Vec<u8> {
 }
 
 //====================================================================
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum MyAsymmetricAlgo {
+    Rsa,
+    Ed25519,
+}
+
+impl std::fmt::Display for MyAsymmetricAlgo {
+    fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let s = match self {
+            Self::Rsa     => "rsa",
+            Self::Ed25519 => "ed25519",
+        };
+        write!(dest, "{}", s)
+    }
+}
+
+impl TryFrom<&str> for MyAsymmetricAlgo {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        match value {
+            "rsa" => Ok(Self::Rsa),
+            "ed25519" => Ok(Self::Ed25519),
+            _ => Err(anyhow!("MyAsymmetricAlgo: unknown value: \"{}\"", value)),
+        }
+    }
+}
+
+//====================================================================
 #[allow(unused)]
-pub fn my_verify_rsa_sign(pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_value: &[u8], signature: &[u8]) -> Result<bool> {
+pub fn my_verify_sign(pubkey_algo: MyAsymmetricAlgo, pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_value: &[u8], signature: &[u8]) -> Result<bool> {
+    match pubkey_algo {
+        MyAsymmetricAlgo::Rsa => my_verify_rsa_sign(pubkey_u8_encoded, hash_algo, hash_value, signature),
+        MyAsymmetricAlgo::Ed25519 => my_verify_ed25519_sign(pubkey_u8_encoded, hash_algo, hash_value, signature),
+    }
+}
+
+fn my_verify_rsa_sign(pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_value: &[u8], signature: &[u8]) -> Result<bool> {
     // refer the definition "pub fn read_rsa_public_key()" in "src/crypto.rsa.rs" in "viadkim" crate
     let pubkey =  RsaPublicKey::from_public_key_der(pubkey_u8_encoded).or_else(|e| {
         // Supply initial error if fallback fails, too.
@@ -81,4 +117,8 @@ pub fn my_verify_rsa_sign(pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_
             return Ok(false);
         },
     }
+}
+
+fn my_verify_ed25519_sign(pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_value: &[u8], signature: &[u8]) -> Result<bool> {
+    Err(anyhow!("*NOT IMPLEMENT YET*\n{:?} {:?} {:?} {:?}", pubkey_u8_encoded, hash_algo, hash_value, signature))
 }

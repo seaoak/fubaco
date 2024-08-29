@@ -569,6 +569,13 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             return DKIMResult::PERMERROR;
         }
     };
+    let dkim_signature_pubkey_algo = match MyAsymmetricAlgo::try_from(dkim_signature_pubkey_algo.as_str()) {
+        Ok(v) => v,
+        Err(e) => {
+            println!("DKIM-Signature signature algorithm is invalid: {}", e);
+            return DKIMResult::PERMERROR;
+        },
+    };
     let dkim_signature_hash_algo = match MyHashAlgo::try_from(dkim_signature_hash_algo.as_str()) {
         Ok(v) => v,
         Err(e) => {
@@ -843,7 +850,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             // OK (not specified)
         }
         if let Some(v) = dkim_dns_fields.get("k") {
-            if *v == dkim_signature_pubkey_algo {
+            if *v == dkim_signature_pubkey_algo.to_string() {
                 // OK
             } else {
                 println!("DKIM record in DNS has different pubkey algorithm: {} vs {}", v, dkim_signature_pubkey_algo);
@@ -903,6 +910,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             },
         };
         let expected_pubkey_bit_length = match 8 * pubkey_u8.len() {
+            256..512 => 256,
             512..1024 => 512,
             1024..2048 => 1024,
             2048..4096 => 2048,
@@ -923,7 +931,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
             println!("DEBUG: invalid signature length: {}", signature_u8.len());
             return DKIMResult::PERMERROR;
         }
-        match my_verify_rsa_sign(pubkey_u8.as_slice(), dkim_signature_hash_algo, header_hash_value.as_slice(), signature_u8.as_slice()) {
+        match my_verify_sign(dkim_signature_pubkey_algo, pubkey_u8.as_slice(), dkim_signature_hash_algo, header_hash_value.as_slice(), signature_u8.as_slice()) {
             Ok(true) => {
                 println!("DKIM signature is OK");
             },
