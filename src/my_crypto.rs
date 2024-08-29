@@ -98,13 +98,13 @@ pub fn my_verify_sign(pubkey_algo: MyAsymmetricAlgo, pubkey_u8_encoded: &[u8], h
 }
 
 fn my_verify_rsa_sign(pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_value: &[u8], signature: &[u8]) -> Result<bool> {
-    // refer the definition "pub fn read_rsa_public_key()" in "src/crypto.rsa.rs" in "viadkim" crate
+    // refer the definition "pub fn read_rsa_public_key()" in "src/crypto/rsa.rs" in "viadkim" crate
     let pubkey =  RsaPublicKey::from_public_key_der(pubkey_u8_encoded).or_else(|e| {
         // Supply initial error if fallback fails, too.
         RsaPublicKey::from_pkcs1_der(pubkey_u8_encoded).map_err(|_| e)
     })?;
 
-    // refer the definition "pub fn verify_rsa()" in "src/crypto.rsa.rs" in "viadkim" crate
+    // refer the definition "pub fn verify_rsa()" in "src/crypto/rsa.rs" in "viadkim" crate
     let scheme = match hash_algo {
         MyHashAlgo::Sha1 => Pkcs1v15Sign::new::<Sha1>(),
         MyHashAlgo::Sha256 => Pkcs1v15Sign::new::<Sha256>(),
