@@ -465,6 +465,7 @@ fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
         if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(url) {
             host_in_href = caps[1].to_string();
         } else {
+            // for example, "with port number", "with percent-encoded", "with BASIC authentication info"
             println!("suspicious-href: \"{}\"", url);
             return Some("suspicious-href".to_string()); // camouflaged hostname
         }
