@@ -94,10 +94,11 @@ fn main() {
     };
 }
 
-fn normalize_string<S: Into<String>>(s: S) -> String {
+fn normalize_string<P: AsRef<str>>(s: P) -> String {
     // normalize string (Unicode NFKC, uppercase, no-whitespace, no-bullet)
+    let s: &str = s.as_ref();
     let mut unicode_normalized_str = String::new();
-    unicode_normalized_str.extend(s.into().nfkc());
+    unicode_normalized_str.extend(s.nfkc());
     wide2ascii(&unicode_normalized_str).to_uppercase().replace(" ", "").replace("　", "").replace("・", "")
 }
 
@@ -409,7 +410,7 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         };
         assert!(lines.iter().all(|fields| fields.len() > 0));
         for fields in &mut lines {
-            fields[0] = normalize_string(fields[0].clone());
+            fields[0] = normalize_string(&fields[0]);
         }
         let (v1, v2): (Vec<Vec<String>>, Vec<Vec<String>>) = lines.into_iter().partition(|fields| fields.len() == 1);
         let prohibited_words = v1.into_iter().map(|fields| fields[0].clone()).collect::<Vec<String>>();
