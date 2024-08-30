@@ -436,7 +436,7 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         (regex, prohibited_words)
     })();
 
-    let is_spam = (|| {
+    let is_suspicious = (|| {
         if !expected_from_address_regex.is_match(&address) {
             return true;
         }
@@ -451,7 +451,7 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         }
         false
     })();
-    if is_spam {
+    if is_suspicious {
         return Some("suspicious-from".to_string());
     }
     None
