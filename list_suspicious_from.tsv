@@ -1,17 +1,18 @@
 Amazon					amazon.co.jp					amazon.com
-JCB						jcb.co.jp
 
-三井住友銀行			vpass.ne.jp						smbc.co.jp
-三井住友カード			vpass.ne.jp						smbc.co.jp
-SMBC					vpass.ne.jp						smbc.co.jp
-VPASS					vpass.ne.jp						smbc.co.jp
-SUMITOMOMITSUI			vpass.ne.jp						smbc.co.jp
+JCB						jcb.co.jp		dnp-cdms.jp
+
+三井住友銀行			smbc.co.jp
+SMBC					smbc.co.jp
+三井住友カード			smbc-card.com	vpass.ne.jp		smbcgroup-point.jp	otp-auth.net
+VPASS					smbc-card.com	vpass.ne.jp		smbcgroup-point.jp	otp-auth.net
+SUMITOMOMITSUI			smbc.co.jp	smbc-card.com	vpass.ne.jp		smbcgroup-point.jp	otp-auth.net
 
 ヤマト運輸				kuronekoyamato.co.jp
 
-VIEWCARD				viewsnet.jp
-ビューカード			viewsnet.jp
-VIEW'S NET				viewsnet.jp
+VIEWCARD				viewsnet.jp		jreast.co.jp
+ビューカード			viewsnet.jp		jreast.co.jp
+VIEW'S NET				viewsnet.jp		jreast.co.jp
 
 東京電力				tepco.co.jp						hikkoshi-line.jp
 TEPCO					tepco.co.jp						hikkoshi-line.jp
