@@ -99,7 +99,7 @@ fn normalize_string<P: AsRef<str>>(s: P) -> String {
     let s: &str = s.as_ref();
     let mut unicode_normalized_str = String::new();
     unicode_normalized_str.extend(s.nfkc());
-    wide2ascii(&unicode_normalized_str).to_uppercase().replace(" ", "").replace("　", "").replace("・", "")
+    wide2ascii(&unicode_normalized_str).to_uppercase().replace(&[' ', '　', '・'], "")
 }
 
 fn make_fubaco_padding_header(nbytes: usize) -> String { // generate just-nbyte-sized "X-Fubaco-Padding" header
@@ -324,7 +324,7 @@ fn spam_checker_dkim(message: &Message) -> Option<String> {
 
 fn spam_checker_spf(message: &Message) -> Option<String> {
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
-    let envelop_from = envelop_from.replace("<", "").replace(">", "").to_lowercase().trim().to_string();
+    let envelop_from = envelop_from.replace(&['<', '>'], "").to_lowercase().trim().to_string();
     println!("Evelop.from: \"{}\"", envelop_from);
     if envelop_from.len() == 0 {
         return None;
@@ -352,7 +352,7 @@ fn spam_checker_spf(message: &Message) -> Option<String> {
 
 fn spam_checker_suspicious_envelop_from(message: &Message) -> Option<String> {
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
-    let envelop_from = envelop_from.replace("<", "").replace(">", "").to_lowercase().trim().to_string();
+    let envelop_from = envelop_from.replace(&['<', '>'], "").to_lowercase().trim().to_string();
     println!("Evelop.from: \"{}\"", envelop_from);
     if envelop_from.len() == 0 {
         Some("suspicious-envelop-from".to_string())
@@ -364,7 +364,7 @@ fn spam_checker_suspicious_envelop_from(message: &Message) -> Option<String> {
 fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
     let blacklist_tld_list = vec![".cn", ".ru", ".hu", ".br", ".su", ".nz", ".in", ".cz", ".be", ".cl"];
     let header_from = message.from().unwrap().first().map(|addr| addr.address.clone().unwrap_or_default().to_string()).unwrap_or_default().to_lowercase();
-    let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string().replace("<", "").replace(">", "").to_lowercase(); // may be empty string
+    let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string().replace(&['<', '>'], "").to_lowercase(); // may be empty string
     println!("Evelop.from: \"{}\"", envelop_from);
     let mut is_spam = false;
     for tld in &blacklist_tld_list {
