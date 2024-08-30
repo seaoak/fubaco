@@ -38,6 +38,56 @@ impl MyDNSResolver {
     }
 
     #[allow(unused)]
+    pub fn query_spf_record(&self, fqdn: &str) -> Result<Option<String>> {
+        let records = self.query_simple(fqdn, "TXT")?;
+        let spf_records: Vec<String> = records.into_iter().filter(|s| s.starts_with("v=spf1 ")).collect();
+        if spf_records.len() == 0 {
+            return Ok(None);
+        }
+        if spf_records.len() > 1 {
+            // invalid SPF setting
+            println!("detect invalid SPF setting (multiple SPF records): {:?}", spf_records);
+            return Ok(Some("*INVALID_SPF_SETTING*".to_string())); // dummy string
+        }
+        let spf_record = spf_records[0].clone(); // ignore multiple records (invalid DNS setting)
+        println!("spf_record: {}", spf_record);
+        Ok(Some(spf_record))
+    }
+
+    #[allow(unused)]
+    pub fn query_mx_record(&self, fqdn: &str) -> Result<Vec<String>> { // Vec may be empty
+        let records = self.query_simple(fqdn, "MX")?;
+        lazy_static! {
+            static ref REGEX_MX_RECORD: Regex = Regex::new(r"^ *\d+ +(\S+) *$").unwrap();
+        }
+        let mut hosts = Vec::new();
+        for record in records {
+            match REGEX_MX_RECORD.captures(&record) {
+                Some(caps) => hosts.push(caps[1].to_string()),
+                None => return Err(anyhow!("invalid MX record: {}", record)),
+            }
+        }
+        Ok(hosts)
+    }
+
+    #[allow(unused)]
+    pub fn query_simple(&self, fqdn: &str, query_type: &str) -> Result<Vec<String>> { // Vec may be empty
+        let query_result =
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    self.lookup(fqdn.to_string(), query_type.to_string()).await
+                });
+        let records = query_result?; // may be empty
+        for s in &records {
+            println!("dns_{}_record: {} {}", query_type, fqdn, s);
+        }
+        Ok(records)
+    }
+
+    #[allow(unused)]
     pub async fn lookup(&self, fqdn: String, query_type: String) -> Result<Vec<String>> {
         // https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/make-api-requests/dns-json/
         // https://developers.google.com/speed/public-dns/docs/doh/json?hl=ja
