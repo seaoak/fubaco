@@ -24,11 +24,13 @@ use webpki_roots;
 mod my_crypto;
 mod my_disconnect;
 mod my_dns_resolver;
+mod my_message_parser;
 mod my_text_line_stream;
 mod pop3_upstream;
 
 use my_crypto::*;
 use my_dns_resolver::MyDNSResolver;
+use my_message_parser::MyMessageParser;
 use my_text_line_stream::MyTextLineStream;
 use pop3_upstream::*;
 
@@ -295,32 +297,6 @@ fn test_rustls_simple_client() -> Result<()> {
     Ok(())
 }
 
-fn get_received_header_of_gateway<'a>(message: &'a Message) -> Option<Box<mail_parser::Received<'a>>> {
-    for header_value in message.header_values("Received") {
-        if let mail_parser::HeaderValue::Received(received) = header_value {
-            if let Some(mail_parser::Host::Name(s)) = received.by() {
-                if s == "niftygreeting" || s.ends_with(".nifty.com") || s.ends_with(".mailbox.org") || s.ends_with(".gandi.net") || s.ends_with(".mxrouting.net") || s.ends_with(".google.com") {
-                    println!("DEBUG: received.from(): \"{:?}\"", received.from());
-                    if let Some(mail_parser::Host::Name(ss)) = received.from() {
-                        lazy_static! {
-                            static ref REGEX_NIFTY_MAILSERVER: Regex = Regex::new(r"^concspmx-\d+$").unwrap();
-                        }
-                        if s.ends_with(".nifty.com") && REGEX_NIFTY_MAILSERVER.is_match(ss) {
-                            println!("skip \"Receivec\" header (internal relay in nifty)");
-                            continue; // skip (internal relay in nifty)
-                        }
-                    }
-                    if received.from_ip().is_none() {
-                        continue;
-                    }
-                    return Some(received.clone());
-                }
-            }
-        }
-    }
-    None
-}
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum DKIMResult {
     NONE,
@@ -543,7 +519,7 @@ fn dkim_verify(message: &Message) -> DKIMResult {
     let timestamp_at_gateway;
     {
         let now = SystemTime::UNIX_EPOCH.elapsed().unwrap().as_secs();
-        if let Some(received) = get_received_header_of_gateway(message) {
+        if let Some(received) = message.get_received_header_of_gateway() {
             if let Some(datetime) = received.date() {
                 let seconds = datetime.to_timestamp();
                 assert!(seconds >= 0);
@@ -1171,7 +1147,7 @@ fn spam_checker_spf(message: &Message) -> Option<String> {
     if envelop_from.len() == 0 {
         return None;
     }
-    let source_ip = match get_received_header_of_gateway(message) {
+    let source_ip = match message.get_received_header_of_gateway() {
         Some(received) => {
             match received.from_ip() {
                 Some(v) => v,
