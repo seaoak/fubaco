@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, ErrorKind, Read, Write};
+use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -118,6 +119,24 @@ fn make_fubaco_padding_header(nbytes: usize) -> String { // generate just-nbyte-
     }
     assert!(buf.ends_with("x\r\n")); // at least one "x" is contained in last line
     buf
+}
+
+fn load_tsv_file<P: AsRef<Path>>(path: P) -> Result<Vec<Vec<String>>> {
+    let f = File::open(path)?;
+    let reader = BufReader::new(f);
+    let mut lines = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
+        if line.starts_with("#") {
+            continue; // skip comment
+        }
+        let fields = line.split("\t").filter(|s| s.len() > 0).map(|s| s.to_string()).collect::<Vec<String>>();
+        if fields.len() == 0 {
+            continue; // skip empty line
+        }
+        lines.push(fields);
+    }
+    Ok(lines)
 }
 
 lazy_static! {
@@ -375,66 +394,55 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
     println!("Subject: \"{}\"", subject);
     let destination = normalize_string(message.to().unwrap().first().map(|addr| addr.address.clone().unwrap()).unwrap_or_default()); // may be empty string
     println!("To.address: \"{}\"", destination);
-    let expected_from_address_pattern = (|| {
-        if name.contains("AMAZON") || subject.contains("AMAZON") {
-            return r"[.@]amazon(\.co\.jp|\.com)$";
+    let (expected_from_address_regex, prohibited_words): (Regex, Vec<String>) = (|| {
+        lazy_static! {
+            static ref REGEX_ALWAYS_MATCH: Regex = Regex::new(r".").unwrap();
+            static ref REGEX_DOT_AT_THE_FIRST: Regex = Regex::new(r"^[.]").unwrap();
         }
-        if name.contains("JCB") {
-            return r"[.@]jcb\.co\.jp$";
+        let filename = "list_suspicious_from.tsv";
+        let mut lines = match load_tsv_file(filename) {
+            Ok(v) => v,
+            Err(e) => {
+                println!("can not load \"{}\": {}", filename, e);
+                return (REGEX_ALWAYS_MATCH.clone(), Vec::new());
+            },
+        };
+        assert!(lines.iter().all(|fields| fields.len() > 0));
+        for fields in &mut lines {
+            fields[0] = normalize_string(fields[0].clone());
         }
-        if name.contains("三井住友銀行") || name.contains("三井住友カード") || name.contains("SMBC") || name.contains("VPASS") || name.contains("SUMITOMOMITSUI") || subject.contains("三井住友") {
-            return r"[.@](vpass\.ne\.jp|smbc\.co\.jp)$";
+        let (v1, v2): (Vec<Vec<String>>, Vec<Vec<String>>) = lines.into_iter().partition(|fields| fields.len() == 1);
+        let prohibited_words = v1.into_iter().map(|fields| fields[0].clone()).collect::<Vec<String>>();
+        let matched_lines = v2.into_iter().filter(|fields| name.contains(&fields[0]) || subject.contains(&fields[0])).collect::<Vec<Vec<String>>>();
+        if matched_lines.len() == 0 {
+            return (REGEX_ALWAYS_MATCH.clone(), prohibited_words);
         }
-        if name.contains("ヤマト運輸") {
-            return r"[.@]kuronekoyamato\.co\.jp$";
+        let mut domains = Vec::new();
+        for fields in matched_lines.into_iter() { // merge all matched lines
+            assert!(fields.len() > 1);
+            domains.extend(fields.into_iter().skip(1).map(|s| REGEX_DOT_AT_THE_FIRST.replace(&s, "").to_string())); // remove redundant dot
         }
-        if name.contains("VIEWCARD") || name.contains("ビューカード") || name.contains("VIEW'SNET") || subject.contains("VIEW'SNET") {
-            return r"[.@]viewsnet\.jp$";
-        }
-        if name.contains("東京電力") || name.contains("TEPCO") || subject.contains("東京電力") {
-            return r"[.@](tepco\.co\.jp|hikkoshi-line\.jp)$";
-        }
-        if name.contains("三菱UFJ") || name.contains("MUFG") {
-            return r"[.@]mufg\.jp$";
-        }
-        if name.contains("えきねっと") {
-            return r"[.@]eki-net\.com$";
-        }
-        if name.contains("DOCOMO") || name.contains("ドコモ") || subject.contains("DOCOMO") || subject.contains("ドコモ") {
-            return r"[.@](docomo\.ne\.jp|mydocomo\.com)$";
-        }
-        if name.contains("PAYPAL") {
-            return r"[.@]paypal\.com$";
-        }
-        if name.contains("APPLE") {
-            return r"[.@]apple\.com$";
-        }
-        r"." // always match
+        assert_ne!(domains.len(), 0);
+        let joined_string = domains.into_iter().map(|s| s.replace(".", "[.]")).collect::<Vec<String>>().join("|");
+        let pattern_string = format!("(?i)[.@]({})$", joined_string); // case-insensitive
+        let regex = match Regex::new(&pattern_string) {
+            Ok(v) => v,
+            Err(_e) => {
+                println!("REGEX for suspicious-from is invalid: {}", pattern_string);
+                return (REGEX_ALWAYS_MATCH.clone(), prohibited_words);
+            },
+        };
+        (regex, prohibited_words)
     })();
-    let suspicious_words_in_name = [
-        "イオンペイ", "イオンカード", "イオン銀行", "イオンフィナンシャルサービス", "AEON",
-        "AMERICANEXPRESS", "アメリカンエキスプレス",
-        "セゾンカード",
-        "永久不滅",
-        "ETC利用照会サービス", "マイレージサービス",
-        "エポスカード", "エポスNET",
-        "マスターカード",
-        "JCON", "J-COM",
-        "楽天カード",
-        "VIAGRA", "CIALIS",
-    ];
-    let suspicious_words_in_subject = [
-        "VIAGRA", "CIALIS",
-    ];
 
     let is_spam = (|| {
-        if !Regex::new(&format!("(?i){}", expected_from_address_pattern)).unwrap().is_match(&address) {
+        if !expected_from_address_regex.is_match(&address) {
             return true;
         }
-        if suspicious_words_in_name.iter().any(|s| name.contains(s)) {
+        if prohibited_words.iter().any(|s| name.contains(s)) {
             return true;
         }
-        if suspicious_words_in_subject.iter().any(|s| subject.contains(s)) {
+        if prohibited_words.iter().any(|s| subject.contains(s)) {
             return true;
         }
         if address == destination { // header.from is camoflaged with destination address
