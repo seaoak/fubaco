@@ -45,11 +45,10 @@ impl MyDNSResolver {
             return Ok(None);
         }
         if spf_records.len() > 1 {
-            // invalid SPF setting
             println!("detect invalid SPF setting (multiple SPF records): {:?}", spf_records);
-            return Ok(Some("*INVALID_SPF_SETTING*".to_string())); // dummy string
+            return Ok(Some("*INVALID_SPF_SETTING*".to_string())); // go to "PERMERROR" (see "section 4.5" in RFC7208)
         }
-        let spf_record = spf_records[0].clone(); // ignore multiple records (invalid DNS setting)
+        let spf_record = spf_records[0].clone();
         println!("spf_record: {}", spf_record);
         Ok(Some(spf_record))
     }
