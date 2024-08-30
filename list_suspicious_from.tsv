@@ -1,48 +1,64 @@
 Amazon					amazon.co.jp					amazon.com
 JCB						jcb.co.jp
+
 三井住友銀行			vpass.ne.jp						smbc.co.jp
 三井住友カード			vpass.ne.jp						smbc.co.jp
 SMBC					vpass.ne.jp						smbc.co.jp
 VPASS					vpass.ne.jp						smbc.co.jp
 SUMITOMOMITSUI			vpass.ne.jp						smbc.co.jp
+
 ヤマト運輸				kuronekoyamato.co.jp
+
 VIEWCARD				viewsnet.jp
 ビューカード			viewsnet.jp
 VIEW'S NET				viewsnet.jp
+
 東京電力				tepco.co.jp						hikkoshi-line.jp
 TEPCO					tepco.co.jp						hikkoshi-line.jp
+
 三菱UFJ					mufg.jp
 MUFG					mufg.jp
+
 えきねっと				eki-net.com
+
 docomo					docomo.ne.jp					mydocomo.com
 ドコモ					docomo.ne.jp					mydocomo.com
+
 PayPal					paypal.com
 Apple					apple.com
+PayPay					paypay.ne.jp	paypay-bank.co.jp
 
-イオンペイ
-イオンカード
-イオン銀行
-イオンフィナンシャルサービス
-AEON
+アプラス				aplus.co.jp
+APLUS					aplus.co.jp
+NETstation				aplus.co.jp
 
-AMERICAN EXPRESS
-アメリカンエキスプレス
+AEON					aeon.com	aeon.co.jp
+イオンペイ				aeon.com	aeon.co.jp
+イオンカード			aeon.com	aeon.co.jp
+イオン銀行				aeonbank.co.jp
+イオンフィナンシャルサービス	aeonfinancial.co.jp
 
-セゾンカード
-永久不滅
+AMERICAN EXPRESS		americanexpress.com		americanexpress.jp	amexnetwork.com	aexpfeedback.com	aexp.com
+アメリカンエキスプレス	americanexpress.com		americanexpress.jp	amexnetwork.com	aexpfeedback.com	aexp.com
 
-ETC利用照会サービス
-マイレージサービス
+セゾンカード			saisoncard.co.jp	saisonid.com
+永久不滅				saisoncard.co.jp	saisonid.com
 
-エポスカード
-エポスNET
+ETC利用照会サービス		etc-meisai.jp	go-etc.jp
+マイレージサービス		smile-etc.jp
 
-マスターカード
+エポスカード			01epos.jp	eposcard.co.jp
+エポスNET				01epos.jp	eposcard.co.jp
 
-JCON
-J-COM
+マスターカード			mastercard.co.jp	mastercard.com		mastercard.us
+MasterCard				mastercard.co.jp	mastercard.com		mastercard.us
 
-楽天カード
+JCON					jcom.co.jp		zaq.ne.jp	myjcom.jp
+J-COM					jcom.co.jp		zaq.ne.jp	myjcom.jp
 
+楽天カード				rakuten-card.co.jp		ad02clickmailer.jp
+
+###---------------------------------------------------------------------------
+### 禁止ワード
 Viagra
 Cialis
