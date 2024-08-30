@@ -436,22 +436,16 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         (regex, prohibited_words)
     })();
 
-    let is_suspicious = (|| {
-        if !expected_from_address_regex.is_match(&address) {
-            return true;
-        }
-        if prohibited_words.iter().any(|s| name.contains(s)) {
-            return true;
-        }
-        if prohibited_words.iter().any(|s| subject.contains(s)) {
-            return true;
-        }
-        if address == destination { // header.from is camoflaged with destination address
-            return true;
-        }
-        false
-    })();
-    if is_suspicious {
+    if !expected_from_address_regex.is_match(&address) {
+        return Some("suspicious-from".to_string());
+    }
+    if prohibited_words.iter().any(|s| name.contains(s)) {
+        return Some("prohibited-word-in-from".to_string());
+    }
+    if prohibited_words.iter().any(|s| subject.contains(s)) {
+        return Some("prohibited-word-in-subject".to_string());
+    }
+    if address == destination { // header.from is camoflaged with destination address
         return Some("suspicious-from".to_string());
     }
     None
