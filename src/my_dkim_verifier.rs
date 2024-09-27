@@ -14,10 +14,10 @@ use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_message_parser::MyMessageParser;
 
 //====================================================================
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum DKIMResult {
     NONE,
-    PASS,
+    PASS(String), // with "verified domain"
     FAIL,
     PERMERROR,
     TEMPERROR,
@@ -27,7 +27,7 @@ impl std::fmt::Display for DKIMResult {
     fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
         let s = match self {
             Self::NONE      => "dkim-none",
-            Self::PASS      => "dkim-pass",
+            Self::PASS(_)   => "dkim-pass",
             Self::FAIL      => "dkim-fail",
             Self::PERMERROR => "dkim-permerror",
             Self::TEMPERROR => "dkim-temperror",
@@ -584,5 +584,5 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
         };
     }
 
-    DKIMResult::PASS
+    DKIMResult::PASS(dkim_signature_fields["d"].to_string())
 }
