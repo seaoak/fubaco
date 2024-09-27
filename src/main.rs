@@ -576,114 +576,6 @@ fn spam_checker_suspicious_delivery_report(message: &Message) -> Option<String> 
     None
 }
 
-fn get_authentication_results(message: &Message) -> Option<HashMap<String, String>> {
-    let header_value = match message.header("Authentication-Results") {
-        Some(mail_parser::HeaderValue::Text(s)) => s,
-        _ => return None,
-    };
-    println!("Authenticatino-Results: {}", header_value);
-    lazy_static! {
-        static ref REGEX_CONTINUATION_LINE_PATTERN: Regex = Regex::new(r"\r\n([ \t])").unwrap();
-    }
-    let header_value = REGEX_CONTINUATION_LINE_PATTERN.replace_all(&header_value, " ");
-    let mut table = HashMap::<String, String>::new();
-    let records = header_value.split(";").map(str::trim);
-    for record in records {
-        // refer to RFC5451
-        // https://datatracker.ietf.org/doc/html/rfc5451
-        if table.get("mx").is_none() {
-            // first record is MX (mail server)
-            table.insert("mx".to_string(), record.to_string());
-            continue;
-        }
-        if record == "none" {
-            continue;
-        }
-        let (pair, rest) = if let Some((pair, rest)) = record.split_once(' ') { // "rest" may be empty string
-            (pair, rest.trim())
-        } else {
-            (record, "")
-        };
-        let (label, status) = if let Some((label, status)) = pair.split_once('=') {
-            (label, status)
-        } else {
-            println!("WARNING: syntax error at \"Authentication-Results\" header: \"{}\"", pair);
-            continue;
-        };
-        let target = match label {
-            "spf" => {
-                lazy_static! {
-                    static ref REGEX_SMTP_MAILFROM: Regex = Regex::new(r"(^|\s)smtp\.mailfrom=(\S+)(\s|$)").unwrap();
-                    static ref REGEX_SMTP_HELO: Regex = Regex::new(r"(^|\s)smtp\.helo=(\S+)(\s|$)").unwrap();
-                    static ref REGEX_DOMAIN_OF: Regex = Regex::new(r"(^|\s)domain of (\S+) ").unwrap();
-                }
-                if let Some(caps) = REGEX_SMTP_MAILFROM.captures(rest) {
-                    Some(caps[2].to_string())
-                } else if let Some(caps) = REGEX_SMTP_HELO.captures(rest) {
-                    Some(caps[2].to_string())
-                } else if let Some(caps) = REGEX_DOMAIN_OF.captures(rest) {
-                    Some(caps[2].to_string())
-                } else {
-                    None
-                }
-            },
-            "dkim" => {
-                lazy_static! {
-                    static ref REGEX_HEADER_I: Regex = Regex::new(r"(^|\s)header\.i=(\S+)(\s|$)").unwrap();
-                    static ref REGEX_HEADER_D: Regex = Regex::new(r"(^|\s)header\.d=(\S+)(\s|$)").unwrap();
-                }
-                if let Some(caps) = REGEX_HEADER_I.captures(rest) {
-                    Some(caps[2].to_string())
-                } else if let Some(caps) = REGEX_HEADER_D.captures(rest) {
-                    Some(caps[2].to_string())
-                } else {
-                    None
-                }
-            },
-            "dmarc" | "dkim-adsp" => {
-                lazy_static! {
-                    static ref REGEX_HEADER_FROM: Regex = Regex::new(r"(^|\s)header\.from=(\S+)(\s|$)").unwrap();
-                }
-                if let Some(caps) = REGEX_HEADER_FROM.captures(rest) {
-                    Some(caps[2].to_string())
-                } else {
-                    None
-                }
-            },
-            "sender-id" => {
-                lazy_static! {
-                    static ref REGEX_HEADER_FROM: Regex = Regex::new(r"(^|\s)header\.From=(\S+)(\s|$)").unwrap();
-                }
-                if let Some(caps) = REGEX_HEADER_FROM.captures(rest) {
-                    Some(caps[2].to_string())
-                } else {
-                    None
-                }
-            },
-            _ => { // unknown label
-                println!("WARNING: detect unknown label at \"Authentication-Results\" header: \"{}\"", label);
-                None
-            },
-        };
-        let domain = if let Some(mail_address) = target {
-            assert_ne!(mail_address.len(), 0);
-            if let Some((_localpart, domain)) = mail_address.split_once('@') {
-                Some(domain.to_string())
-            } else {
-                Some(mail_address)
-            }
-        } else {
-            None
-        };
-        assert!(!table.contains_key(label));
-        table.insert(label.to_string(), status.to_string());
-        if let Some(s) = domain {
-            table.insert(format!("{}-target-domain", label), s);
-        }
-    }
-    Some(table)
-}
-
 fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     let message;
     if let Some(v) = MessageParser::default().parse(message_u8) {
@@ -706,7 +598,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
         spam_judgement.push("none".to_string());
     }
 
-    if let Some(table) = get_authentication_results(&message) {
+    if let Some(table) = message.get_authentication_results() {
         // check if my SPF checker matches "Authentication-Results" header
         if let Some(spf_result) = table.get("spf") {
             let v = spam_judgement.iter().filter(|s| s.starts_with("spf-")).map(|s| &s[4..]).collect::<Vec<&str>>();
