@@ -9,7 +9,7 @@ use crate::my_dns_resolver::MyDNSResolver;
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SPFResult {
     NONE,
-    PASS(String), // with "smtp.mailfrom"
+    PASS(String), // with domain of "smtp.mailfrom"
     FAIL,
     SOFTFAIL,
     PERMERROR,
@@ -37,6 +37,12 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
         Ok(None) => return SPFResult::NONE,
         Err(_e) => return SPFResult::TEMPERROR,
     }
+
+    let target_domain = if let Some((_localpart, domain)) = envelop_from.split_once('@') {
+        domain
+    } else {
+        envelop_from
+    };
 
     lazy_static! {
         static ref REGEX_SPF_REDIRECT_DOMAIN: Regex = Regex::new(r"^redirect=([_a-z0-9]([-_a-z0-9]*[a-z0-9])?([.][a-z0-9]([-_a-z0-9]*[a-z0-9])?)*)$").unwrap();
@@ -113,7 +119,7 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
                 Err(_e) => return SPFResult::TEMPERROR,
             };
             if hosts.len() > 0 {
-                return SPFResult::PASS(envelop_from.to_string());
+                return SPFResult::PASS(target_domain.to_string());
             }
         }
         if field == "+ptr" || field == "ptr" {
@@ -179,7 +185,7 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
                 Ipv6Addr::to_bits(self)
             }
         }
-        fn process_ip_field<I: MyIpAddr>(prefix: &str, regex: &Regex, source_ip: &IpAddr, field: &str, envelop_from: &str) -> Option<SPFResult> {
+        fn process_ip_field<I: MyIpAddr>(prefix: &str, regex: &Regex, source_ip: &IpAddr, field: &str, target_domain: &str) -> Option<SPFResult> {
             let addr;
             let bitmask_len;
             if let Some(caps) = regex.captures(field) {
@@ -219,7 +225,7 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
             let left = bit_expression;
             let right = addr.to_bits() as u128; // may be cast
             if left & bitmask == right & bitmask {
-                return Some(SPFResult::PASS(envelop_from.to_string()));
+                return Some(SPFResult::PASS(target_domain.to_string()));
             }
             None
         }
@@ -228,7 +234,7 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
             lazy_static! {
                 static ref REGEX_SPF_IPV4: Regex = Regex::new(r"^[+]?ip4:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)([/]([1-9][0-9]*))?$").unwrap();
             }
-            if let Some(result) = process_ip_field::<Ipv4Addr>("ip4", &REGEX_SPF_IPV4, source_ip, &field, envelop_from) {
+            if let Some(result) = process_ip_field::<Ipv4Addr>("ip4", &REGEX_SPF_IPV4, source_ip, &field, target_domain) {
                 return result;
             }
         }
@@ -236,7 +242,7 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
             lazy_static! {
                 static ref REGEX_SPF_IPV6: Regex = Regex::new(r"^[+]?ip6:([:0-9a-f]+)([/]([1-9][0-9]*))?$").unwrap();
             }
-            if let Some(result) = process_ip_field::<Ipv6Addr>("ip6", &REGEX_SPF_IPV6, source_ip, &field, envelop_from) {
+            if let Some(result) = process_ip_field::<Ipv6Addr>("ip6", &REGEX_SPF_IPV6, source_ip, &field, target_domain) {
                 return result;
             }
         }
