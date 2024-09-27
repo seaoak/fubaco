@@ -600,20 +600,20 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     let mut spf_status = spam_checker_spf(&message).to_string();
     let mut dkim_status = spam_checker_dkim(&message).to_string();
     if let Some(table) = message.get_authentication_results() {
-        if let Some(spf_result) = table.get("spf") {
-            if spf_result != &spf_status {
-                println!("WARNING: my SPF checker says different result to \"Authentication-Results\" header: my_spf={} vs header={}", spf_status, spf_result);
+        if let Some(mx_spf_status) = table.get("spf") {
+            if mx_spf_status != &spf_status {
+                println!("WARNING: my SPF checker says different result to \"Authentication-Results\" header: my_spf={} vs header={}", spf_status, mx_spf_status);
             }
-            if spf_result != "none" {
-                spf_status = spf_result.to_string(); // overwrite
+            if mx_spf_status != "none" {
+                spf_status = mx_spf_status.to_string(); // overwrite
             }
         }
-        if let Some(dkim_result) = table.get("dkim").or_else(|| table.get("dkim-adsp")) {
-            if dkim_result != &dkim_status {
-                println!("WARNING: my DKIM checker says different result to \"Authentication-Results\" header: my_dkim={} vs header={}", dkim_status, dkim_result);
+        if let Some(mx_dkim_status) = table.get("dkim").or_else(|| table.get("dkim-adsp")) {
+            if mx_dkim_status != &dkim_status {
+                println!("WARNING: my DKIM checker says different result to \"Authentication-Results\" header: my_dkim={} vs header={}", dkim_status, mx_dkim_status);
             }
-            if dkim_result != "none" {
-                dkim_status = dkim_result.to_string(); // overwrite
+            if mx_dkim_status != "none" {
+                dkim_status = mx_dkim_status.to_string(); // overwrite
             }
         }
     }
