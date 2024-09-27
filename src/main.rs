@@ -24,6 +24,7 @@ mod my_crypto;
 mod my_disconnect;
 mod my_dkim_verifier;
 mod my_dns_resolver;
+mod my_dmarc_verifier;
 mod my_message_parser;
 mod my_spf_verifier;
 mod my_text_line_stream;
@@ -584,6 +585,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     } else {
         return Err(anyhow!("can not parse the message"));
     }
+
     let mut spam_judgement: Vec<String> = [
         spam_checker_suspicious_envelop_from,
         spam_checker_blacklist_tld,
@@ -597,29 +599,77 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
         spam_judgement.push("none".to_string());
     }
 
-    let mut spf_status = spam_checker_spf(&message).to_string();
-    let mut dkim_status = spam_checker_dkim(&message).to_string();
-    if let Some(table) = message.get_authentication_results() {
+    let table_of_authentication_results_header = message.get_authentication_results();
+
+    let spf_result = spam_checker_spf(&message);
+    let mut spf_status = spf_result.to_string();
+    let mut spf_target = match &spf_result {
+        SPFResult::PASS(addr) => Some(addr.to_string()),
+        _ => None,
+    };
+    if let Some(table) = &table_of_authentication_results_header {
         if let Some(mx_spf_status) = table.get("spf") {
             if mx_spf_status != &spf_status {
-                println!("WARNING: my SPF checker says different result to \"Authentication-Results\" header: my_spf={} vs header={}", spf_status, mx_spf_status);
+                println!("WARNING: my SPF checker says different result to \"Authentication-Results\" header: my={} vs header={}", spf_status, mx_spf_status);
             }
             if mx_spf_status != "none" {
                 spf_status = mx_spf_status.to_string(); // overwrite
             }
+            if let Some(mx_spf_target) = table.get("spf-target-domain") {
+                if let Some(my_spf_target) = &spf_target {
+                    if mx_spf_target != my_spf_target {
+                        println!("WARNING: my SPF checker says different target domain to \"Authentication-Results\" header: my={} vs header={}", my_spf_target, mx_spf_target);
+                    }
+                }
+                if mx_spf_status == "passs" {
+                    spf_target = Some(mx_spf_target.to_string()); // overwrite
+                }
+            }
         }
+    }
+    let dkim_result = spam_checker_dkim(&message);
+    let mut dkim_status = dkim_result.to_string();
+    let mut dkim_target = match &dkim_result {
+        DKIMResult::PASS(addr) => Some(addr.to_string()),
+        _ => None,
+    };
+    if let Some(table) = &table_of_authentication_results_header {
         if let Some(mx_dkim_status) = table.get("dkim").or_else(|| table.get("dkim-adsp")) {
             if mx_dkim_status != &dkim_status {
-                println!("WARNING: my DKIM checker says different result to \"Authentication-Results\" header: my_dkim={} vs header={}", dkim_status, mx_dkim_status);
+                println!("WARNING: my DKIM checker says different result to \"Authentication-Results\" header: my={} vs header={}", dkim_status, mx_dkim_status);
             }
             if mx_dkim_status != "none" {
                 dkim_status = mx_dkim_status.to_string(); // overwrite
             }
+            if let Some(mx_dkim_target) = table.get("dkim-target-domain") {
+                if let Some(my_dkim_target) = &dkim_target {
+                    if mx_dkim_target != my_dkim_target {
+                        println!("WARNING: my DKIM checker says different target domain to \"Authentication-Results\" header: my={} vs header={}", my_dkim_target, mx_dkim_target);
+                    }
+                }
+                if mx_dkim_status == "pass" {
+                    dkim_target = Some(mx_dkim_target.to_string()); // overwrite
+                }
+            }
         }
     }
+    let dmarc_result = my_dmarc_verifier::dmarc_verify(&message, &spf_target, &dkim_target, &MY_DNS_RESOLVER);
+    let mut dmarc_status = dmarc_result.to_string();
+    if let Some(table) = &table_of_authentication_results_header {
+        if let Some(mx_dmarc_status) = table.get("dmarc") {
+            if mx_dmarc_status != &dmarc_status {
+                println!("WARNING: my DMARC checker says different result to \"Authentication-Results\" header: my={} vs header={}", dmarc_status, mx_dmarc_status);
+            }
+            if mx_dmarc_status != "none" {
+                dmarc_status = mx_dmarc_status.to_string(); // overwrite
+            }
+        }
+    }
+
     let auth_results = vec![
         format!("spf={}", spf_status),
         format!("dkim={}", dkim_status),
+        format!("dmarc={}", dmarc_status),
     ];
 
     let mut fubaco_headers = Vec::new();
