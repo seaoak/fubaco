@@ -269,6 +269,8 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
                 SPFResult::SOFTFAIL  => (), // ignored
             }
         }
+
+        // ignore (skip) unknown field
     }
     SPFResult::NONE
 }
