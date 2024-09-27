@@ -19,12 +19,12 @@ pub enum SPFResult {
 impl std::fmt::Display for SPFResult {
     fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
         let s = match self {
-            Self::NONE      => "spf-none",
-            Self::PASS(_)   => "spf-pass",
-            Self::FAIL      => "spf-fail",
-            Self::SOFTFAIL  => "spf-softfail",
-            Self::PERMERROR => "spf-permerror",
-            Self::TEMPERROR => "spf-temperror",
+            Self::NONE      => "none",
+            Self::PASS(_)   => "pass",
+            Self::FAIL      => "fail",
+            Self::SOFTFAIL  => "softfail",
+            Self::PERMERROR => "permerror",
+            Self::TEMPERROR => "temperror",
         };
         write!(dest, "{}", s)
     }

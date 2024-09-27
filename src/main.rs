@@ -30,8 +30,10 @@ mod my_text_line_stream;
 mod pop3_upstream;
 
 use my_crypto::*;
+use my_dkim_verifier::DKIMResult;
 use my_dns_resolver::MyDNSResolver;
 use my_message_parser::MyMessageParser;
+use my_spf_verifier::SPFResult;
 use my_text_line_stream::MyTextLineStream;
 use pop3_upstream::*;
 
@@ -317,26 +319,25 @@ fn test_rustls_simple_client() -> Result<()> {
     Ok(())
 }
 
-fn spam_checker_dkim(message: &Message) -> Option<String> {
-    let result = my_dkim_verifier::dkim_verify(message, &MY_DNS_RESOLVER);
-    Some(result.to_string())
+fn spam_checker_dkim(message: &Message) -> DKIMResult {
+    my_dkim_verifier::dkim_verify(message, &MY_DNS_RESOLVER)
 }
 
-fn spam_checker_spf(message: &Message) -> Option<String> {
+fn spam_checker_spf(message: &Message) -> SPFResult {
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
     let envelop_from = envelop_from.replace(&['<', '>'], "").to_lowercase().trim().to_string();
     println!("Evelop.from: \"{}\"", envelop_from);
     if envelop_from.len() == 0 {
-        return None;
+        return SPFResult::NONE;
     }
     let source_ip = match message.get_received_header_of_gateway() {
         Some(received) => {
             match received.from_ip() {
                 Some(v) => v,
-                None => return None,
+                None => return SPFResult::NONE,
             }
         },
-        None => return None,
+        None => return SPFResult::NONE,
     };
     println!("source_ip: {}", source_ip);
 
@@ -344,10 +345,10 @@ fn spam_checker_spf(message: &Message) -> Option<String> {
     if let Some(caps) = REGEX_MAIL_ADDRESS.captures(&envelop_from) {
         domain = caps[2].to_string();
     } else {
-        return Some("invalid-envelop-from".to_string());
+        return SPFResult::PERMERROR; // invalid mail address (syntax error)
     }
 
-    return Some(my_spf_verifier::spf_check_recursively(&domain, &source_ip, &envelop_from, &MY_DNS_RESOLVER).to_string());
+    my_spf_verifier::spf_check_recursively(&domain, &source_ip, &envelop_from, &MY_DNS_RESOLVER)
 }
 
 fn spam_checker_suspicious_envelop_from(message: &Message) -> Option<String> {
@@ -584,8 +585,6 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
         return Err(anyhow!("can not parse the message"));
     }
     let mut spam_judgement: Vec<String> = [
-        spam_checker_dkim,
-        spam_checker_spf,
         spam_checker_suspicious_envelop_from,
         spam_checker_blacklist_tld,
         spam_checker_suspicious_from,
@@ -598,22 +597,34 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
         spam_judgement.push("none".to_string());
     }
 
+    let mut spf_status = spam_checker_spf(&message).to_string();
+    let mut dkim_status = spam_checker_dkim(&message).to_string();
     if let Some(table) = message.get_authentication_results() {
-        // check if my SPF checker matches "Authentication-Results" header
         if let Some(spf_result) = table.get("spf") {
-            let v = spam_judgement.iter().filter(|s| s.starts_with("spf-")).map(|s| &s[4..]).collect::<Vec<&str>>();
-            if v.len() > 0 {
-                assert_eq!(v.len(), 1);
-                let my_result = v[0];
-                if my_result != spf_result {
-                    println!("WARNING: my SPF checker says different result to \"Authentication-Results\" header: my_spf={} vs header={}", my_result, spf_result);
-                }
+            if spf_result != &spf_status {
+                println!("WARNING: my SPF checker says different result to \"Authentication-Results\" header: my_spf={} vs header={}", spf_status, spf_result);
+            }
+            if spf_result != "none" {
+                spf_status = spf_result.to_string(); // overwrite
+            }
+        }
+        if let Some(dkim_result) = table.get("dkim").or_else(|| table.get("dkim-adsp")) {
+            if dkim_result != &dkim_status {
+                println!("WARNING: my DKIM checker says different result to \"Authentication-Results\" header: my_dkim={} vs header={}", dkim_status, dkim_result);
+            }
+            if dkim_result != "none" {
+                dkim_status = dkim_result.to_string(); // overwrite
             }
         }
     }
+    let auth_results = vec![
+        format!("spf={}", spf_status),
+        format!("dkim={}", dkim_status),
+    ];
 
     let mut fubaco_headers = Vec::new();
     fubaco_headers.push(format!("X-Fubaco-Spam-Judgement: {}\r\n", spam_judgement.join(" ")));
+    fubaco_headers.push(format!("X-Fubaco-Authentication: {}\r\n", auth_results.join(" ")));
     let nbytes = fubaco_headers.iter().fold(0, |acc, s| acc + s.len());
     fubaco_headers.push(make_fubaco_padding_header(*FUBACO_HEADER_TOTAL_SIZE - nbytes));
     Ok(fubaco_headers.join(""))

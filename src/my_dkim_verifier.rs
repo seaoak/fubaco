@@ -26,11 +26,11 @@ pub enum DKIMResult {
 impl std::fmt::Display for DKIMResult {
     fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
         let s = match self {
-            Self::NONE      => "dkim-none",
-            Self::PASS(_)   => "dkim-pass",
-            Self::FAIL      => "dkim-fail",
-            Self::PERMERROR => "dkim-permerror",
-            Self::TEMPERROR => "dkim-temperror",
+            Self::NONE      => "none",
+            Self::PASS(_)   => "pass",
+            Self::FAIL      => "fail",
+            Self::PERMERROR => "permerror",
+            Self::TEMPERROR => "temperror",
         };
         write!(dest, "{}", s)
     }
