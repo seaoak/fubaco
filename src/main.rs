@@ -31,7 +31,7 @@ mod my_text_line_stream;
 mod pop3_upstream;
 
 use my_crypto::*;
-use my_dkim_verifier::DKIMResult;
+use my_dkim_verifier::{DKIMResult, DKIMStatus};
 use my_dns_resolver::MyDNSResolver;
 use my_message_parser::MyMessageParser;
 use my_spf_verifier::{SPFResult, SPFStatus};
@@ -587,33 +587,26 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
             }
         }
     }
-    let dkim_result = my_dkim_verifier::dkim_verify(&message, &MY_DNS_RESOLVER);
-    let mut dkim_status = dkim_result.to_string();
-    let mut dkim_target = match &dkim_result {
-        DKIMResult::PASS(addr) => Some(addr.to_string()),
-        _ => None,
-    };
+    let mut dkim_result = my_dkim_verifier::dkim_verify(&message, &MY_DNS_RESOLVER);
     if let Some(table) = &table_of_authentication_results_header {
         if let Some(mx_dkim_status) = table.get("dkim").or_else(|| table.get("dkim-adsp")) {
-            if mx_dkim_status != &dkim_status {
-                println!("WARNING: my DKIM checker says different result to \"Authentication-Results\" header: my={} vs header={}", dkim_status, mx_dkim_status);
+            let mx_dkim_status = mx_dkim_status.parse::<DKIMStatus>().unwrap(); // TODO: unknown string may have to be an error, not panic
+            if &mx_dkim_status != dkim_result.as_status() {
+                println!("WARNING: my DKIM checker says different result to \"Authentication-Results\" header: my={} vs header={}", dkim_result.as_status(), mx_dkim_status);
             }
-            if mx_dkim_status != "none" {
-                dkim_status = mx_dkim_status.to_string(); // overwrite
+            let mx_dkim_domain = table.get("dkim-target-domain").or_else(|| table.get("dkim-adsp-target-domain")).map(|s| s.to_string());
+            if mx_dkim_domain.is_some() && dkim_result.as_domain().is_some() && &mx_dkim_domain != dkim_result.as_domain() {
+                let my_domain = dkim_result.as_domain().clone().unwrap_or_default();
+                let mx_domain = mx_dkim_domain.clone().unwrap();
+                println!("WARNING: my DKIM checker says different target domain to \"Authentication-Results\" header: my={} vs header={}", my_domain, mx_domain);
             }
-            if let Some(mx_dkim_target) = table.get("dkim-target-domain") {
-                if let Some(my_dkim_target) = &dkim_target {
-                    if mx_dkim_target != my_dkim_target {
-                        println!("WARNING: my DKIM checker says different target domain to \"Authentication-Results\" header: my={} vs header={}", my_dkim_target, mx_dkim_target);
-                    }
-                }
-                if mx_dkim_status == "pass" {
-                    dkim_target = Some(mx_dkim_target.to_string()); // overwrite
-                }
+            if mx_dkim_status != DKIMStatus::NONE {
+                let domain = mx_dkim_domain.or_else(|| dkim_result.as_domain().clone());
+                dkim_result = DKIMResult::new(mx_dkim_status, domain); // overwrite
             }
         }
     }
-    let dmarc_result = my_dmarc_verifier::dmarc_verify(&message, spf_result.as_domain(), &dkim_target, &MY_DNS_RESOLVER);
+    let dmarc_result = my_dmarc_verifier::dmarc_verify(&message, spf_result.as_domain(), dkim_result.as_domain(), &MY_DNS_RESOLVER);
     let mut dmarc_status = dmarc_result.to_string();
     if let Some(table) = &table_of_authentication_results_header {
         if let Some(mx_dmarc_status) = table.get("dmarc") {
@@ -628,7 +621,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
 
     let auth_results = vec![
         format!("spf={}", spf_result.as_status()),
-        format!("dkim={}", dkim_status),
+        format!("dkim={}", dkim_result.as_status()),
         format!("dmarc={}", dmarc_status),
     ];
 

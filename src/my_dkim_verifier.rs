@@ -15,24 +15,69 @@ use crate::my_message_parser::MyMessageParser;
 
 //====================================================================
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum DKIMResult {
+pub enum DKIMStatus {
     NONE,
-    PASS(String), // with "verified domain"
+    NEUTRAL,
+    PASS,
     FAIL,
     PERMERROR,
     TEMPERROR,
 }
 
-impl std::fmt::Display for DKIMResult {
+impl std::fmt::Display for DKIMStatus {
     fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
         let s = match self {
             Self::NONE      => "none",
-            Self::PASS(_)   => "pass",
+            Self::NEUTRAL   => "neutral",
+            Self::PASS      => "pass",
             Self::FAIL      => "fail",
             Self::PERMERROR => "permerror",
             Self::TEMPERROR => "temperror",
         };
         write!(dest, "{}", s)
+    }
+}
+
+impl std::str::FromStr for DKIMStatus {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "none"         => Ok(Self::NONE),
+            "neutral"      => Ok(Self::NEUTRAL),
+            "pass"         => Ok(Self::PASS),
+            "fail"         => Ok(Self::FAIL),
+            "permerror"    => Ok(Self::PERMERROR),
+            "temperror"    => Ok(Self::TEMPERROR),
+            _              => Err(anyhow!("invalid string for DKIMStatus")),
+        }
+    }
+}
+
+//====================================================================
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DKIMResult {
+    status: DKIMStatus,
+    domain: Option<String>, // domain of "header.i" or "header.d"
+}
+
+impl DKIMResult {
+    pub fn new(status: DKIMStatus, domain: Option<String>) -> Self {
+        if let Some(s) = &domain {
+            assert_ne!(s.len(), 0); // empty string is not allowed (use "None" instead)
+        }
+        Self {
+            status,
+            domain,
+        }
+    }
+
+    pub fn as_status(&self) -> &DKIMStatus {
+        &self.status
+    }
+
+    pub fn as_domain(&self) -> &Option<String> {
+        &self.domain
     }
 }
 
@@ -180,13 +225,13 @@ fn dkim_canonicalization_for_headers(mode: &str, headers: &[String]) -> Result<S
 pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
     let dkim_signature_header_value = match get_dkim_signature_header(message) {
         Some(s) => s,
-        None => return DKIMResult::NONE,
+        None => return DKIMResult::new(DKIMStatus::NONE, None),
     };
     let dkim_signature_fields = match parse_dkim_signature(&dkim_signature_header_value) {
         Ok(v) => v,
         Err(e) => {
             println!("DKIM_Signature header value parse error: {}", e);
-            return DKIMResult::PERMERROR;
+            return DKIMResult::new(DKIMStatus::PERMERROR, None);
         }
     };
 
@@ -195,21 +240,21 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
         Some((x, y)) => (x.to_owned(), y.to_owned()),
         None => {
             println!("DKIM-Signature has invalid \"a\" field: \"{}\"", dkim_signature_fields["a"]);
-            return DKIMResult::PERMERROR;
+            return DKIMResult::new(DKIMStatus::PERMERROR, None);
         }
     };
     let dkim_signature_pubkey_algo = match MyAsymmetricAlgo::try_from(dkim_signature_pubkey_algo.as_str()) {
         Ok(v) => v,
         Err(e) => {
             println!("DKIM-Signature signature algorithm is invalid: {}", e);
-            return DKIMResult::PERMERROR;
+            return DKIMResult::new(DKIMStatus::PERMERROR, None);
         },
     };
     let dkim_signature_hash_algo = match MyHashAlgo::try_from(dkim_signature_hash_algo.as_str()) {
         Ok(v) => v,
         Err(e) => {
             println!("DKIM-Signature hash algorithm is invalid: {}", e);
-            return DKIMResult::PERMERROR;
+            return DKIMResult::new(DKIMStatus::PERMERROR, None);
         },
     };
     match (dkim_signature_pubkey_algo, dkim_signature_hash_algo) {
@@ -218,7 +263,7 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
         (MyAsymmetricAlgo::Ed25519, MyHashAlgo::Sha256) => (), // OK
         _ => {
             println!("DKIM-Signature algorithm is invalid combination: {}", dkim_signature_fields["a"]);
-            return DKIMResult::PERMERROR;
+            return DKIMResult::new(DKIMStatus::PERMERROR, None);
         },
     }
 
@@ -231,9 +276,10 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
             // OK (subdomain)
         } else {
             println!("DKIM_Signature header \"i\" is invalid: \"{}\" vs \"{}\"", dkim_signature_fields["i"], dkim_signature_fields["d"]);
-            return DKIMResult::PERMERROR;
+            return DKIMResult::new(DKIMStatus::PERMERROR, None);
         }
     }
+    let target_domain = dkim_signature_fields["d"].clone();
 
     let timestamp_at_gateway;
     {
@@ -258,12 +304,12 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
             Ok(v) => v,
             Err(_e) => {
                 println!("DKIM_Signature field \"t\" has invalid value: \"{}\"", &dkim_signature_fields["t"]);
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             }
         };
         if timestamp_at_gateway < timestamp {
             println!("DKIM_Signature is in the future");
-            return DKIMResult::FAIL;
+            return DKIMResult::new(DKIMStatus::FAIL, Some(target_domain));
         }
     }
 
@@ -273,12 +319,12 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
             Ok(v) => v,
             Err(_e) => {
                 println!("DKIM_Signature field \"x\" has invalid value: \"{}\"", &dkim_signature_fields["x"]);
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             }
         };
         if timestamp_at_gateway > limit {
             println!("DKIM_Signature is expired");
-            return DKIMResult::FAIL;
+            return DKIMResult::new(DKIMStatus::FAIL, Some(target_domain));
         }
     }
 
@@ -298,14 +344,14 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
             Ok(s) => s,
             Err(e) => {
                 println!("DKIM canonicalizatino error: {}", e);
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             },
         };
         let limit = match usize::from_str_radix(&dkim_signature_fields["l"], 10) {
             Ok(v) => v,
             Err(_e) => {
                 println!("DKIM_Signature field \"l\" has invalid value: \"{}\"", dkim_signature_fields["l"]);
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             },
         };
         body_u8_canonicalized.truncate(limit);
@@ -352,7 +398,7 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
                         buf.push(line.to_owned());
                     } else {
                         println!("DIKM all headers parse error: {}", line);
-                        return DKIMResult::PERMERROR;
+                        return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
                     }
                 }
             }
@@ -402,7 +448,7 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
                 writer.write_all(&body_u8_limited).unwrap();
                 writer.flush().unwrap();
             }
-            return DKIMResult::FAIL;
+            return DKIMResult::new(DKIMStatus::FAIL, Some(target_domain));
         }
     }
 
@@ -422,7 +468,7 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
             Ok(s) => s,
             Err(e) => {
                 println!("DKIM canonicalization for headers is failed: {}", e);
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             },
         };
         assert!(header_canonicalized.ends_with("\r\n"));
@@ -441,14 +487,14 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
             Ok(v) => v,
             Err(e) => {
                 println!("DNS query falied: {}", e);
-                return DKIMResult::TEMPERROR;
+                return DKIMResult::new(DKIMStatus::TEMPERROR, Some(target_domain));
             },
         };
         let text_raw = match query_responses.into_iter().next() { // use first record even if there are multiple records (see section "3.6.2.2" in RFC6376)
             Some(s) => s,
             None => {
                 println!("DKIM record is not found in DNS: {}", query_key);
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             },
         };
         let fields = text_raw.split(";").filter(|s| s.len() > 0).map(str::trim);
@@ -458,7 +504,7 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
             let value = value.trim();
             if tag == "" {
                 println!("DKIM record in DNS is syntax error: {}", text_raw);
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             }
             assert!(dkim_dns_fields.get(tag).is_none());
             dkim_dns_fields.insert(tag.to_owned(), value.to_owned());
@@ -472,7 +518,7 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
                 // OK
             } else {
                 println!("DKIM record in DNS has invalid \"v\" field: \"{}\"", v);
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             }
         } else {
             // OK (not specified)
@@ -482,7 +528,7 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
                 // OK
             } else {
                 println!("DKIM record in DNS specifies other hash algorithm: {} vs {}", v, dkim_signature_hash_algo);
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             }
         } else {
             // OK (not specified)
@@ -492,7 +538,7 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
                 // OK
             } else {
                 println!("DKIM record in DNS has different pubkey algorithm: {} vs {}", v, dkim_signature_pubkey_algo);
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             }
         } else {
             // OK (not specified)
@@ -502,18 +548,18 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
                 // OK
             }  else {
                 println!("DKIM record in DNS has empty \"p\" field (means \"revoked\")"); // see "section 3.6.1" in RFC6376
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             }
         } else {
             println!("DKIM record in DNS has no \"p\" field");
-            return DKIMResult::PERMERROR;
+            return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
         }
         if let Some(v) = dkim_dns_fields.get("s") {
             if v.split(":").any(|s| s == "email" || s == "*") {
                 // OK
             } else {
                 println!("DKIM record in DNS has invalid \"s\" field: \"{}\"", v);
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             }
         } else {
             // OK (not specified)
@@ -528,7 +574,7 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
                     // OK
                 } else {
                     println!("DKIM record in DNS specifies not to allow subdomain as DKIM-Signature \"i\" field: {} vs {}", domain, dkim_signature_fields["d"]);
-                    return DKIMResult::PERMERROR;
+                    return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
                 }
             } else {
                 // OK (not specified)
@@ -544,7 +590,7 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
             Ok(v) => v,
             Err(e) => {
                 println!("DKIM record in DNS has invalid \"p\" field (can not decode as Base64): \"{}\" for \"{}\"", e, dkim_dns_fields["p"]);
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             },
         };
         let expected_pubkey_bit_length = match 8 * pubkey_u8.len() {
@@ -555,19 +601,19 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
             4096..5000 => 4096,
             _ => {
                 println!("unexpected pubkey length: {}", pubkey_u8.len());
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             },
         };
         let signature_u8 = match BASE64_STANDARD.decode(&dkim_signature_fields["b"]) {
             Ok(v) => v,
             Err(e) => {
                 println!("DKIM-Signature has invalid \"b\" field (can not decode as Base64): \"{}\" for \"{}\"", e, dkim_signature_fields["b"]);
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             },
         };
         if signature_u8.len() != expected_pubkey_bit_length / 8 {
             println!("DEBUG: invalid signature length: {}", signature_u8.len());
-            return DKIMResult::PERMERROR;
+            return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
         }
         match my_verify_sign(dkim_signature_pubkey_algo, pubkey_u8.as_slice(), dkim_signature_hash_algo, header_hash_value.as_slice(), signature_u8.as_slice()) {
             Ok(true) => {
@@ -575,14 +621,14 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
             },
             Ok(false) => {
                 println!("DKIM signature is NG");
-                return DKIMResult::FAIL;
+                return DKIMResult::new(DKIMStatus::FAIL, Some(target_domain));
             },
             Err(e) => {
                 println!("DKIM signature verification is failed: {}", e);
-                return DKIMResult::PERMERROR;
+                return DKIMResult::new(DKIMStatus::PERMERROR, Some(target_domain));
             },
         };
     }
 
-    DKIMResult::PASS(dkim_signature_fields["d"].to_string())
+    DKIMResult::new(DKIMStatus::PASS, Some(target_domain))
 }
