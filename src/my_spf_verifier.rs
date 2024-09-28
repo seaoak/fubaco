@@ -1,28 +1,32 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
+use anyhow::anyhow;
 use lazy_static::lazy_static;
 use regex::Regex;
 
 use crate::my_dns_resolver::MyDNSResolver;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum SPFResult {
+//====================================================================
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum SPFStatus {
     NONE,
-    PASS(String), // with domain of "smtp.mailfrom"
+    PASS,
     FAIL,
     SOFTFAIL,
+    HARDFAIL,
     PERMERROR,
     TEMPERROR,
 }
 
-impl std::fmt::Display for SPFResult {
+impl std::fmt::Display for SPFStatus {
     fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
         let s = match self {
             Self::NONE      => "none",
-            Self::PASS(_)   => "pass",
+            Self::PASS      => "pass",
             Self::FAIL      => "fail",
             Self::SOFTFAIL  => "softfail",
+            Self::HARDFAIL  => "hardfail",
             Self::PERMERROR => "permerror",
             Self::TEMPERROR => "temperror",
         };
@@ -30,19 +34,65 @@ impl std::fmt::Display for SPFResult {
     }
 }
 
-pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str, resolver: &MyDNSResolver) -> SPFResult {
-    let spf_record;
-    match resolver.query_spf_record(domain) {
-        Ok(Some(s)) => spf_record = s,
-        Ok(None) => return SPFResult::NONE,
-        Err(_e) => return SPFResult::TEMPERROR,
+impl std::str::FromStr for SPFStatus {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "none"         => Ok(Self::NONE),
+            "pass"         => Ok(Self::PASS),
+            "fail"         => Ok(Self::FAIL),
+            "softfail"     => Ok(Self::SOFTFAIL),
+            "hardfail"     => Ok(Self::HARDFAIL),
+            "permerror"    => Ok(Self::PERMERROR),
+            "temperror"    => Ok(Self::TEMPERROR),
+            _              => Err(anyhow!("invalid string for SPFStatus")),
+        }
+    }
+}
+
+//====================================================================
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SPFResult {
+    status: SPFStatus,
+    domain: Option<String>, // domain part of "smtp.mailfrom" or "smtp.helo"
+}
+
+impl SPFResult {
+    pub fn new(status: SPFStatus, domain: Option<String>) -> Self {
+        if let Some(s) = &domain {
+            assert_ne!(s.len(), 0); // empty string is not allowed (use "None" instead)
+        }
+        Self {
+            status,
+            domain,
+        }
     }
 
+    pub fn as_status(&self) -> &SPFStatus {
+        &self.status
+    }
+
+    pub fn as_domain(&self) -> &Option<String> {
+        &self.domain
+    }
+}
+
+//====================================================================
+pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str, resolver: &MyDNSResolver) -> SPFResult {
     let target_domain = if let Some((_localpart, domain)) = envelop_from.split_once('@') {
         domain
     } else {
         envelop_from
     };
+    let target_domain = target_domain.to_string();
+
+    let spf_record;
+    match resolver.query_spf_record(domain) {
+        Ok(Some(s)) => spf_record = s,
+        Ok(None) => return SPFResult::new(SPFStatus::NONE, Some(target_domain)),
+        Err(_e) => return SPFResult::new(SPFStatus::TEMPERROR, Some(target_domain)),
+    }
 
     lazy_static! {
         static ref REGEX_SPF_REDIRECT_DOMAIN: Regex = Regex::new(r"^redirect=([_a-z0-9]([-_a-z0-9]*[a-z0-9])?([.][a-z0-9]([-_a-z0-9]*[a-z0-9])?)*)$").unwrap();
@@ -52,14 +102,14 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
     fields.reverse();
     let first_field = fields.pop().unwrap();
     if first_field != "v=spf1" {
-        return SPFResult::PERMERROR; // invalid SPF record (abort immediately)
+        return SPFResult::new(SPFStatus::PERMERROR, Some(target_domain)); // invalid SPF record (abort immediately)
     }
     while let Some(field) = fields.pop() {
         if field == "~all" {
-            return SPFResult::SOFTFAIL;
+            return SPFResult::new(SPFStatus::SOFTFAIL, Some(target_domain));
         }
         if field == "-all" {
-            return SPFResult::FAIL;
+            return SPFResult::new(SPFStatus::FAIL, Some(target_domain));
         }
         if field == "+a" || field == "a" {
             let query_type;
@@ -81,13 +131,13 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
                     }
                     continue;
                 },
-                Err(_e) => return SPFResult::TEMPERROR,
+                Err(_e) => return SPFResult::new(SPFStatus::TEMPERROR, Some(target_domain)),
             }
         }
         if field == "+mx" || field == "mx" {
             let hosts = match resolver.query_mx_record(domain) {
                 Ok(v) => v,
-                Err(_e) => return SPFResult::TEMPERROR,
+                Err(_e) => return SPFResult::new(SPFStatus::TEMPERROR, Some(target_domain)),
             };
             let query_type;
             let prefix;
@@ -108,7 +158,7 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
                             fields.push(format!("{}{}", prefix, record));
                         }
                     },
-                    Err(_e) => return SPFResult::TEMPERROR,
+                    Err(_e) => return SPFResult::new(SPFStatus::TEMPERROR, Some(target_domain)),
                 }
             }
             continue;
@@ -116,10 +166,10 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
         if field == "+exists" || field == "exists" {
             let hosts = match resolver.query_simple(domain, "A") {
                 Ok(v) => v,
-                Err(_e) => return SPFResult::TEMPERROR,
+                Err(_e) => return SPFResult::new(SPFStatus::TEMPERROR, Some(target_domain)),
             };
             if hosts.len() > 0 {
-                return SPFResult::PASS(target_domain.to_string());
+                return SPFResult::new(SPFStatus::PASS, Some(target_domain));
             }
         }
         if field == "+ptr" || field == "ptr" {
@@ -144,11 +194,11 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
             let mut hosts = Vec::new();
             match resolver.query_simple(&name, "PTR") {
                 Ok(v) => hosts.extend(v.into_iter()),
-                Err(_e) => return SPFResult::TEMPERROR,
+                Err(_e) => return SPFResult::new(SPFStatus::TEMPERROR, Some(target_domain)),
             }
             if hosts.len() != 1 {
                 println!("can not get PTR record of: {} {}", name, hosts.len());
-                return SPFResult::PERMERROR; // invalid DNS info
+                return SPFResult::new(SPFStatus::PERMERROR, Some(target_domain)); // invalid DNS info
             }
             let host = hosts.pop().unwrap();
             let postfix = if host.ends_with(".") { "." } else { "" };
@@ -157,7 +207,7 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
                 let mut list = Vec::new();
                 match resolver.query_simple(&host, query_type) {
                     Ok(v) => list.extend(v.into_iter()),
-                    Err(_e) => return SPFResult::TEMPERROR,
+                    Err(_e) => return SPFResult::new(SPFStatus::TEMPERROR, Some(target_domain)),
                 }
                 for ip in list {
                     fields.push(format!("{}{}", prefix, ip));
@@ -185,7 +235,7 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
                 Ipv6Addr::to_bits(self)
             }
         }
-        fn process_ip_field<I: MyIpAddr>(prefix: &str, regex: &Regex, source_ip: &IpAddr, field: &str, target_domain: &str) -> Option<SPFResult> {
+        fn process_ip_field<I: MyIpAddr>(prefix: &str, regex: &Regex, source_ip: &IpAddr, field: &str, target_domain: String) -> Option<SPFResult> {
             let addr;
             let bitmask_len;
             if let Some(caps) = regex.captures(field) {
@@ -195,16 +245,16 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
                 bitmask_len = u32::from_str_radix(&arg3, 10).unwrap_or(0);
             } else {
                 println!("{} syntax error: \"{}\"", prefix, field);
-                return Some(SPFResult::PERMERROR); // syntax error (abort immediately)
+                return Some(SPFResult::new(SPFStatus::PERMERROR, Some(target_domain))); // syntax error (abort immediately)
             }
 
             if addr == I::UNSPECIFIED {
                 println!("{} address parse error: \"{}\"", prefix, field);
-                return Some(SPFResult::PERMERROR);
+                return Some(SPFResult::new(SPFStatus::PERMERROR, Some(target_domain)));
             }
             if bitmask_len == 0 || bitmask_len > I::BITS {
                 println!("{} netmask parse error: \"{}\"", prefix, field);
-                return Some(SPFResult::PERMERROR);
+                return Some(SPFResult::new(SPFStatus::PERMERROR, Some(target_domain)));
             }
             let bits;
             let bit_expression;
@@ -225,7 +275,7 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
             let left = bit_expression;
             let right = addr.to_bits() as u128; // may be cast
             if left & bitmask == right & bitmask {
-                return Some(SPFResult::PASS(target_domain.to_string()));
+                return Some(SPFResult::new(SPFStatus::PASS, Some(target_domain)));
             }
             None
         }
@@ -234,7 +284,7 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
             lazy_static! {
                 static ref REGEX_SPF_IPV4: Regex = Regex::new(r"^[+]?ip4:([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)([/]([1-9][0-9]*))?$").unwrap();
             }
-            if let Some(result) = process_ip_field::<Ipv4Addr>("ip4", &REGEX_SPF_IPV4, source_ip, &field, target_domain) {
+            if let Some(result) = process_ip_field::<Ipv4Addr>("ip4", &REGEX_SPF_IPV4, source_ip, &field, target_domain.clone()) {
                 return result;
             }
         }
@@ -242,7 +292,7 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
             lazy_static! {
                 static ref REGEX_SPF_IPV6: Regex = Regex::new(r"^[+]?ip6:([:0-9a-f]+)([/]([1-9][0-9]*))?$").unwrap();
             }
-            if let Some(result) = process_ip_field::<Ipv6Addr>("ip6", &REGEX_SPF_IPV6, source_ip, &field, target_domain) {
+            if let Some(result) = process_ip_field::<Ipv6Addr>("ip6", &REGEX_SPF_IPV6, source_ip, &field, target_domain.clone()) {
                 return result;
             }
         }
@@ -251,14 +301,14 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
             let nested_spf;
             match resolver.query_spf_record(&domain) {
                 Ok(Some(s)) => nested_spf = s,
-                Ok(None) => return SPFResult::PERMERROR, // invalid field (abort immediately)
-                Err(_e) => return SPFResult::TEMPERROR, // internal error
+                Ok(None) => return SPFResult::new(SPFStatus::PERMERROR, Some(target_domain)), // invalid field (abort immediately)
+                Err(_e) => return SPFResult::new(SPFStatus::TEMPERROR, Some(target_domain)), // internal error
             }
             let mut nested_fields: Vec<String> = nested_spf.split_ascii_whitespace().map(ToString::to_string).collect();
             nested_fields.reverse();
             let first_field = nested_fields.pop().unwrap();
             if first_field != "v=spf1" {
-                return SPFResult::PERMERROR; // invalid SPF record (abort immediately)
+                return SPFResult::new(SPFStatus::PERMERROR, Some(target_domain)); // invalid SPF record (abort immediately)
             }
             fields.extend(nested_fields.into_iter());
             continue;
@@ -266,17 +316,18 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
         if let Some(caps) = REGEX_SPF_INCLUDE_DOMAIN.captures(&field) {
             let domain = caps[1].to_string();
             let result = spf_check_recursively(&domain, source_ip, envelop_from, resolver);
-            match result {
-                r @ SPFResult::PASS(_)   => return r,
-                r @ SPFResult::PERMERROR => return r,
-                r @ SPFResult::TEMPERROR => return r,
-                SPFResult::NONE      => (), // ignored
-                SPFResult::FAIL      => (), // ignored
-                SPFResult::SOFTFAIL  => (), // ignored
+            match &result.status {
+                &SPFStatus::PASS      => return result,
+                &SPFStatus::PERMERROR => return result,
+                &SPFStatus::TEMPERROR => return result,
+                &SPFStatus::NONE      => (), // ignored
+                &SPFStatus::FAIL      => (), // ignored
+                &SPFStatus::SOFTFAIL  => (), // ignored
+                &SPFStatus::HARDFAIL  => (), // ignored
             }
         }
 
         // ignore (skip) unknown field
     }
-    SPFResult::NONE
+    SPFResult::new(SPFStatus::NONE, Some(target_domain))
 }

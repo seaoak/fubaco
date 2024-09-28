@@ -34,7 +34,7 @@ use my_crypto::*;
 use my_dkim_verifier::DKIMResult;
 use my_dns_resolver::MyDNSResolver;
 use my_message_parser::MyMessageParser;
-use my_spf_verifier::SPFResult;
+use my_spf_verifier::{SPFResult, SPFStatus};
 use my_text_line_stream::MyTextLineStream;
 use pop3_upstream::*;
 
@@ -329,25 +329,26 @@ fn spam_checker_spf(message: &Message) -> SPFResult {
     let envelop_from = envelop_from.replace(&['<', '>'], "").to_lowercase().trim().to_string();
     println!("Evelop.from: \"{}\"", envelop_from);
     if envelop_from.len() == 0 {
-        return SPFResult::NONE;
+        return SPFResult::new(SPFStatus::NONE, None);
     }
-    let source_ip = match message.get_received_header_of_gateway() {
-        Some(received) => {
-            match received.from_ip() {
-                Some(v) => v,
-                None => return SPFResult::NONE,
-            }
-        },
-        None => return SPFResult::NONE,
-    };
-    println!("source_ip: {}", source_ip);
 
     let domain;
     if let Some(caps) = REGEX_MAIL_ADDRESS.captures(&envelop_from) {
         domain = caps[2].to_string();
     } else {
-        return SPFResult::PERMERROR; // invalid mail address (syntax error)
+        return SPFResult::new(SPFStatus::PERMERROR, None); // invalid mail address (syntax error)
     }
+
+    let source_ip = match message.get_received_header_of_gateway() {
+        Some(received) => {
+            match received.from_ip() {
+                Some(v) => v,
+                None => return SPFResult::new(SPFStatus::NONE, Some(domain)),
+            }
+        },
+        None => return SPFResult::new(SPFStatus::NONE, Some(domain)),
+    };
+    println!("source_ip: {}", source_ip);
 
     my_spf_verifier::spf_check_recursively(&domain, &source_ip, &envelop_from, &MY_DNS_RESOLVER)
 }
@@ -601,29 +602,22 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
 
     let table_of_authentication_results_header = message.get_authentication_results();
 
-    let spf_result = spam_checker_spf(&message);
-    let mut spf_status = spf_result.to_string();
-    let mut spf_target = match &spf_result {
-        SPFResult::PASS(addr) => Some(addr.to_string()),
-        _ => None,
-    };
+    let mut spf_result = spam_checker_spf(&message);
     if let Some(table) = &table_of_authentication_results_header {
         if let Some(mx_spf_status) = table.get("spf") {
-            if mx_spf_status != &spf_status {
-                println!("WARNING: my SPF checker says different result to \"Authentication-Results\" header: my={} vs header={}", spf_status, mx_spf_status);
+            let mx_spf_status = mx_spf_status.parse::<SPFStatus>().unwrap(); // TODO: unknonw string may have to be an error, not panic
+            if &mx_spf_status != spf_result.as_status() {
+                println!("WARNING: my SPF checker says different result to \"Authentication-Results\" header: my={} vs header={}", spf_result.as_status(), mx_spf_status);
             }
-            if mx_spf_status != "none" {
-                spf_status = mx_spf_status.to_string(); // overwrite
+            let mx_spf_domain = table.get("spf-target-domain").map(|s| s.to_string());
+            if mx_spf_domain.is_some() && &mx_spf_domain != spf_result.as_domain() {
+                let my_domain = spf_result.as_domain().clone().unwrap_or_default();
+                let mx_domain = mx_spf_domain.clone().unwrap();
+                println!("WARNING: my SPF checker says different target domain to \"Authentication-Results\" header: my={} vs header={}", my_domain, mx_domain);
             }
-            if let Some(mx_spf_target) = table.get("spf-target-domain") {
-                if let Some(my_spf_target) = &spf_target {
-                    if mx_spf_target != my_spf_target {
-                        println!("WARNING: my SPF checker says different target domain to \"Authentication-Results\" header: my={} vs header={}", my_spf_target, mx_spf_target);
-                    }
-                }
-                if mx_spf_status == "passs" {
-                    spf_target = Some(mx_spf_target.to_string()); // overwrite
-                }
+            if mx_spf_status != SPFStatus::NONE {
+                let domain = mx_spf_domain.or_else(|| spf_result.as_domain().clone());
+                spf_result = SPFResult::new(mx_spf_status, domain); // overwrite
             }
         }
     }
@@ -653,7 +647,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
             }
         }
     }
-    let dmarc_result = my_dmarc_verifier::dmarc_verify(&message, &spf_target, &dkim_target, &MY_DNS_RESOLVER);
+    let dmarc_result = my_dmarc_verifier::dmarc_verify(&message, spf_result.as_domain(), &dkim_target, &MY_DNS_RESOLVER);
     let mut dmarc_status = dmarc_result.to_string();
     if let Some(table) = &table_of_authentication_results_header {
         if let Some(mx_dmarc_status) = table.get("dmarc") {
@@ -667,7 +661,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     }
 
     let auth_results = vec![
-        format!("spf={}", spf_status),
+        format!("spf={}", spf_result.as_status()),
         format!("dkim={}", dkim_status),
         format!("dmarc={}", dmarc_status),
     ];
