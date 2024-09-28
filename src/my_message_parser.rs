@@ -12,8 +12,16 @@ pub trait MyMessageParser<'a> {
 
 impl<'a> MyMessageParser<'a> for Message<'a> {
     fn get_envelop_from(&'a self) -> Option<String> {
-        let envelop_from = self.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
-        let envelop_from = envelop_from.replace(&['<', '>'], "").to_lowercase().trim().to_string();
+        let first_header = self.header_values("Return-Path").next();
+        if first_header.is_none() {
+            return None;
+        }
+        let address = match first_header.unwrap() {
+            mail_parser::HeaderValue::Text(text) => text,
+            mail_parser::HeaderValue::Empty => "",
+            _ => unreachable!(), // unexpected type for "Return-Path" header
+        };
+        let envelop_from = address.replace(&['<', '>'], "").to_lowercase().trim().to_string();
         println!("Evelop.from: \"{}\"", envelop_from);
         if envelop_from.len() == 0 {
             None
