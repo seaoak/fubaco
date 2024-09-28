@@ -324,11 +324,11 @@ fn spam_checker_dkim(message: &Message) -> DKIMResult {
 }
 
 fn spam_checker_spf(message: &Message) -> SPFResult {
-    let envelop_from = message.get_envelop_from();
-    if envelop_from.is_none() {
+    let envelop_from = if let Some(addr) = message.get_envelop_from() {
+        addr
+    } else {
         return SPFResult::new(SPFStatus::NONE, None);
-    }
-    let envelop_from = envelop_from.unwrap();
+    };
 
     let domain = if let Some((_localpart, domain)) = envelop_from.split_once('@') {
         domain.to_string()
