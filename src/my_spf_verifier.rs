@@ -3,9 +3,11 @@ use std::str::FromStr;
 
 use anyhow::anyhow;
 use lazy_static::lazy_static;
+use mail_parser::Message;
 use regex::Regex;
 
 use crate::my_dns_resolver::MyDNSResolver;
+use crate::my_message_parser::MyMessageParser;
 
 //====================================================================
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -79,7 +81,7 @@ impl SPFResult {
 }
 
 //====================================================================
-pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str, resolver: &MyDNSResolver) -> SPFResult {
+fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str, resolver: &MyDNSResolver) -> SPFResult {
     let target_domain = if let Some((_localpart, domain)) = envelop_from.split_once('@') {
         domain
     } else {
@@ -330,4 +332,28 @@ pub fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &st
         // ignore (skip) unknown field
     }
     SPFResult::new(SPFStatus::NONE, Some(target_domain))
+}
+
+//====================================================================
+pub fn spf_verify(message: &Message, resolver: &MyDNSResolver) -> SPFResult {
+    let envelop_from = if let Some(addr) = message.get_envelop_from() {
+        addr
+    } else {
+        return SPFResult::new(SPFStatus::NONE, None);
+    };
+
+    let domain = if let Some((_localpart, domain)) = envelop_from.split_once('@') {
+        domain.to_string()
+    } else {
+        envelop_from.clone()
+    };
+
+    let source_ip = if let Some(addr) = message.get_source_ip() {
+        addr
+    } else {
+        return SPFResult::new(SPFStatus::NONE, Some(domain));
+    };
+    println!("source_ip: {}", source_ip);
+
+    spf_check_recursively(&domain, &source_ip, &envelop_from, resolver)
 }

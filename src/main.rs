@@ -324,26 +324,7 @@ fn spam_checker_dkim(message: &Message) -> DKIMResult {
 }
 
 fn spam_checker_spf(message: &Message) -> SPFResult {
-    let envelop_from = if let Some(addr) = message.get_envelop_from() {
-        addr
-    } else {
-        return SPFResult::new(SPFStatus::NONE, None);
-    };
-
-    let domain = if let Some((_localpart, domain)) = envelop_from.split_once('@') {
-        domain.to_string()
-    } else {
-        envelop_from.clone()
-    };
-
-    let source_ip = if let Some(addr) = message.get_source_ip() {
-        addr
-    } else {
-        return SPFResult::new(SPFStatus::NONE, Some(domain));
-    };
-    println!("source_ip: {}", source_ip);
-
-    my_spf_verifier::spf_check_recursively(&domain, &source_ip, &envelop_from, &MY_DNS_RESOLVER)
+    my_spf_verifier::spf_verify(message, &MY_DNS_RESOLVER)
 }
 
 fn spam_checker_suspicious_envelop_from(message: &Message) -> Option<String> {
