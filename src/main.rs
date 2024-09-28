@@ -576,7 +576,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
                 println!("WARNING: my SPF checker says different result to \"Authentication-Results\" header: my={} vs header={}", spf_result.as_status(), mx_spf_status);
             }
             let mx_spf_domain = table.get("spf-target-domain").map(|s| s.to_string());
-            if mx_spf_domain.is_some() && &mx_spf_domain != spf_result.as_domain() {
+            if mx_spf_domain.is_some() && spf_result.as_domain().is_some() && &mx_spf_domain != spf_result.as_domain() {
                 let my_domain = spf_result.as_domain().clone().unwrap_or_default();
                 let mx_domain = mx_spf_domain.clone().unwrap();
                 println!("WARNING: my SPF checker says different target domain to \"Authentication-Results\" header: my={} vs header={}", my_domain, mx_domain);
