@@ -336,14 +336,10 @@ fn spam_checker_spf(message: &Message) -> SPFResult {
         envelop_from.clone()
     };
 
-    let source_ip = match message.get_received_header_of_gateway() {
-        Some(received) => {
-            match received.from_ip() {
-                Some(v) => v,
-                None => return SPFResult::new(SPFStatus::NONE, Some(domain)),
-            }
-        },
-        None => return SPFResult::new(SPFStatus::NONE, Some(domain)),
+    let source_ip = if let Some(addr) = message.get_source_ip() {
+        addr
+    } else {
+        return SPFResult::new(SPFStatus::NONE, Some(domain));
     };
     println!("source_ip: {}", source_ip);
 

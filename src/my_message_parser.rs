@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::IpAddr;
 
 use lazy_static::lazy_static;
 use mail_parser::Message;
@@ -7,6 +8,7 @@ use regex::Regex;
 pub trait MyMessageParser<'a> {
     fn get_envelop_from(&'a self) -> Option<String>;
     fn get_received_header_of_gateway(&'a self) -> Option<Box<mail_parser::Received<'a>>>;
+    fn get_source_ip(&'a self) -> Option<IpAddr>;
     fn get_authentication_results(&'a self) -> Option<HashMap<String, String>>;
 }
 
@@ -54,6 +56,19 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
             }
         }
         None
+    }
+
+    fn get_source_ip(&'a self) -> Option<IpAddr> {
+        let source_ip = match self.get_received_header_of_gateway() {
+            Some(received) => {
+                match received.from_ip() {
+                    Some(v) => v,
+                    None => return None,
+                }
+            },
+            None => return None,
+        };
+        Some(source_ip)
     }
 
     fn get_authentication_results(&'a self) -> Option<HashMap<String, String>> {
