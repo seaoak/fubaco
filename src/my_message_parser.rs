@@ -5,11 +5,23 @@ use mail_parser::Message;
 use regex::Regex;
 
 pub trait MyMessageParser<'a> {
+    fn get_envelop_from(&'a self) -> Option<String>;
     fn get_received_header_of_gateway(&'a self) -> Option<Box<mail_parser::Received<'a>>>;
     fn get_authentication_results(&'a self) -> Option<HashMap<String, String>>;
 }
 
 impl<'a> MyMessageParser<'a> for Message<'a> {
+    fn get_envelop_from(&'a self) -> Option<String> {
+        let envelop_from = self.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
+        let envelop_from = envelop_from.replace(&['<', '>'], "").to_lowercase().trim().to_string();
+        println!("Evelop.from: \"{}\"", envelop_from);
+        if envelop_from.len() == 0 {
+            None
+        } else {
+            Some(envelop_from)
+        }
+    }
+
     fn get_received_header_of_gateway(&'a self) -> Option<Box<mail_parser::Received<'a>>> {
         for header_value in self.header_values("Received") {
             if let mail_parser::HeaderValue::Received(received) = header_value {
