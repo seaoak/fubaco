@@ -144,7 +144,6 @@ fn load_tsv_file<P: AsRef<Path>>(path: P) -> Result<Vec<Vec<String>>> {
 }
 
 lazy_static! {
-    static ref REGEX_MAIL_ADDRESS: Regex = Regex::new(r"^([-._+=a-z0-9]+)[@]([0-9a-z]([-_0-9a-z]*[0-9a-z])?([.][0-9a-z]([-_0-9a-z]*[0-9a-z])?)+)$").unwrap();
     static ref REGEX_POP3_COMMAND_LINE_GENERAL: Regex = Regex::new(r"^([A-Z]+)(?: +(\S+)(?: +(\S+))?)? *\r\n$").unwrap();
     static ref REGEX_POP3_COMMAND_LINE_FOR_USER: Regex = Regex::new(r"^USER +(\S+) *\r\n$").unwrap();
     static ref REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND: Regex = Regex::new(r"^\+OK +(\S+) +(\S+) *\r\n$").unwrap();
@@ -332,12 +331,11 @@ fn spam_checker_spf(message: &Message) -> SPFResult {
         return SPFResult::new(SPFStatus::NONE, None);
     }
 
-    let domain;
-    if let Some(caps) = REGEX_MAIL_ADDRESS.captures(&envelop_from) {
-        domain = caps[2].to_string();
+    let domain = if let Some((_localpart, domain)) = envelop_from.split_once('@') {
+        domain.to_string()
     } else {
-        return SPFResult::new(SPFStatus::PERMERROR, None); // invalid mail address (syntax error)
-    }
+        envelop_from.clone()
+    };
 
     let source_ip = match message.get_received_header_of_gateway() {
         Some(received) => {
