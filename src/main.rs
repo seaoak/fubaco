@@ -319,14 +319,6 @@ fn test_rustls_simple_client() -> Result<()> {
     Ok(())
 }
 
-fn spam_checker_dkim(message: &Message) -> DKIMResult {
-    my_dkim_verifier::dkim_verify(message, &MY_DNS_RESOLVER)
-}
-
-fn spam_checker_spf(message: &Message) -> SPFResult {
-    my_spf_verifier::spf_verify(message, &MY_DNS_RESOLVER)
-}
-
 fn spam_checker_suspicious_envelop_from(message: &Message) -> Option<String> {
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
     let envelop_from = envelop_from.replace(&['<', '>'], "").to_lowercase().trim().to_string();
@@ -576,7 +568,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
 
     let table_of_authentication_results_header = message.get_authentication_results();
 
-    let mut spf_result = spam_checker_spf(&message);
+    let mut spf_result = my_spf_verifier::spf_verify(&message, &MY_DNS_RESOLVER);
     if let Some(table) = &table_of_authentication_results_header {
         if let Some(mx_spf_status) = table.get("spf") {
             let mx_spf_status = mx_spf_status.parse::<SPFStatus>().unwrap(); // TODO: unknonw string may have to be an error, not panic
@@ -595,7 +587,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
             }
         }
     }
-    let dkim_result = spam_checker_dkim(&message);
+    let dkim_result = my_dkim_verifier::dkim_verify(&message, &MY_DNS_RESOLVER);
     let mut dkim_status = dkim_result.to_string();
     let mut dkim_target = match &dkim_result {
         DKIMResult::PASS(addr) => Some(addr.to_string()),
