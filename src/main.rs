@@ -607,15 +607,20 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
             }
         }
     }
-    let mut dmarc_result = my_dmarc_verifier::dmarc_verify(&message, spf_result.as_domain(), dkim_result.as_domain(), &MY_DNS_RESOLVER);
-    if let Some(table) = &table_of_authentication_results_header {
-        if let Some(mx_dmarc_status) = table.get("dmarc") {
-            let mx_dmarc_status = mx_dmarc_status.parse::<DMARCStatus>().unwrap(); // TODO: unknown string may have to be an error, not panic
-            if &mx_dmarc_status != dmarc_result.as_status() {
-                println!("WARNING: my DMARC checker says different result to \"Authentication-Results\" header: my={} vs header={}", dmarc_result.as_status(), mx_dmarc_status);
-            }
-            if mx_dmarc_status != DMARCStatus::NONE {
-                dmarc_result = DMARCResult::new(mx_dmarc_status, dmarc_result.as_policy().clone()); // overwrite
+    let mut dmarc_result;
+    {
+        let spf_domain = if spf_result.as_status() == &SPFStatus::PASS { Some(spf_result.as_domain().clone().unwrap()) } else { None }; // set only if PASS
+        let dkim_domain = if dkim_result.as_status() == &DKIMStatus::PASS { Some(dkim_result.as_domain().clone().unwrap()) } else { None }; // set only if PASS
+        dmarc_result = my_dmarc_verifier::dmarc_verify(&message, &spf_domain, &dkim_domain, &MY_DNS_RESOLVER);
+        if let Some(table) = &table_of_authentication_results_header {
+            if let Some(mx_dmarc_status) = table.get("dmarc") {
+                let mx_dmarc_status = mx_dmarc_status.parse::<DMARCStatus>().unwrap(); // TODO: unknown string may have to be an error, not panic
+                if &mx_dmarc_status != dmarc_result.as_status() {
+                    println!("WARNING: my DMARC checker says different result to \"Authentication-Results\" header: my={} vs header={}", dmarc_result.as_status(), mx_dmarc_status);
+                }
+                if mx_dmarc_status != DMARCStatus::NONE {
+                    dmarc_result = DMARCResult::new(mx_dmarc_status, dmarc_result.as_policy().clone()); // overwrite
+                }
             }
         }
     }
