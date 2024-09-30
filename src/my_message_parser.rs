@@ -6,6 +6,7 @@ use mail_parser::Message;
 use regex::Regex;
 
 pub trait MyMessageParser<'a> {
+    fn get_domain_of_header_from(&'a self) -> Option<String>;
     fn get_envelop_from(&'a self) -> Option<String>;
     fn get_received_header_of_gateway(&'a self) -> Option<Box<mail_parser::Received<'a>>>;
     fn get_source_ip(&'a self) -> Option<IpAddr>;
@@ -13,6 +14,70 @@ pub trait MyMessageParser<'a> {
 }
 
 impl<'a> MyMessageParser<'a> for Message<'a> {
+    fn get_domain_of_header_from(&'a self) -> Option<String> {
+        // see "Section 6.6.1" in RFC7489 (DMARC)
+        let mut headers = self.header_values("From");
+        let header = headers.next();
+        if header.is_none() {
+            return None; // "rejected" when no FROM field is existed
+        }
+        if headers.next().is_some() {
+            return None; // "rejected" when multiple FROM fields are existed
+        }
+        let text;
+        match header.unwrap() {
+            mail_parser::HeaderValue::Address(mail_parser::Address::List(v)) => {
+                if v.len() != 1 {
+                    return None; // "rejected" when multple addresses are contained
+                }
+                if v[0].address().is_none() {
+                    return None; // "rejected" when FROM field contains no meaningful domains
+                }
+                text = v[0].address().unwrap().to_string();
+            },
+            mail_parser::HeaderValue::Address(mail_parser::Address::Group(_)) => {
+                return None; // "ignored" when "group" syntax
+            },
+            mail_parser::HeaderValue::Text(s) => {
+                assert_ne!(s.len(), 0);
+                text = s.to_string();
+            }
+            mail_parser::HeaderValue::TextList(v) => {
+                if v.len() != 1 {
+                    return None; // "rejected" when multiple addresses are contained
+                }
+                assert_ne!(v[0].len(), 0);
+                text = v[0].to_string();
+            }
+            mail_parser::HeaderValue::Empty => {
+                return None; // "rejected" when FROM field contains no meaningful domains
+            }
+            x @ _ => {
+                unreachable!("BUG: unexpected data in FROM field: {:?}", x);
+            },
+        }
+        lazy_static! {
+            static ref REGEX_BARE_MAIL_ADDRESS: Regex = Regex::new(r"^\s*([-_.+=0-9a-zA-Z]+)[@]([0-9a-zA-Z][-_.0-9a-zA-Z]+[0-9a-zA-Z])\s*$").unwrap();
+            static ref REGEX_WRAPPED_MAIL_ADDRESS: Regex = Regex::new(r"[<]\s*([-_.+=0-9a-zA-Z]+)[@]([0-9a-zA-Z][-_.0-9a-zA-Z]+[0-9a-zA-Z])\s*[>]\s*$").unwrap();
+            static ref REGEX_PART_OF_DOMAIN: Regex = Regex::new(r"^[0-9a-zA-Z]([-_0-9a-zA-Z]*[0-9a-zA-Z])?$").unwrap();
+        }
+        let domain;
+        if let Some(caps) = REGEX_BARE_MAIL_ADDRESS.captures(&text) {
+            domain = caps[2].to_string();
+        } else if let Some(caps) = REGEX_WRAPPED_MAIL_ADDRESS.captures(&text) {
+            domain = caps[2].to_string();
+        } else {
+            return None // "ignroed" when FROM field contains no meaningful domains
+        }
+        if !domain.contains('.') {
+            return None // "ignroed" when FROM field contains no meaningful domains
+        }
+        if !domain.split('.').all(|s| REGEX_PART_OF_DOMAIN.is_match(s)) {
+            return None // "ignroed" when FROM field contains no meaningful domains
+        }
+        Some(domain.to_ascii_lowercase())
+    }
+
     fn get_envelop_from(&'a self) -> Option<String> {
         let first_header = self.header_values("Return-Path").next();
         if first_header.is_none() {

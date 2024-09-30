@@ -1,7 +1,12 @@
+use std::collections::HashMap;
+
 use anyhow::anyhow;
+use lazy_static::lazy_static;
 use mail_parser::Message;
+use regex::Regex;
 
 use crate::my_dns_resolver::MyDNSResolver;
+use crate::my_message_parser::MyMessageParser;
 
 //====================================================================
 #[allow(unused)]
@@ -94,11 +99,11 @@ impl std::str::FromStr for DMARCStatus {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct DMARCResult {
     status: DMARCStatus,
-    policy: DMARCPolicy,
+    policy: Option<DMARCPolicy>,
 }
 
 impl DMARCResult {
-    pub fn new(status: DMARCStatus, policy: DMARCPolicy) -> Self {
+    pub fn new(status: DMARCStatus, policy: Option<DMARCPolicy>) -> Self {
         Self {
             status,
             policy,
@@ -109,7 +114,7 @@ impl DMARCResult {
         &self.status
     }
 
-    pub fn as_policy(&self) -> &DMARCPolicy {
+    pub fn as_policy(&self) -> &Option<DMARCPolicy> {
         &self.policy
     }
 }
@@ -117,5 +122,101 @@ impl DMARCResult {
 //====================================================================
 #[allow(unused)]
 pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target: &Option<String>, resolver: &MyDNSResolver) -> DMARCResult {
-    DMARCResult::new(DMARCStatus::NONE, DMARCPolicy::NONE)
+    let target_domain = if let Some(s) = message.get_domain_of_header_from() {
+        s
+    } else {
+        return DMARCResult::new(DMARCStatus::PERMERROR, None);
+    };
+
+    // DNS lookup for DMARC record
+    let dns_fields = {
+        let dns_record = match resolver.query_simple(&format!("_dmarc.{}", target_domain), "TXT") {
+            Ok(v) => {
+                assert_ne!(v.len(), 0); // at least one entry must be existed if DNS lookup succeed
+                if v.len() > 1 {
+                    println!("multiple DMARC records are found by DNS lookup ({}): {:?}", target_domain, v);
+                    return DMARCResult::new(DMARCStatus::PERMERROR, None);
+                }
+                v[0].clone()
+            },
+            Err(e) => {
+                println!("no DMARC record is found by DNS lookup ({}): {:?}", target_domain, e);
+                return DMARCResult::new(DMARCStatus::TEMPERROR, None);
+            }
+        };
+        println!("DMARC record: {}", dns_record);
+        let mut table = HashMap::<String, String>::new();
+        for field in dns_record.split(';').map(|s| s.trim()) {
+            if let Some((left, right)) = field.split_once('=') {
+                if table.contains_key(left) {
+                    println!("invalid DMARC record: key \"{}\" is existed multple times", left);
+                    return DMARCResult::new(DMARCStatus::PERMERROR, None);
+                }
+                if table.is_empty() {
+                    if left != "v" {
+                        println!("invalid DMARC record: the first tag must be \"v\", but: {}", left);
+                        return DMARCResult::new(DMARCStatus::PERMERROR, None);
+                    }
+                }
+                table.insert(left.to_string(), right.to_string());
+            }
+        }
+        table
+    };
+
+    // validate DMARC record (see "Section 6.3" in RFC7489)
+    {
+        fn validate<F>(table: &HashMap<String, String>, label: &str, is_valid: F) -> Option<DMARCResult>
+            where F: Fn(&str) -> bool
+        {
+            if let Some(s) = table.get(label) {
+                if !is_valid(s.as_str()) {
+                    println!("detect invalid \"{}\" field in DMARC record: \"{}\"", label, s);
+                    return Some(DMARCResult::new(DMARCStatus::PERMERROR, None));
+                }
+            }
+            None
+        }
+
+        lazy_static! {
+            static ref REGEX_INTEGER_FROM_0_to_100: Regex = Regex::new(r"^([0-9]|[1-9][0-9]|100)$").unwrap();
+            static ref REGEX_INTEGER_GREATER_THAN_0: Regex = Regex::new(r"^([1-9][0-9]*)$").unwrap();
+        }
+
+        if let Some(r) = validate(&dns_fields, "adkim", |s| s == "r" || s == "s") {
+            return r;
+        }
+        if let Some(r) = validate(&dns_fields, "aspf", |s| s == "r" || s == "s") {
+            return r;
+        }
+        if let Some(r) = validate(&dns_fields, "fo", |s| s == "0" || s == "1" || s == "d" || s == "s") {
+            return r;
+        }
+        if let Some(r) = validate(&dns_fields, "p", |s| s == "none" || s == "quarantine" || s == "reject") {
+            return r;
+        }
+        if let Some(r) = validate(&dns_fields, "pct", |s| REGEX_INTEGER_FROM_0_to_100.is_match(s)) {
+            return r;
+        }
+        if let Some(r) = validate(&dns_fields, "ri", |s| REGEX_INTEGER_GREATER_THAN_0.is_match(s)) {
+            return r;
+        }
+        if let Some(r) = validate(&dns_fields, "sp", |s| s == "none" || s == "quarantine" || s == "reject") {
+            return r;
+        }
+        if let Some(r) = validate(&dns_fields, "v", |s| s == "DMARC1") {
+            return r;
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+    DMARCResult::new(DMARCStatus::NONE, None)
 }
