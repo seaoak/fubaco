@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use mail_parser::Message;
 
 use crate::my_dns_resolver::MyDNSResolver;
@@ -48,29 +49,73 @@ pub enum DMARCPolicy {
     NONE,
     QUARANTINE,
     REJECT,
+    ENFORCED, // Fubaco original (when no DNS record is existed)
 }
 
 #[allow(unused)]
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum DMARCResult {
+pub enum DMARCStatus {
     NONE,
     PASS,
-    FAIL(DMARCPolicy),
+    FAIL,
+    TEMPERROR,
+    PERMERROR,
 }
 
-impl std::fmt::Display for DMARCResult {
+impl std::fmt::Display for DMARCStatus {
     fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
         let s = match self {
             Self::NONE       => "none",
             Self::PASS       => "pass",
-            Self::FAIL(_)    => "fail",
+            Self::FAIL       => "fail",
+            Self::TEMPERROR  => "temperror",
+            Self::PERMERROR  => "permerror",
         };
         write!(dest, "{}", s)
+    }
+}
+
+impl std::str::FromStr for DMARCStatus {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "none"         => Ok(Self::NONE),
+            "pass"         => Ok(Self::PASS),
+            "fail"         => Ok(Self::FAIL),
+            "temperror"    => Ok(Self::TEMPERROR),
+            "permerror"    => Ok(Self::PERMERROR),
+            _              => Err(anyhow!("invalid string for DMARCStatus")),
+        }
+    }
+}
+
+#[allow(unused)]
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DMARCResult {
+    status: DMARCStatus,
+    policy: DMARCPolicy,
+}
+
+impl DMARCResult {
+    pub fn new(status: DMARCStatus, policy: DMARCPolicy) -> Self {
+        Self {
+            status,
+            policy,
+        }
+    }
+
+    pub fn as_status(&self) -> &DMARCStatus {
+        &self.status
+    }
+
+    pub fn as_policy(&self) -> &DMARCPolicy {
+        &self.policy
     }
 }
 
 //====================================================================
 #[allow(unused)]
 pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target: &Option<String>, resolver: &MyDNSResolver) -> DMARCResult {
-    DMARCResult::NONE
+    DMARCResult::new(DMARCStatus::NONE, DMARCPolicy::NONE)
 }

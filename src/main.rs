@@ -11,6 +11,7 @@ use base64::prelude::*;
 use kana::wide2ascii;
 use lazy_static::lazy_static;
 use mail_parser::{Message, MessageParser};
+use my_dmarc_verifier::{DMARCResult, DMARCStatus};
 use regex::Regex;
 use rustls;
 use rustls_native_certs;
@@ -606,15 +607,15 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
             }
         }
     }
-    let dmarc_result = my_dmarc_verifier::dmarc_verify(&message, spf_result.as_domain(), dkim_result.as_domain(), &MY_DNS_RESOLVER);
-    let mut dmarc_status = dmarc_result.to_string();
+    let mut dmarc_result = my_dmarc_verifier::dmarc_verify(&message, spf_result.as_domain(), dkim_result.as_domain(), &MY_DNS_RESOLVER);
     if let Some(table) = &table_of_authentication_results_header {
         if let Some(mx_dmarc_status) = table.get("dmarc") {
-            if mx_dmarc_status != &dmarc_status {
-                println!("WARNING: my DMARC checker says different result to \"Authentication-Results\" header: my={} vs header={}", dmarc_status, mx_dmarc_status);
+            let mx_dmarc_status = mx_dmarc_status.parse::<DMARCStatus>().unwrap(); // TODO: unknown string may have to be an error, not panic
+            if &mx_dmarc_status != dmarc_result.as_status() {
+                println!("WARNING: my DMARC checker says different result to \"Authentication-Results\" header: my={} vs header={}", dmarc_result.as_status(), mx_dmarc_status);
             }
-            if mx_dmarc_status != "none" {
-                dmarc_status = mx_dmarc_status.to_string(); // overwrite
+            if mx_dmarc_status != DMARCStatus::NONE {
+                dmarc_result = DMARCResult::new(mx_dmarc_status, dmarc_result.as_policy().clone()); // overwrite
             }
         }
     }
@@ -622,7 +623,7 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     let auth_results = vec![
         format!("spf={}", spf_result.as_status()),
         format!("dkim={}", dkim_result.as_status()),
-        format!("dmarc={}", dmarc_status),
+        format!("dmarc={}", dmarc_result.as_status()),
     ];
 
     let mut fubaco_headers = Vec::new();
