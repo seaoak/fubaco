@@ -148,8 +148,8 @@ pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target:
         let dns_record = match resolver.query_simple(&fqdn, "TXT") {
             Ok(v) => {
                 if v.len() == 0 {
-                    println!("no DMARC record is found by DNS lookup: {}", fqdn);
-                    return DMARCResult::new(DMARCStatus::TEMPERROR, None);
+                    println!("DMARC record is not found by DNS lookup: {}", fqdn);
+                    return DMARCResult::new(DMARCStatus::NONE, None);
                 }
                 if v.len() > 1 {
                     println!("multiple DMARC records are found by DNS lookup ({}): {:?}", target_domain, v);
@@ -159,7 +159,7 @@ pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target:
             },
             Err(e) => {
                 println!("DNS lookup failed for DMARC record ({}): {:?}", fqdn, e);
-                return DMARCResult::new(DMARCStatus::TEMPERROR, None);
+                return DMARCResult::new(DMARCStatus::NONE, None);
             }
         };
         let mut table = HashMap::<String, String>::new();
