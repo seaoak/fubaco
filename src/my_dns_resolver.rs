@@ -103,7 +103,7 @@ impl MyDNSResolver {
             ("type", &query_type_number.to_string()),
             ("cd", "false"),
             // ("ct", "application/dns-json"),
-            ("do", "true"),
+            ("do", "false"),
             ("edns_client_subnet", "0.0.0.0/0"),
             ("random_padding", &"x".repeat(random_value % 64 + 1)),
         ];
