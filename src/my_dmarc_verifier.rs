@@ -158,7 +158,6 @@ pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target:
                 return DMARCResult::new(DMARCStatus::TEMPERROR, None);
             }
         };
-        println!("DMARC record: {}", dns_record);
         let mut table = HashMap::<String, String>::new();
         for field in dns_record.split(';').map(|s| s.trim()) {
             if let Some((left, right)) = field.split_once('=') {
