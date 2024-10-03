@@ -144,9 +144,13 @@ pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target:
 
     // DNS lookup for DMARC record
     let dns_fields = {
-        let dns_record = match resolver.query_simple(&format!("_dmarc.{}", target_domain), "TXT") {
+        let fqdn = format!("_dmarc.{}", target_domain);
+        let dns_record = match resolver.query_simple(&fqdn, "TXT") {
             Ok(v) => {
-                assert_ne!(v.len(), 0); // at least one entry must be existed if DNS lookup succeed
+                if v.len() == 0 {
+                    println!("no DMARC record is found by DNS lookup: {}", fqdn);
+                    return DMARCResult::new(DMARCStatus::TEMPERROR, None);
+                }
                 if v.len() > 1 {
                     println!("multiple DMARC records are found by DNS lookup ({}): {:?}", target_domain, v);
                     return DMARCResult::new(DMARCStatus::PERMERROR, None);
@@ -154,7 +158,7 @@ pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target:
                 v[0].clone()
             },
             Err(e) => {
-                println!("no DMARC record is found by DNS lookup ({}): {:?}", target_domain, e);
+                println!("DNS lookup failed for DMARC record ({}): {:?}", fqdn, e);
                 return DMARCResult::new(DMARCStatus::TEMPERROR, None);
             }
         };
