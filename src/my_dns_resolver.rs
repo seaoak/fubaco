@@ -5,7 +5,6 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
-use rand;
 use regex::Regex;
 use reqwest;
 use serde_json;
@@ -17,7 +16,7 @@ lazy_static! {
 #[derive(Debug)]
 pub struct MyDNSResolver {
     client: reqwest::Client,
-    cache: Arc<Mutex<HashMap<String, Vec<String>>>>,
+    cache: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl MyDNSResolver {
@@ -29,7 +28,7 @@ impl MyDNSResolver {
             .https_only(true)
             .build()
             .unwrap();
-        let cache: HashMap<String, Vec<String>> = serde_json::from_str(&load_cache_file().unwrap()).unwrap();
+        let cache: HashMap<String, String> = serde_json::from_str(&load_cache_file().unwrap()).unwrap();
         let cache = Arc::new(Mutex::new(cache));
         Self {
             client,
@@ -90,14 +89,7 @@ impl MyDNSResolver {
     pub async fn lookup(&self, fqdn: String, query_type: String) -> Result<Vec<String>> {
         // https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/make-api-requests/dns-json/
         // https://developers.google.com/speed/public-dns/docs/doh/json?hl=ja
-        {
-            let key = format!("{}&{}", fqdn, query_type);
-            let mut guard = self.cache.lock().unwrap();
-            if let Some(v) = guard.get(&key) {
-                return Ok(v.clone());
-            }
-        }
-        let random_value: usize = rand::random();
+        let random_value: usize = 27; // rand::random();
         let headers = [
             ("Accept", "application/dns-json"),
         ];
@@ -117,7 +109,24 @@ impl MyDNSResolver {
         ];
         let query_string = options.into_iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<String>>().join("&");
         let url = format!("{}?{}", *DNS_PROVIDER_BASE_URL, query_string);
-        let response_text = self.issue_request_and_get_response(&url, &headers).await?;
+        let cache_data = {
+            let mut guard = self.cache.lock().unwrap();
+            if let Some(v) = guard.get(&url) {
+                Some(v.clone())
+            } else {
+                None
+            }
+        };
+        let response_text = if let Some(s) = cache_data {
+            s
+        } else {
+            let s = self.issue_request_and_get_response(&url, &headers).await?;
+            {
+                let mut guard = self.cache.lock().unwrap();
+                guard.insert(url.clone(), s.clone());
+            }
+            s
+        };
         // println!("response_text: \"{}\"", response_text);
         let json: serde_json::Value = serde_json::from_str(&response_text)?;
         let answers = if let serde_json::Value::Array(v) = &json["Answer"] {
@@ -126,11 +135,6 @@ impl MyDNSResolver {
             Vec::new() // empty
         };
         let results: Vec<String> = answers.into_iter().map(|v| strip_string_quotation(&v["data"].to_string())).collect();
-        {
-            let key = format!("{}&{}", fqdn, query_type);
-            let mut guard = self.cache.lock().unwrap();
-            guard.insert(key, results.clone()); // drop old value if exists
-        }
         Ok(results)
     }
 
