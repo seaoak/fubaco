@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use anyhow::anyhow;
 use lazy_static::lazy_static;
@@ -55,6 +56,19 @@ pub enum DMARCPolicy {
     QUARANTINE,
     REJECT,
     ENFORCED, // Fubaco original (when no DNS record is existed)
+}
+
+impl std::str::FromStr for DMARCPolicy {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "none"         => Ok(Self::NONE),
+            "quarantine"   => Ok(Self::QUARANTINE),
+            "reject"       => Ok(Self::REJECT),
+            _              => Err(anyhow!("invalid string for DMARCPolicy")),
+        }
+    }
 }
 
 #[allow(unused)]
@@ -229,6 +243,41 @@ pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target:
         }
 
         table
+    };
+    let policy = DMARCPolicy::from_str(dns_fields.get("p").unwrap()).unwrap();
+
+    // check alignment
+    {
+        fn is_aligned(mode: Option<&String>, prev_target: &Option<String>, target_domain: &str) -> bool {
+            let mode = mode.unwrap().as_str(); // must be complemented already
+            let target = if let Some(addr) = prev_target {
+                addr.as_str()
+            } else {
+                return false;
+            };
+            let alignment_status = IdentifierAlignmentStatus::check_alignment(target, target_domain);
+            match (mode, alignment_status) {
+                ("s", IdentifierAlignmentStatus::Strict)   => true,
+                ("s", IdentifierAlignmentStatus::Relaxed)  => false,
+                ("s", IdentifierAlignmentStatus::None)     => false,
+                ("r", IdentifierAlignmentStatus::Strict)   => true,
+                ("r", IdentifierAlignmentStatus::Relaxed)  => true,
+                ("r", IdentifierAlignmentStatus::None)     => false,
+                _                                          => unreachable!("BUG"),
+            }
+        }
+
+        let mut is_alignment_ok = false;
+        if is_aligned(dns_fields.get("aspf"), spf_target, &target_domain) {
+            is_alignment_ok = true; // overwrite
+        }
+        if is_aligned(dns_fields.get("adkim"), dkim_target, &target_domain) {
+            is_alignment_ok = true; // overwrite
+        }
+
+        if !is_alignment_ok {
+            return DMARCResult::new(DMARCStatus::FAIL, Some(policy));
+        }
     };
 
 
