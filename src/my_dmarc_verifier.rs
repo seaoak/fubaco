@@ -161,55 +161,75 @@ pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target:
                 table.insert(left.to_string(), right.to_string());
             }
         }
+
+        // validate and complement DMARC record (see "Section 6.3" in RFC7489)
+        {
+            fn validate<F>(table: &mut HashMap<String, String>, label: &str, default_value: Option<&str>, is_valid: F) -> Option<DMARCResult>
+                where F: Fn(&str) -> bool
+            {
+                if let Some(s) = table.get(label) {
+                    if is_valid(s.as_str()) {
+                        // OK
+                    } else {
+                        println!("detect invalid \"{}\" field in DMARC record: \"{}\"", label, s);
+                        return Some(DMARCResult::new(DMARCStatus::PERMERROR, None));
+                    }
+                } else {
+                    if let Some(s) = default_value { // may be empty string (for OPTIONAL field with string argument)
+                        if s.len() > 0 {
+                            table.insert(label.to_string(), s.to_string());
+                        }
+                    } else {
+                        println!("detet lack of required field \"{}\" in DMARC record", label);
+                        return Some(DMARCResult::new(DMARCStatus::PERMERROR, None));
+                    }
+                }
+                None
+            }
+
+            lazy_static! {
+                static ref REGEX_INTEGER_FROM_0_to_100: Regex = Regex::new(r"^([0-9]|[1-9][0-9]|100)$").unwrap();
+                static ref REGEX_INTEGER_GREATER_THAN_0: Regex = Regex::new(r"^([1-9][0-9]*)$").unwrap();
+                static ref REGEX_MAIL_ADDRESS_LIST: Regex = Regex::new(r"^([-_.+=0-9a-zA-Z]+[@][-_.0-9a-zA-Z]+)([,]([-_.+=0-9a-zA-Z]+[@][-_.0-9a-zA-Z]+))*$").unwrap();
+            }
+
+            if let Some(r) = validate(&mut table, "adkim", Some("r"), |s| s == "r" || s == "s") {
+                return r;
+            }
+            if let Some(r) = validate(&mut table, "aspf", Some("r"), |s| s == "r" || s == "s") {
+                return r;
+            }
+            if let Some(r) = validate(&mut table, "fo", Some("0"), |s| s == "0" || s == "1" || s == "d" || s == "s") {
+                return r;
+            }
+            if let Some(r) = validate(&mut table, "p", None, |s| s == "none" || s == "quarantine" || s == "reject") {
+                return r;
+            }
+            if let Some(r) = validate(&mut table, "pct", Some("100"), |s| REGEX_INTEGER_FROM_0_to_100.is_match(s)) {
+                return r;
+            }
+            if let Some(r) = validate(&mut table, "rf", Some("afrf"), |s| true) {
+                return r;
+            }
+            if let Some(r) = validate(&mut table, "ri", Some("86400"), |s| REGEX_INTEGER_GREATER_THAN_0.is_match(s)) {
+                return r;
+            }
+            if let Some(r) = validate(&mut table, "rua", Some(""), |s| REGEX_MAIL_ADDRESS_LIST.is_match(s)) {
+                return r;
+            }
+            if let Some(r) = validate(&mut table, "ruf", Some(""), |s| REGEX_MAIL_ADDRESS_LIST.is_match(s)) {
+                return r;
+            }
+            if let Some(r) = validate(&mut table, "sp", Some(""), |s| s == "none" || s == "quarantine" || s == "reject") {
+                return r;
+            }
+            if let Some(r) = validate(&mut table, "v", None, |s| s == "DMARC1") {
+                return r;
+            }
+        }
+
         table
     };
-
-    // validate DMARC record (see "Section 6.3" in RFC7489)
-    {
-        fn validate<F>(table: &HashMap<String, String>, label: &str, is_valid: F) -> Option<DMARCResult>
-            where F: Fn(&str) -> bool
-        {
-            if let Some(s) = table.get(label) {
-                if !is_valid(s.as_str()) {
-                    println!("detect invalid \"{}\" field in DMARC record: \"{}\"", label, s);
-                    return Some(DMARCResult::new(DMARCStatus::PERMERROR, None));
-                }
-            }
-            None
-        }
-
-        lazy_static! {
-            static ref REGEX_INTEGER_FROM_0_to_100: Regex = Regex::new(r"^([0-9]|[1-9][0-9]|100)$").unwrap();
-            static ref REGEX_INTEGER_GREATER_THAN_0: Regex = Regex::new(r"^([1-9][0-9]*)$").unwrap();
-        }
-
-        if let Some(r) = validate(&dns_fields, "adkim", |s| s == "r" || s == "s") {
-            return r;
-        }
-        if let Some(r) = validate(&dns_fields, "aspf", |s| s == "r" || s == "s") {
-            return r;
-        }
-        if let Some(r) = validate(&dns_fields, "fo", |s| s == "0" || s == "1" || s == "d" || s == "s") {
-            return r;
-        }
-        if let Some(r) = validate(&dns_fields, "p", |s| s == "none" || s == "quarantine" || s == "reject") {
-            return r;
-        }
-        if let Some(r) = validate(&dns_fields, "pct", |s| REGEX_INTEGER_FROM_0_to_100.is_match(s)) {
-            return r;
-        }
-        if let Some(r) = validate(&dns_fields, "ri", |s| REGEX_INTEGER_GREATER_THAN_0.is_match(s)) {
-            return r;
-        }
-        if let Some(r) = validate(&dns_fields, "sp", |s| s == "none" || s == "quarantine" || s == "reject") {
-            return r;
-        }
-        if let Some(r) = validate(&dns_fields, "v", |s| s == "DMARC1") {
-            return r;
-        }
-    }
-
-
 
 
 
