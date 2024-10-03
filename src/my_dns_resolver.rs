@@ -129,12 +129,50 @@ impl MyDNSResolver {
         };
         // println!("response_text: \"{}\"", response_text);
         let json: serde_json::Value = serde_json::from_str(&response_text)?;
-        let answers = if let serde_json::Value::Array(v) = &json["Answer"] {
-            v.clone()
+        let results = if let serde_json::Value::Array(v) = &json["Answer"] {
+            // resolve canonical name (automatically redirected by DoH server)
+            if v.len() == 0 {
+                Vec::new()
+            } else {
+                let mut table = HashMap::<String, Vec<String>>::new();
+                for x in v {
+                    let name = x["name"].as_str().unwrap().to_string(); // strip double-quotation
+                    let data = strip_string_quotation(&x["data"].to_string());
+                    if table.contains_key(&name) {
+                        table.get_mut(&name).unwrap().push(data);
+                    } else {
+                        table.insert(name, vec![data]);
+                    }
+                }
+                // println!("DEBUG: fqdn={:?} table={:?}", fqdn, table);
+                let mut key = if !table.contains_key(&fqdn) && fqdn.ends_with(".") { fqdn[..(fqdn.len() - 1)].to_string() } else { fqdn.clone() };
+                assert!(table.contains_key(&key));
+                let v = loop {
+                    let v = table.remove(&key).unwrap();
+                    assert_ne!(v.len(), 0);
+                    if v.len() > 1 {
+                        break v;
+                    }
+                    let maybe_new_key = v[0].clone();
+                    if table.contains_key(&maybe_new_key) {
+                        key = maybe_new_key;
+                        continue;
+                    }
+                    if maybe_new_key.ends_with(".") {
+                        let maybe_new_key = maybe_new_key[..(maybe_new_key.len() - 1)].to_string(); // drop trailing dot
+                        if table.contains_key(&maybe_new_key) {
+                            key = maybe_new_key;
+                            continue;
+                        }
+                    }
+                    break v;
+                };
+                assert!(table.is_empty());
+                v
+            }
         } else {
             Vec::new() // empty
         };
-        let results: Vec<String> = answers.into_iter().map(|v| strip_string_quotation(&v["data"].to_string())).collect();
         Ok(results)
     }
 
