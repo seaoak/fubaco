@@ -26,6 +26,7 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
         }
         let text;
         match header.unwrap() {
+            // the value of HeaderValue should be automatically decoded when it is such as UTF-8 or ISO-2022-JP
             mail_parser::HeaderValue::Address(mail_parser::Address::List(v)) => {
                 if v.len() != 1 {
                     return None; // "rejected" when multple addresses are contained
