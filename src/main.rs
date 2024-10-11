@@ -150,6 +150,7 @@ lazy_static! {
     static ref REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND: Regex = Regex::new(r"^\+OK +(\S+) +(\S+) *\r\n$").unwrap();
     static ref REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND: Regex = Regex::new(r"^ *(\S+) +(\S+) *$").unwrap(); // "\r\n" is stripped
     static ref REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS: Regex = Regex::new(r"\b([1-9][0-9]*) octets\b").unwrap();
+    static ref BLACKLIST_TLD_LIST: Vec<String> = vec![".cn", ".ru", ".hu", ".br", ".su", ".nz", ".in", ".cz", ".be", ".cl"].into_iter().map(|s| s.to_string()).collect();
     static ref DATABASE_FILENAME: String = "./db.json".to_string();
     static ref FUBACO_HEADER_TOTAL_SIZE: usize = 512; // (78+2)*6+(30+2)
 }
@@ -332,18 +333,17 @@ fn spam_checker_suspicious_envelop_from(message: &Message) -> Option<String> {
 }
 
 fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
-    let blacklist_tld_list = vec![".cn", ".ru", ".hu", ".br", ".su", ".nz", ".in", ".cz", ".be", ".cl"];
     let header_from = message.from().unwrap().first().map(|addr| addr.address.clone().unwrap_or_default().to_string()).unwrap_or_default().to_lowercase();
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string().replace(&['<', '>'], "").to_lowercase(); // may be empty string
     println!("Evelop.from: \"{}\"", envelop_from);
     let mut is_spam = false;
-    for tld in &blacklist_tld_list {
+    for tld in BLACKLIST_TLD_LIST.iter() {
         if header_from.ends_with(tld) {
             println!("blacklist-tld in from header address: \"{}\"", header_from);
             is_spam = true;
         }
     }
-    for tld in &blacklist_tld_list {
+    for tld in BLACKLIST_TLD_LIST.iter() {
         if envelop_from.ends_with(tld) {
             println!("blacklist-tld in envelop from address: \"{}\"", envelop_from);
             is_spam = true;
@@ -448,6 +448,12 @@ fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
             if host_in_href != host_in_text {
                 println!("camouflage-hyperlink: \"{}\" vs \"{}\"", host_in_href, host_in_text);
                 return Some("camouflaged-hyperlink".to_string());
+            }
+        }
+        for tld in BLACKLIST_TLD_LIST.iter() {
+            if host_in_href.ends_with(tld) {
+                println!("blacklist-tld-in-href: \"{}\"", host_in_href);
+                return Some("blacklist-tld-in-href".to_string());
             }
         }
     }
