@@ -430,7 +430,7 @@ fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
     let dom = scraper::Html::parse_document(&html);
     let selector = scraper::Selector::parse(r"a[href]").unwrap();
     for elem in dom.select(&selector) {
-        let url = elem.value().attr("href").unwrap();
+        let url = elem.value().attr("href").unwrap().trim();
         lazy_static! {
             static ref REGEX_URL_WITH_NORMAL_HOST: Regex = Regex::new(r"^https?[:][/][/]([-_a-z0-9.]+)([/]\S*)?$").unwrap();
         }
@@ -443,7 +443,8 @@ fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
             return Some("suspicious-href".to_string()); // camouflaged hostname
         }
         let text = elem.inner_html();
-        if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(&text) {
+        let text = text.trim();
+        if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(text) {
             let host_in_text = caps[1].to_string();
             if host_in_href != host_in_text {
                 println!("camouflage-hyperlink: \"{}\" vs \"{}\"", host_in_href, host_in_text);
