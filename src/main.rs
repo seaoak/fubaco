@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
@@ -429,6 +429,7 @@ fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
     }
     let dom = scraper::Html::parse_document(&html);
     let selector = scraper::Selector::parse(r"a[href]").unwrap();
+    let mut table = HashSet::<&'static str>::new();
     for elem in dom.select(&selector) {
         let url = elem.value().attr("href").unwrap().trim();
         lazy_static! {
@@ -440,7 +441,8 @@ fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
         } else {
             // for example, "with port number", "with percent-encoded", "with BASIC authentication info"
             println!("suspicious-href: \"{}\"", url);
-            return Some("suspicious-href".to_string()); // camouflaged hostname
+            table.insert("suspicious-href"); // camouflaged hostname
+            continue;
         }
         let text = elem.inner_html();
         let text = text.trim();
@@ -448,15 +450,21 @@ fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
             let host_in_text = caps[1].to_string();
             if host_in_href != host_in_text {
                 println!("camouflage-hyperlink: \"{}\" vs \"{}\"", host_in_href, host_in_text);
-                return Some("camouflaged-hyperlink".to_string());
+                table.insert("camouflaged-hyperlink");
             }
         }
         for tld in BLACKLIST_TLD_LIST.iter() {
             if host_in_href.ends_with(tld) {
                 println!("blacklist-tld-in-href: \"{}\"", host_in_href);
-                return Some("blacklist-tld-in-href".to_string());
+                table.insert("blacklist-tld-in-href");
             }
         }
+    }
+    if !table.is_empty() {
+        let mut list = table.into_iter().map(|s| s.to_string()).collect::<Vec<String>>();
+        list.sort();
+        let text = list.join(" ");
+        return Some(text);
     }
     None
 }
