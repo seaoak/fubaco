@@ -444,6 +444,12 @@ fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
             table.insert("suspicious-href"); // camouflaged hostname
             continue;
         }
+        for tld in BLACKLIST_TLD_LIST.iter() {
+            if host_in_href.ends_with(tld) {
+                println!("blacklist-tld-in-href: \"{}\"", host_in_href);
+                table.insert("blacklist-tld-in-href");
+            }
+        }
         let text = elem.inner_html();
         let text = text.trim();
         if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(text) {
@@ -451,12 +457,6 @@ fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
             if host_in_href != host_in_text {
                 println!("camouflage-hyperlink: \"{}\" vs \"{}\"", host_in_href, host_in_text);
                 table.insert("camouflaged-hyperlink");
-            }
-        }
-        for tld in BLACKLIST_TLD_LIST.iter() {
-            if host_in_href.ends_with(tld) {
-                println!("blacklist-tld-in-href: \"{}\"", host_in_href);
-                table.insert("blacklist-tld-in-href");
             }
         }
     }
