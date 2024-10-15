@@ -273,17 +273,10 @@ pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target:
         let is_alignment_ok = false
             || is_aligned(dns_fields.get("aspf"), spf_target, &target_domain)
             || is_aligned(dns_fields.get("adkim"), dkim_target, &target_domain);
-        if !is_alignment_ok {
+        if is_alignment_ok {
+            return DMARCResult::new(DMARCStatus::PASS, Some(policy));
+        } else {
             return DMARCResult::new(DMARCStatus::FAIL, Some(policy));
         }
     };
-
-
-
-
-
-
-
-
-    DMARCResult::new(DMARCStatus::NONE, None)
 }
