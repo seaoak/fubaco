@@ -270,14 +270,9 @@ pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target:
             }
         }
 
-        let mut is_alignment_ok = false;
-        if is_aligned(dns_fields.get("aspf"), spf_target, &target_domain) {
-            is_alignment_ok = true; // overwrite
-        }
-        if is_aligned(dns_fields.get("adkim"), dkim_target, &target_domain) {
-            is_alignment_ok = true; // overwrite
-        }
-
+        let is_alignment_ok = false
+            || is_aligned(dns_fields.get("aspf"), spf_target, &target_domain)
+            || is_aligned(dns_fields.get("adkim"), dkim_target, &target_domain);
         if !is_alignment_ok {
             return DMARCResult::new(DMARCStatus::FAIL, Some(policy));
         }
