@@ -29,7 +29,7 @@ pub fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>,
     let message_number_to_unique_id;
     {
         println!("issue internal UIDL command");
-        let mut command_line = format!("UIDL\r\n").into_bytes();
+        let command_line = format!("UIDL\r\n").into_bytes();
         upstream_stream.write_all_and_flush(&command_line)?;
         println!("wait the response for UIDL command");
         let mut response_lines = Vec::<u8>::new();
@@ -62,7 +62,7 @@ pub fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>,
     let message_number_to_nbytes;
     {
         println!("issue internal LIST command");
-        let mut command_line = format!("LIST\r\n").into_bytes();
+        let command_line = format!("LIST\r\n").into_bytes();
         upstream_stream.write_all_and_flush(&command_line)?;
         println!("wait the response for LIST command");
         let mut response_lines = Vec::<u8>::new();
@@ -91,9 +91,8 @@ pub fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>,
         println!("Done");
     }
 
-    if (unique_id_to_message_info.len() == 0) { // at the first time only, all existed massages are treated as old messages which have no fubaco header
-        for (message_number, unique_id) in message_number_to_unique_id.iter() {
-            let nbytes = message_number_to_nbytes[message_number];
+    if unique_id_to_message_info.len() == 0 { // at the first time only, all existed massages are treated as old messages which have no fubaco header
+        for (_message_number, unique_id) in message_number_to_unique_id.iter() {
             let info =
                 MessageInfo {
                     unique_id: unique_id.clone(),
@@ -124,7 +123,6 @@ pub fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>,
     loop {
         let command_name;
         let command_arg1;
-        let command_arg2;
         let is_multi_line_response_expected;
         { // relay a POP3 command
             let mut command_line = Vec::<u8>::new();
@@ -137,7 +135,6 @@ pub fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>,
             if let Some(caps) = REGEX_POP3_COMMAND_LINE_GENERAL.captures(&command_str) {
                 command_name = caps[1].to_string();
                 command_arg1 = caps.get(2).map(|v| v.as_str().to_owned());
-                command_arg2 = caps.get(3).map(|v| v.as_str().to_owned());
             } else {
                 return Err(anyhow!("invalid command line: {}", command_str.trim()));
             }
@@ -165,7 +162,7 @@ pub fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>,
         let mut status_line = "".to_string(); // dummy initialization (must be set to a string before use)
         loop { // receive lines until the end of a response
             upstream_stream.read_some_lines(&mut response_lines)?;
-            if (is_first_response) {
+            if is_first_response {
                 status_line = MyTextLineStream::<S>::take_first_line(&response_lines)?;
             }
             if is_first_response && status_line.starts_with("-ERR") {
