@@ -874,8 +874,8 @@ fn test_pop3_bridge() -> Result<()> {
                         if let Some(caps) = REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
                             let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
                             let unique_id = UniqueID(caps.get(2).unwrap().as_str().into());
-                            let is_already_exists = table.insert(message_number, unique_id).is_some();
-                            assert!(!is_already_exists);
+                            let is_already_existed = table.insert(message_number, unique_id).is_some();
+                            assert!(!is_already_existed);
                         } else {
                             return Err(anyhow!("invalid response: {}", line));
                         }
@@ -907,8 +907,8 @@ fn test_pop3_bridge() -> Result<()> {
                         if let Some(caps) = REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
                             let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
                             let nbytes = usize::from_str_radix(caps.get(2).unwrap().into(), 10).unwrap();
-                            let is_already_exists = table.insert(message_number, nbytes).is_some();
-                            assert!(!is_already_exists);
+                            let is_already_existed = table.insert(message_number, nbytes).is_some();
+                            assert!(!is_already_existed);
                         } else {
                             return Err(anyhow!("invalid response: {}", line));
                         }
