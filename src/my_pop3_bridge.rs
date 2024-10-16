@@ -105,8 +105,8 @@ pub fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>,
     }
     println!("{} messages exist in database", unique_id_to_message_info.len());
 
-    let total_nbytes_of_maildrop = message_number_to_nbytes.values().fold(0, |acc, nbytes| acc + nbytes);
-    println!("total_nbytes_of_maildrop = {}", total_nbytes_of_maildrop);
+    let total_nbytes_of_original_maildrop = message_number_to_nbytes.values().fold(0, |acc, nbytes| acc + nbytes);
+    println!("total_nbytes_of_original_maildrop = {}", total_nbytes_of_original_maildrop);
     let total_nbytes_of_modified_maildrop = message_number_to_unique_id
         .iter()
         .map(|(message_number, unique_id)| {
@@ -240,7 +240,7 @@ pub fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>,
                 let new_status_line;
                 if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&status_line) {
                     let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
-                    assert_eq!(nbytes, total_nbytes_of_maildrop);
+                    assert_eq!(nbytes, total_nbytes_of_original_maildrop);
                     assert!(nbytes <= total_nbytes);
                     assert_eq!(0, (total_nbytes - nbytes) % *FUBACO_HEADER_TOTAL_SIZE);
                     new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&status_line, format!("{} octets", total_nbytes)).to_string();
@@ -316,7 +316,7 @@ pub fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>,
                     return Err(anyhow!("invalid response: {}", status_line.trim()));
                 }
                 assert_eq!(num_of_messages, message_number_to_nbytes.len());
-                assert_eq!(nbytes, total_nbytes_of_maildrop);
+                assert_eq!(nbytes, total_nbytes_of_original_maildrop);
                 response_lines.clear();
                 response_lines.extend(format!("+OK {} {}\r\n", num_of_messages, total_nbytes_of_modified_maildrop).into_bytes());
                 println!("Done");
