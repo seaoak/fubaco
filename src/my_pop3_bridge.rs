@@ -92,7 +92,7 @@ pub fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>,
     }
 
     if unique_id_to_message_info.len() == 0 { // at the first time only, all existed massages are treated as old messages which have no fubaco header
-        for (_message_number, unique_id) in message_number_to_unique_id.iter() {
+        for unique_id in message_number_to_unique_id.values() {
             let info =
                 MessageInfo {
                     unique_id: unique_id.clone(),
