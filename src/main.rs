@@ -1,8 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::env;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
-use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
+use std::net::TcpStream;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -14,9 +14,7 @@ use mail_parser::{Message, MessageParser};
 use my_dmarc_verifier::{DMARCResult, DMARCStatus};
 use regex::Regex;
 use rustls;
-use rustls_native_certs;
 use scraper;
-use serde::{Deserialize, Serialize};
 use tokio;
 use unicode_normalization::UnicodeNormalization;
 use webpki_roots;
@@ -99,22 +97,6 @@ fn main() {
     };
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-struct Username(String);
-
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-struct Hostname(String);
-
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-pub struct UniqueID(String);
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MessageInfo {
-    unique_id: UniqueID,
-    fubaco_headers: String,
-    is_deleted: bool,
-}
-
 fn normalize_string<P: AsRef<str>>(s: P) -> String {
     // normalize string (Unicode NFKC, uppercase, no-whitespace, no-bullet)
     let s: &str = s.as_ref();
@@ -162,9 +144,7 @@ fn load_tsv_file<P: AsRef<Path>>(path: P) -> Result<Vec<Vec<String>>> {
 }
 
 lazy_static! {
-    static ref REGEX_POP3_COMMAND_LINE_FOR_USER: Regex = Regex::new(r"^USER +(\S+) *\r\n$").unwrap();
     static ref BLACKLIST_TLD_LIST: Vec<String> = vec![".cn", ".ru", ".hu", ".br", ".su", ".nz", ".in", ".cz", ".be", ".cl"].into_iter().map(|s| s.to_string()).collect();
-    static ref DATABASE_FILENAME: String = "./db.json".to_string();
     static ref FUBACO_HEADER_TOTAL_SIZE: usize = 512; // (78+2)*6+(30+2)
 }
 
@@ -694,164 +674,7 @@ fn test_spam_checker_with_local_files() -> Result<()> {
 
 #[allow(unused)]
 fn test_pop3_bridge() -> Result<()> {
-    let username_to_hostname: HashMap<Username, Hostname> = vec![
-        "FUBACO_Nq2DYd4cFHGZ_U",
-        "FUBACO_Km2TTTAEMErD_H",
-        "FUBACO_NC7s2kMrxDnU_U",
-        "FUBACO_Fzkd5hfaTv6D_H",
-        "FUBACO_SiwDkj2vtpqH_U",
-        "FUBACO_MFhg2T3pxVRW_H",
-        "FUBACO_GYDTwK7YTcbU_U",
-        "FUBACO_QW5DV9Wko6oC_H",
-    ].into_iter().map(|s| env::var(s).unwrap()).collect::<Vec<String>>().chunks(2).map(|v| (Username(v[0].clone()), Hostname(v[1].clone()))).collect();
-
-    fn load_db_file() -> Result<String> {
-        let f = File::open(&*DATABASE_FILENAME)?;
-        let mut reader = BufReader::new(f);
-        let mut buf = String::new();
-        reader.read_to_string(&mut buf)?;
-        Ok(buf)
-    }
-
-    fn save_db_file(s: &str) -> Result<()> {
-        let f = File::create(&*DATABASE_FILENAME)?;
-        let mut writer = BufWriter::new(f);
-        writer.write_all(s.as_bytes())?;
-        writer.flush()?;
-        Ok(())
-    }
-
-    // https://serde.rs/derive.html
-    let mut database: HashMap<Username, HashMap<UniqueID, MessageInfo>> = serde_json::from_str(&load_db_file()?).unwrap(); // permanent table (save and load a DB file)
-    let lack_keys: Vec<Username> = username_to_hostname.keys().filter(|u| !database.contains_key(u)).map(|u| u.clone()).collect();
-    lack_keys.into_iter().for_each(|u| {
-        database.insert(u, HashMap::new());
-    });
-
-    // https://doc.rust-lang.org/std/net/struct.TcpListener.html
-    let downstream_port = 5940;
-    let downstream_addr = format!("{}:{}", "127.0.0.1", downstream_port);
-    let listener = TcpListener::bind(downstream_addr)?;
-    loop {
-        match listener.accept() {
-            Ok((downstream_tcp_stream, remote_addr)) => {
-                // https://doc.rust-lang.org/std/net/enum.SocketAddr.html#method.ip
-                assert_eq!(remote_addr.ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
-
-                let mut downstream_stream = MyTextLineStream::connect(downstream_tcp_stream);
-
-                // send dummy greeting message to client (upstream is not opened yet)
-                println!("send dummy greeting message to downstream");
-                downstream_stream.write_all_and_flush(b"+OK Greeting\r\n")?;
-
-                // wait for "USER" command to identify mail account
-                let username;
-                let upstream_hostname;
-                let upstream_port = 995;
-                {
-                    let mut command_line = Vec::<u8>::new();
-                    downstream_stream.read_some_lines(&mut command_line)?;
-                    let command_str = String::from_utf8_lossy(&command_line);
-                    match REGEX_POP3_COMMAND_LINE_FOR_USER.captures(&command_str) {
-                        Some(caps) => username = Username(caps.get(1).unwrap().as_str().to_string()),
-                        None => return Err(anyhow!("The first POP3 command should be \"USER\", but: {}", command_str.trim())),
-                    }
-                    match username_to_hostname.get(&username) {
-                        Some(h) => upstream_hostname = h.clone(),
-                        None => return Err(anyhow!("FATAL: unknown username: {:?}", username)),
-                    }
-                }
-                println!("username: {}", username.0);
-                println!("upstream_addr: {}:{}", upstream_hostname.0, upstream_port);
-
-                println!("open upstream connection");
-                let tls_root_store = if false {
-                    // use "rustls-native-certs" crate
-                    let mut roots = rustls::RootCertStore::empty();
-                    for cert in rustls_native_certs::load_native_certs()? {
-                        roots.add(cert).unwrap();
-                    }
-                    roots
-                } else {
-                    // use "webpki-roots" crate
-                    rustls::RootCertStore::from_iter(
-                        webpki_roots::TLS_SERVER_ROOTS
-                            .iter()
-                            .cloned(),
-                    )
-                };
-                let tls_config =
-                    Arc::new(
-                        rustls::ClientConfig::builder()
-                            .with_root_certificates(tls_root_store)
-                            .with_no_client_auth(),
-                    );
-                let mut upstream_host = upstream_hostname.0.clone().try_into().unwrap();
-                let mut upstream_tls_connection = rustls::ClientConnection::new(tls_config, upstream_host)?;
-                let mut upstream_tcp_socket = TcpStream::connect(format!("{}:{}", upstream_hostname.0, upstream_port))?;
-                let mut upstream_tls_stream = rustls::Stream::new(&mut upstream_tls_connection, &mut upstream_tcp_socket);
-                let mut upstream_stream = MyTextLineStream::connect(upstream_tls_stream);
-
-                // wait for POP3 greeting message from server
-                {
-                    let mut response_lines = Vec::<u8>::new();
-                    upstream_stream.read_some_lines(&mut response_lines)?;
-                    let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
-                    println!("greeting message is received: {}", status_line.trim());
-                    if status_line.starts_with("-ERR") {
-                        return Err(anyhow!("FATAL: invalid greeting message is received: {}", status_line.trim()));
-                    }
-                    assert!(status_line.starts_with("+OK"));
-                }
-
-                // issue delayed "USER" command
-                {
-                    println!("issue USER command");
-                    let mut command_line = format!("USER {}\r\n", username.0).into_bytes();
-                    upstream_stream.write_all_and_flush(&command_line)?;
-                    println!("wait the response for USER command");
-                    let mut response_lines = Vec::<u8>::new();
-                    upstream_stream.read_some_lines(&mut response_lines)?;
-                    let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
-                    println!("relay the response: {}", status_line.trim());
-                    downstream_stream.write_all_and_flush(&response_lines)?;
-                    println!("Done");
-                    if status_line.starts_with("-ERR") {
-                        return Err(anyhow!("FATAL: ERR response is received for USER command"));
-                    }
-                    assert!(status_line.starts_with("+OK"));
-                }
-
-                // relay "PASS" command
-                {
-                    let mut command_line = Vec::<u8>::new();
-                    downstream_stream.read_some_lines(&mut command_line)?;
-                    let command_str = String::from_utf8_lossy(&command_line);
-                    println!("relay POP3 command: {}", command_str.trim());
-                    if !command_str.starts_with("PASS ") {
-                        return Err(anyhow!("2nd command should be \"PASS\" command, but: {}", command_str.trim()));
-                    }
-                    upstream_stream.write_all_and_flush(&command_line)?;
-                    let mut response_lines = Vec::<u8>::new();
-                    upstream_stream.read_some_lines(&mut response_lines)?;
-                    let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
-                    println!("relay the response: {}", status_line.trim());
-                    downstream_stream.write_all_and_flush(&response_lines)?;
-                    println!("Done");
-                    if status_line.starts_with("-ERR") {
-                        return Err(anyhow!("FATAL: ERR response is received for PASS command"));
-                    }
-                    assert!(status_line.starts_with("+OK"));
-                }
-
-                my_pop3_bridge::process_pop3_transaction(&mut upstream_stream, &mut downstream_stream, database.get_mut(&username).unwrap())?;
-
-                // https://serde.rs/derive.html
-                save_db_file(&serde_json::to_string(&database).unwrap())?;
-            },
-            Err(e) => return Err(anyhow!(e)),
-        }
-    }
+    my_pop3_bridge::run_pop3_bridge()
 }
 
 #[allow(unused)]
