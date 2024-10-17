@@ -453,10 +453,10 @@ pub fn run_pop3_bridge() -> Result<()> {
                             .with_root_certificates(tls_root_store)
                             .with_no_client_auth(),
                     );
-                let mut upstream_host = upstream_hostname.0.clone().try_into().unwrap();
+                let upstream_host = upstream_hostname.0.clone().try_into().unwrap();
                 let mut upstream_tls_connection = rustls::ClientConnection::new(tls_config, upstream_host)?;
                 let mut upstream_tcp_socket = TcpStream::connect(format!("{}:{}", upstream_hostname.0, upstream_port))?;
-                let mut upstream_tls_stream = rustls::Stream::new(&mut upstream_tls_connection, &mut upstream_tcp_socket);
+                let upstream_tls_stream = rustls::Stream::new(&mut upstream_tls_connection, &mut upstream_tcp_socket);
                 let mut upstream_stream = MyTextLineStream::connect(upstream_tls_stream);
 
                 // wait for POP3 greeting message from server
@@ -474,7 +474,7 @@ pub fn run_pop3_bridge() -> Result<()> {
                 // issue delayed "USER" command
                 {
                     println!("issue USER command");
-                    let mut command_line = format!("USER {}\r\n", username.0).into_bytes();
+                    let command_line = format!("USER {}\r\n", username.0).into_bytes();
                     upstream_stream.write_all_and_flush(&command_line)?;
                     println!("wait the response for USER command");
                     let mut response_lines = Vec::<u8>::new();
