@@ -220,7 +220,7 @@ pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target:
             if let Some(r) = validate(&mut table, "pct", Some("100"), |s| REGEX_INTEGER_FROM_0_to_100.is_match(s)) {
                 return r;
             }
-            if let Some(r) = validate(&mut table, "rf", Some("afrf"), |s| true) {
+            if let Some(r) = validate(&mut table, "rf", Some("afrf"), |_| true) {
                 return r;
             }
             if let Some(r) = validate(&mut table, "ri", Some("86400"), |s| REGEX_INTEGER_GREATER_THAN_0.is_match(s)) {
