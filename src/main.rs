@@ -647,7 +647,6 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
     Ok(fubaco_headers.join(""))
 }
 
-#[allow(unused)]
 fn test_spam_checker_with_local_files() -> Result<()> {
     let path_to_dir = std::path::Path::new("./mail-sample");
     for entry in path_to_dir.read_dir()? {
@@ -672,12 +671,10 @@ fn test_spam_checker_with_local_files() -> Result<()> {
     Ok(())
 }
 
-#[allow(unused)]
 fn test_pop3_bridge() -> Result<()> {
     my_pop3_bridge::run_pop3_bridge()
 }
 
-#[allow(unused)]
 fn test_pop3_upstream() -> Result<()> {
     let username = env::var("FUBACO_Nq2DYd4cFHGZ_U").unwrap();
     let password = env::var("FUBACO_AhCE3FNtfdJV_P").unwrap();

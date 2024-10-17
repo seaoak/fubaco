@@ -10,7 +10,6 @@ use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_message_parser::MyMessageParser;
 
 //====================================================================
-#[allow(unused)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum IdentifierAlignmentStatus {
     Strict,
@@ -21,7 +20,6 @@ enum IdentifierAlignmentStatus {
 impl IdentifierAlignmentStatus {
 
     // refer to "section 3.1" in RFC7489
-    #[allow(unused)]
     pub fn check_alignment(target: &str, header_from: &str) -> Self {
         let target_domain = if let Some((_localpart, domain)) = target.split_once('@') {
             domain
@@ -71,7 +69,6 @@ impl std::str::FromStr for DMARCPolicy {
     }
 }
 
-#[allow(unused)]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum DMARCStatus {
     NONE,
@@ -109,7 +106,6 @@ impl std::str::FromStr for DMARCStatus {
     }
 }
 
-#[allow(unused)]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct DMARCResult {
     status: DMARCStatus,
@@ -134,7 +130,6 @@ impl DMARCResult {
 }
 
 //====================================================================
-#[allow(unused)]
 pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target: &Option<String>, resolver: &MyDNSResolver) -> DMARCResult {
     let target_domain = if let Some(s) = message.get_domain_of_header_from() {
         s
