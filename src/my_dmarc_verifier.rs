@@ -179,6 +179,8 @@ pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target:
             fn validate<F>(table: &mut HashMap<String, String>, label: &str, default_value: Option<&str>, is_valid: F) -> Option<DMARCResult>
                 where F: Fn(&str) -> bool
             {
+                // NOTE: if "default_value" is None, the field is "required" (mandatory).
+                // NOTE: if "default_value" is Some(""), the field is "optional" and there is no default value.
                 if let Some(s) = table.get(label) {
                     if is_valid(s.as_str()) {
                         // OK
