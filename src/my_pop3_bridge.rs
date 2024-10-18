@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
@@ -74,6 +74,70 @@ fn read_one_response_completely<S>(upstream_stream: &mut MyTextLineStream<S>, is
     Ok((status_line, response_lines))
 }
 
+fn parse_multi_line_response<S>(response_lines: &[u8]) -> Result<Vec<(MessageNumber, String)>>
+    where S: Read + Write + MyDisconnect
+{
+    let status_line = MyTextLineStream::<S>::take_first_line(response_lines)?;
+    assert!(status_line.starts_with("+OK"));
+    assert!(MyTextLineStream::<S>::ends_with_u8(response_lines, b"\r\n.\r\n"));
+
+    let body_u8 = &response_lines[status_line.len()..(response_lines.len() - b".\r\n".len())];
+    let body_text = String::from_utf8_lossy(body_u8);
+    println!("{}", body_text);
+
+    let mut table = HashSet::new();
+    let mut list = Vec::new();
+    for line in body_text.split_terminator("\r\n") {
+        let line = line.trim();
+        let (index, value) = if let Some(t) = line.split_once(' ') {
+            t
+        } else {
+            return Err(anyhow!("invalid entry in multi-line response (one whitespace should be contained): \"{}\"", line));
+        };
+        let message_number = if let Ok(n) = u32::from_str_radix(index, 10) {
+            MessageNumber(n)
+        } else {
+            return Err(anyhow!("invalid entry in multi-line response (first element should be integer): \"{}\"", line));
+        };
+        if table.contains(&message_number) {
+            return Err(anyhow!("ivalid entry in multi-line response (a message number occurs multiple times: \"{}\"", line));
+        }
+        table.insert(message_number.clone());
+        let value = value.trim();
+        list.push((message_number, value.to_string()));
+    }
+    Ok(list)
+}
+
+fn parse_response_for_uidl_command<S>(response_lines: &[u8]) -> Result<Vec<(MessageNumber, UniqueID)>>
+    where S: Read + Write + MyDisconnect
+{
+    let list = parse_multi_line_response::<S>(response_lines)?;
+    let list = list.into_iter().map(|(n, s)| (n, UniqueID(s))).collect();
+    Ok(list)
+}
+
+fn parse_response_for_list_command<S>(response_lines: &[u8]) -> Result<Vec<(MessageNumber, usize)>>
+    where S: Read + Write + MyDisconnect
+{
+    fn convert_an_entry(tupple: (MessageNumber, String)) -> Option<(MessageNumber, usize)> {
+        let (n, s) = tupple;
+        if let Ok(i) = usize::from_str_radix(&s, 10) {
+            Some((n, i))
+        } else {
+            None
+        }
+    }
+
+    let list = parse_multi_line_response::<S>(response_lines)?;
+    let num_of_entries = list.len();
+    let list: Vec<(MessageNumber, usize)> = list.into_iter().filter_map(|t| convert_an_entry(t)).collect();
+    if list.len() != num_of_entries {
+        return Err(anyhow!("invalid entry in multi-line response for LIST command: some entries have non-integer value"));
+    }
+    Ok(list)
+}
+
 fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, downstream_stream: &mut MyTextLineStream<T>, database: &mut HashMap<UniqueID, MessageInfo>) -> Result<()>
     where S: Read + Write + MyDisconnect,
           T: Read + Write + MyDisconnect,
@@ -94,21 +158,8 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
         }
         assert!(status_line.starts_with("+OK"));
         println!("parse response body of UIDL command");
-        let body_u8 = &response_lines[status_line.len()..(response_lines.len() - b".\r\n".len())];
-        let body_text = String::from_utf8_lossy(body_u8);
-        println!("{}", body_text);
-        let mut table: HashMap<MessageNumber, UniqueID> = HashMap::new();
-        for line in body_text.split_terminator("\r\n") {
-            if let Some(caps) = REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
-                let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
-                let unique_id = UniqueID(caps.get(2).unwrap().as_str().into());
-                let is_already_existed = table.insert(message_number, unique_id).is_some();
-                assert!(!is_already_existed);
-            } else {
-                return Err(anyhow!("invalid response: {}", line));
-            }
-        }
-        message_number_to_unique_id = table;
+        let list = parse_response_for_uidl_command::<S>(&response_lines)?;
+        message_number_to_unique_id = list.into_iter().collect::<HashMap<MessageNumber, UniqueID>>();
         println!("Done");
     }
 
@@ -126,21 +177,8 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
         }
         assert!(status_line.starts_with("+OK"));
         println!("parse response body of LIST command");
-        let body_u8 = &response_lines[status_line.len()..(response_lines.len() - b".\r\n".len())];
-        let body_text = String::from_utf8_lossy(body_u8);
-        println!("{}", body_text);
-        let mut table: HashMap<MessageNumber, usize> = HashMap::new();
-        for line in body_text.split_terminator("\r\n") {
-            if let Some(caps) = REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
-                let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
-                let nbytes = usize::from_str_radix(caps.get(2).unwrap().into(), 10).unwrap();
-                let is_already_existed = table.insert(message_number, nbytes).is_some();
-                assert!(!is_already_existed);
-            } else {
-                return Err(anyhow!("invalid response: {}", line));
-            }
-        }
-        message_number_to_nbytes = table;
+        let list = parse_response_for_list_command::<S>(&response_lines)?;
+        message_number_to_nbytes = list.into_iter().collect::<HashMap<MessageNumber, usize>>();
         println!("Done");
     }
     assert_eq!(message_number_to_nbytes.len(), message_number_to_unique_id.len());
@@ -248,44 +286,37 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
             }
             if command_name == "LIST" && command_arg1.is_none() {
                 println!("modify multi-line response for LIST command");
-                let body_u8 = &response_lines[status_line.len()..(response_lines.len() - b".\r\n".len())];
-                let body_text = String::from_utf8_lossy(body_u8);
-                let mut buf = Vec::<u8>::with_capacity(body_u8.len());
-                let mut total_nbytes = 0;
-                for line in body_text.split_terminator("\r\n") {
-                    if let Some(caps) = REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
-                        let message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().into(), 10).unwrap());
-                        let nbytes = usize::from_str_radix(caps.get(2).unwrap().into(), 10).unwrap();
-                        assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
-                        let unique_id = &message_number_to_unique_id[&message_number];
-                        let new_nbytes;
-                        if let Some(info) = unique_id_to_message_info.get(unique_id) {
-                            new_nbytes = nbytes + info.fubaco_headers.len();
-                        } else {
-                            new_nbytes = nbytes + *FUBACO_HEADER_TOTAL_SIZE;
-                        }
-                        total_nbytes += new_nbytes;
-                        buf.extend(format!("{} {}\r\n", message_number.0, new_nbytes).into_bytes());
+                let original_list = parse_response_for_list_command::<S>(&response_lines)?;
+                let modified_list = original_list.into_iter().map(|(message_number, nbytes)| {
+                    assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
+                    let unique_id = &message_number_to_unique_id[&message_number];
+                    let new_nbytes;
+                    if let Some(info) = unique_id_to_message_info.get(unique_id) {
+                        new_nbytes = nbytes + info.fubaco_headers.len();
                     } else {
-                        return Err(anyhow!("invalid response: {}", line));
+                        new_nbytes = nbytes + *FUBACO_HEADER_TOTAL_SIZE;
                     }
-                }
-                assert_eq!(total_nbytes, total_nbytes_of_modified_maildrop);
+                    (message_number, new_nbytes)
+                });
+                let modified_body_u8 = modified_list.flat_map(|(message_number, nbytes)| {
+                    format!("{} {}\r\n", message_number.0, nbytes).into_bytes()
+                });
 
                 let new_status_line;
                 if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&status_line) {
                     let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
                     assert_eq!(nbytes, total_nbytes_of_original_maildrop);
-                    assert!(nbytes <= total_nbytes);
-                    assert_eq!(0, (total_nbytes - nbytes) % *FUBACO_HEADER_TOTAL_SIZE);
-                    new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&status_line, format!("{} octets", total_nbytes)).to_string();
+                    assert!(nbytes <= total_nbytes_of_modified_maildrop);
+                    assert_eq!(0, (total_nbytes_of_modified_maildrop - nbytes) % *FUBACO_HEADER_TOTAL_SIZE);
+                    let new_field = format!("{} octets", total_nbytes_of_modified_maildrop);
+                    new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&status_line, new_field).to_string();
                 } else {
                     new_status_line = status_line.clone();
                 }
 
                 response_lines.clear();
                 response_lines.extend(new_status_line.into_bytes());
-                response_lines.extend(buf);
+                response_lines.extend(modified_body_u8);
                 response_lines.extend(".\r\n".as_bytes());
                 println!("Done");
             }
