@@ -176,7 +176,6 @@ impl MyDNSResolver {
         Ok(results)
     }
 
-    #[allow(unused)]
     pub fn save_cache(&self) -> Result<()> {
         let guard = self.cache.lock().unwrap();
         save_cache_file(&serde_json::to_string(&*guard).unwrap())?;
