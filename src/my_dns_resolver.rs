@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
@@ -242,6 +243,9 @@ lazy_static! {
 }
 
 fn load_cache_file() -> Result<String> {
+    if !Path::new(&*CACHE_FILENAME).try_exists()? {
+        return Ok("{}".to_string());
+    }
     let f = File::open(&*CACHE_FILENAME)?;
     let mut reader = BufReader::new(f);
     let mut buf = String::new();
