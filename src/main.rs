@@ -672,7 +672,7 @@ fn test_spam_checker_with_local_files() -> Result<()> {
 }
 
 fn test_pop3_bridge() -> Result<()> {
-    my_pop3_bridge::run_pop3_bridge()
+    my_pop3_bridge::run_pop3_bridge(&MY_DNS_RESOLVER)
 }
 
 fn test_pop3_upstream() -> Result<()> {

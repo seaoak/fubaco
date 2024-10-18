@@ -182,6 +182,11 @@ impl MyDNSResolver {
         Ok(())
     }
 
+    pub fn clear_cache(&self) {
+        let mut guard = self.cache.lock().unwrap();
+        guard.clear();
+    }
+
     async fn issue_request_and_get_response(&self, url: &str, headers: &[(&str, &str)]) -> Result<String> {
         let url = reqwest::Url::parse(url)?;
         let mut request = self.client.get(url.clone()).version(reqwest::Version::HTTP_2);

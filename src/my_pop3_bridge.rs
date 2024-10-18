@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::FUBACO_HEADER_TOTAL_SIZE;
 use crate::my_disconnect::MyDisconnect;
+use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_text_line_stream::MyTextLineStream;
 
 lazy_static! {
@@ -362,7 +363,7 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
     Ok(())
 }
 
-pub fn run_pop3_bridge() -> Result<()> {
+pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
     let username_to_hostname: HashMap<Username, Hostname> = vec![
         "FUBACO_Nq2DYd4cFHGZ_U",
         "FUBACO_Km2TTTAEMErD_H",
@@ -409,6 +410,9 @@ pub fn run_pop3_bridge() -> Result<()> {
                 assert_eq!(remote_addr.ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
                 let mut downstream_stream = MyTextLineStream::connect(downstream_tcp_stream);
+
+                // clear DNS cache at the start of a POP3 transaction
+                resolver.clear_cache();
 
                 // send dummy greeting message to client (upstream is not opened yet)
                 println!("send dummy greeting message to downstream");
