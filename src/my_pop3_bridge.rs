@@ -44,6 +44,36 @@ struct MessageInfo {
     is_deleted: bool,
 }
 
+fn read_one_response_completely<S>(upstream_stream: &mut MyTextLineStream<S>, is_multi_line_response_expected: bool) -> Result<(String, Vec<u8>)>
+    where S: Read + Write + MyDisconnect
+{
+    let mut response_lines = Vec::<u8>::new();
+    let mut is_first_response = true;
+    let mut status_line = "".to_string(); // dummy initialization (must be set to a string before use)
+    loop { // receive lines until the end of a response
+        upstream_stream.read_some_lines(&mut response_lines)?;
+        if is_first_response {
+            status_line = MyTextLineStream::<S>::take_first_line(&response_lines)?;
+        }
+        if status_line.starts_with("-ERR") {
+            println!("ERR response is received: {}", status_line.trim());
+            break;
+        }
+        assert!(status_line.starts_with("+OK"));
+        if !is_multi_line_response_expected {
+            println!("single-line response is received: {}", status_line.trim());
+            break;
+        }
+        if MyTextLineStream::<S>::ends_with_u8(&response_lines, b"\r\n.\r\n") {
+            println!("multl-line response ({} byte body) is received: {}", response_lines.len() - status_line.len() - b".\r\n".len(), status_line.trim());
+            break;
+        }
+        is_first_response = false;
+    }
+
+    Ok((status_line, response_lines))
+}
+
 fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, downstream_stream: &mut MyTextLineStream<T>, database: &mut HashMap<UniqueID, MessageInfo>) -> Result<()>
     where S: Read + Write + MyDisconnect,
           T: Read + Write + MyDisconnect,
@@ -57,9 +87,7 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
         let command_line = format!("UIDL\r\n").into_bytes();
         upstream_stream.write_all_and_flush(&command_line)?;
         println!("wait the response for UIDL command");
-        let mut response_lines = Vec::<u8>::new();
-        upstream_stream.read_some_lines(&mut response_lines)?;
-        let status_line = MyTextLineStream::<S>::take_first_line(&response_lines)?;
+        let (status_line, response_lines) = read_one_response_completely(upstream_stream, true)?;
         println!("the response for UIDL command is received: {}", status_line.trim());
         if status_line.starts_with("-ERR") {
             return Err(anyhow!("FATAL: ERR response is received for UIDL command"));
@@ -91,9 +119,7 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
         let command_line = format!("LIST\r\n").into_bytes();
         upstream_stream.write_all_and_flush(&command_line)?;
         println!("wait the response for LIST command");
-        let mut response_lines = Vec::<u8>::new();
-        upstream_stream.read_some_lines(&mut response_lines)?;
-        let status_line = MyTextLineStream::<S>::take_first_line(&response_lines)?;
+        let (status_line, response_lines) = read_one_response_completely(upstream_stream, true)?;
         println!("the response for UIDL command is received: {}", status_line.trim());
         if status_line.starts_with("-ERR") {
             return Err(anyhow!("FATAL: ERR response is received for LIST command"));
@@ -117,6 +143,7 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
         message_number_to_nbytes = table;
         println!("Done");
     }
+    assert_eq!(message_number_to_nbytes.len(), message_number_to_unique_id.len());
 
     if unique_id_to_message_info.len() == 0 { // at the first time only, all existed massages are treated as old messages which have no fubaco header
         for unique_id in message_number_to_unique_id.values() {
@@ -187,29 +214,7 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
             };
         }
 
-        let mut response_lines = Vec::<u8>::new();
-        let mut is_first_response = true;
-        let mut status_line = "".to_string(); // dummy initialization (must be set to a string before use)
-        loop { // receive lines until the end of a response
-            upstream_stream.read_some_lines(&mut response_lines)?;
-            if is_first_response {
-                status_line = MyTextLineStream::<S>::take_first_line(&response_lines)?;
-            }
-            if is_first_response && status_line.starts_with("-ERR") {
-                println!("ERR response is received: {}", status_line.trim());
-                break;
-            }
-            assert!(!is_first_response || status_line.starts_with("+OK"));
-            if !is_multi_line_response_expected {
-                println!("single-line response is received: {}", status_line.trim());
-                break;
-            }
-            if MyTextLineStream::<S>::ends_with_u8(&response_lines, b"\r\n.\r\n") {
-                println!("multl-line response ({} byte body) is received: {}", response_lines.len() - status_line.len() - b".\r\n".len(), status_line.trim());
-                break;
-            }
-            is_first_response = false;
-        }
+        let (status_line, mut response_lines) = read_one_response_completely(upstream_stream, is_multi_line_response_expected)?;
         if status_line.starts_with("+OK") {
             // modify response
             if command_name == "LIST" && command_arg1.is_some() {
@@ -477,9 +482,8 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
 
                 // wait for POP3 greeting message from server
                 {
-                    let mut response_lines = Vec::<u8>::new();
-                    upstream_stream.read_some_lines(&mut response_lines)?;
-                    let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
+                    let (status_line, response_lines) = read_one_response_completely(&mut upstream_stream, false)?;
+                    assert_eq!(status_line.len(), response_lines.len());
                     println!("greeting message is received: {}", status_line.trim());
                     if status_line.starts_with("-ERR") {
                         return Err(anyhow!("FATAL: invalid greeting message is received: {}", status_line.trim()));
@@ -493,9 +497,8 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                     let command_line = format!("USER {}\r\n", username.0).into_bytes();
                     upstream_stream.write_all_and_flush(&command_line)?;
                     println!("wait the response for USER command");
-                    let mut response_lines = Vec::<u8>::new();
-                    upstream_stream.read_some_lines(&mut response_lines)?;
-                    let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
+                    let (status_line, response_lines) = read_one_response_completely(&mut upstream_stream, false)?;
+                    assert_eq!(status_line.len(), response_lines.len());
                     println!("relay the response: {}", status_line.trim());
                     downstream_stream.write_all_and_flush(&response_lines)?;
                     println!("Done");
@@ -515,9 +518,8 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                         return Err(anyhow!("2nd command should be \"PASS\" command, but: {}", command_str.trim()));
                     }
                     upstream_stream.write_all_and_flush(&command_line)?;
-                    let mut response_lines = Vec::<u8>::new();
-                    upstream_stream.read_some_lines(&mut response_lines)?;
-                    let status_line = MyTextLineStream::<TcpStream>::take_first_line(&response_lines)?;
+                    let (status_line, response_lines) = read_one_response_completely(&mut upstream_stream, false)?;
+                    assert_eq!(status_line.len(), response_lines.len());
                     println!("relay the response: {}", status_line.trim());
                     downstream_stream.write_all_and_flush(&response_lines)?;
                     println!("Done");
