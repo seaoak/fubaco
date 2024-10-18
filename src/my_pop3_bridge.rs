@@ -360,7 +360,9 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
                 let new_status_line;
                 if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&status_line) {
                     let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
-                    assert_eq!(nbytes, body_u8.len());
+                    if nbytes != body_u8.len() {
+                        print!("WARNING: message size is different from the \"{} octets\" in staus line: {}", nbytes, body_u8.len());
+                    }
                     let new_nbytes = nbytes + fubaco_headers.len();
                     new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&status_line, format!("{} octets", new_nbytes)).to_string();
                 } else {
