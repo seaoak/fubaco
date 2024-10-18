@@ -3,6 +3,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -376,6 +377,9 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
     ].into_iter().map(|s| env::var(s).unwrap()).collect::<Vec<String>>().chunks(2).map(|v| (Username(v[0].clone()), Hostname(v[1].clone()))).collect();
 
     fn load_db_file() -> Result<String> {
+        if !Path::new(&*DATABASE_FILENAME).try_exists()? {
+            return Ok("{}".to_string());
+        }
         let f = File::open(&*DATABASE_FILENAME)?;
         let mut reader = BufReader::new(f);
         let mut buf = String::new();
