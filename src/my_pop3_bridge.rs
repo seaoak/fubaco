@@ -135,6 +135,9 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
     let total_nbytes_of_modified_maildrop = message_number_to_unique_id
         .iter()
         .map(|(message_number, unique_id)| {
+            if !message_number_to_nbytes.contains_key(message_number) {
+                unreachable!("BUG: invalid MessageNumber: {:?}", message_number);
+            }
             if let Some(info) = unique_id_to_message_info.get(unique_id) {
                 message_number_to_nbytes[message_number] + info.fubaco_headers.len()
             } else {
