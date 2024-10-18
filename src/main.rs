@@ -45,58 +45,25 @@ fn main() {
 
     assert_eq!(intersect_vec(&vec![1, 2, 3, 4, 5], &vec![2, 4, 6, 8]), vec![&2, &4]);
 
-    if false {
-        match test_my_crypto() {
-            Ok(()) => (),
-            Err(e) => panic!("{:?}", e),
-        };
-        std::process::exit(0);
-    }
+    let fubaco_mode = env::var("FUBACO_MODE").unwrap_or_default();
 
-    if false {
-        match test_my_dns_resolver() {
-            Ok(()) => (),
-            Err(e) => panic!("{:?}", e),
-        };
-        std::process::exit(0);
-    }
+    let status = match fubaco_mode.as_str() {
+        "test_my_crypto" => test_my_crypto(),
+        "test_my_dns_resolver" => test_my_dns_resolver(),
+        "test_rustls_my_client" => test_rustls_my_client(),
+        "test_rustls_simple_client" => test_rustls_simple_client(),
+        "test_spam_checker_with_local_files" => test_spam_checker_with_local_files(),
+        "test_pop3_bridge" => test_pop3_bridge(),
+        "test_pop3_upstream" => test_pop3_upstream(),
+        _ => test_spam_checker_with_local_files(),
+    };
 
-    if false {
-        match test_rustls_my_client() {
-            Ok(()) => (),
-            Err(e) => panic!("{:?}", e),
-        };
-        std::process::exit(0);
-    }
-
-    if false {
-        match test_rustls_simple_client() {
-            Ok(()) => (),
-            Err(e) => panic!("{:?}", e),
-        };
-        std::process::exit(0);
-    }
-
-    if false {
-        match test_spam_checker_with_local_files() {
-            Ok(()) => (),
-            Err(e) => panic!("{:?}", e),
-        };
-        std::process::exit(0);
-    }
-
-    if true {
-        match test_pop3_bridge() {
-            Ok(()) => (),
-            Err(e) => panic!("{:?}", e),
-        };
-        std::process::exit(0);
-    }
-
-    match test_pop3_upstream() {
+    match status {
         Ok(()) => (),
         Err(e) => panic!("{:?}", e),
-    };
+    }
+
+    std::process::exit(0);
 }
 
 fn intersect_vec<'a, 'b, S>(a: &'a [S], b: &'b [S]) -> Vec<&'a S>
