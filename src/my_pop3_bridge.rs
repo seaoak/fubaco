@@ -400,6 +400,7 @@ pub fn run_pop3_bridge() -> Result<()> {
     let downstream_addr = format!("{}:{}", "127.0.0.1", downstream_port);
     let listener = TcpListener::bind(downstream_addr)?;
     loop {
+        println!("wait for new connection on port {}...", downstream_port);
         match listener.accept() {
             Ok((downstream_tcp_stream, remote_addr)) => {
                 // https://doc.rust-lang.org/std/net/enum.SocketAddr.html#method.ip
