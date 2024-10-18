@@ -334,7 +334,7 @@ fn spam_checker_suspicious_envelop_from(message: &Message) -> Option<String> {
 }
 
 fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
-    let header_from = message.from().unwrap().first().map(|addr| addr.address.clone().unwrap_or_default().to_string()).unwrap_or_default().to_lowercase();
+    let header_from = message.from().map(|x| x.first().map(|addr| addr.address.clone().unwrap_or_default().to_string()).unwrap_or_default().to_lowercase()).unwrap_or_default();
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string().replace(&['<', '>'], "").to_lowercase(); // may be empty string
     println!("Evelop.from: \"{}\"", envelop_from);
     let mut is_spam = false;
@@ -358,13 +358,13 @@ fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
 }
 
 fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
-    let name = normalize_string(message.from().unwrap().first().unwrap().name.clone().unwrap_or_default());
+    let name = normalize_string(message.from().map(|x| x.first().unwrap().name.clone().unwrap_or_default()).unwrap_or_default());
     println!("From.name: \"{}\"", name);
-    let address = normalize_string(message.from().unwrap().first().unwrap().address.clone().unwrap_or_default());
+    let address = normalize_string(message.from().map(|x| x.first().unwrap().address.clone().unwrap_or_default()).unwrap_or_default());
     println!("From.address: \"{}\"", address);
     let subject = normalize_string(message.subject().unwrap_or_default());
     println!("Subject: \"{}\"", subject);
-    let destination = normalize_string(message.to().unwrap().first().map(|addr| addr.address.clone().unwrap()).unwrap_or_default()); // may be empty string
+    let destination = normalize_string(message.to().map(|x| x.first().map(|addr| addr.address.clone().unwrap()).unwrap_or_default()).unwrap_or_default()); // may be empty string
     println!("To.address: \"{}\"", destination);
     let (expected_from_address_regex, prohibited_words): (Regex, Vec<String>) = (|| {
         lazy_static! {
@@ -503,7 +503,7 @@ fn spam_checker_fully_html_encoded_text(message: &Message) -> Option<String> {
 }
 
 fn spam_checker_suspicious_delivery_report(message: &Message) -> Option<String> {
-    let from_address = message.from().unwrap().first().unwrap().address.clone().unwrap_or_default().to_ascii_lowercase();
+    let from_address = message.from().map(|x| x.first().unwrap().address.clone().unwrap_or_default().to_ascii_lowercase()).unwrap_or_default();
     if !from_address.starts_with("postmaster@") {
         return None;
     }
