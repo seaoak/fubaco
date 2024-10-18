@@ -236,10 +236,27 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
             } else {
                 None
             };
-            assert!(!table.contains_key(label));
+            if table.contains_key(label) {
+                // NOTE: priority is "pass > fail > none"
+                if table.get(label).unwrap() == "pass" && status != "pass" {
+                    continue; // not overwrite
+                }
+                if status == "none" {
+                    continue; // not overwrite
+                }
+                // overwrite
+            }
             table.insert(label.to_string(), status.to_string());
-            if let Some(s) = domain {
-                table.insert(format!("{}-target-domain", label), s);
+            if status == "pass" {
+                if let Some(s) = domain {
+                    let key_for_domain = format!("{}-target-domains", label);
+                    let text = if let Some(ss) = table.get(&key_for_domain) {
+                        format!("{},{}", ss, s)
+                    } else {
+                        s
+                    };
+                    table.insert(key_for_domain, text);
+                }
             }
         }
         Some(table)

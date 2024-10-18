@@ -130,7 +130,7 @@ impl DMARCResult {
 }
 
 //====================================================================
-pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target: &Option<String>, resolver: &MyDNSResolver) -> DMARCResult {
+pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_target_list: &Vec<String>, resolver: &MyDNSResolver) -> DMARCResult {
     let target_domain = if let Some(s) = message.get_domain_of_header_from() {
         s
     } else {
@@ -248,14 +248,9 @@ pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target:
 
     // check alignment
     {
-        fn is_aligned(mode: Option<&String>, prev_target: &Option<String>, target_domain: &str) -> bool {
+        fn is_aligned(mode: Option<&String>, prev_target: &str, target_domain: &str) -> bool {
             let mode = mode.unwrap().as_str(); // must be complemented already
-            let target = if let Some(addr) = prev_target {
-                addr.as_str()
-            } else {
-                return false;
-            };
-            let alignment_status = IdentifierAlignmentStatus::check_alignment(target, target_domain);
+            let alignment_status = IdentifierAlignmentStatus::check_alignment(prev_target, target_domain);
             match (mode, alignment_status) {
                 ("s", IdentifierAlignmentStatus::Strict)   => true,
                 ("s", IdentifierAlignmentStatus::Relaxed)  => false,
@@ -268,8 +263,8 @@ pub fn dmarc_verify(message: &Message, spf_target: &Option<String>, dkim_target:
         }
 
         let is_alignment_ok = false
-            || is_aligned(dns_fields.get("aspf"), spf_target, &target_domain)
-            || is_aligned(dns_fields.get("adkim"), dkim_target, &target_domain);
+            || spf_target_list.iter().any(|prev_target| is_aligned(dns_fields.get("aspf"), prev_target, &target_domain))
+            || dkim_target_list.iter().any(|prev_target| is_aligned(dns_fields.get("adkim"), prev_target, &target_domain));
         if is_alignment_ok {
             return DMARCResult::new(DMARCStatus::PASS, Some(policy));
         } else {

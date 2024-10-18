@@ -43,6 +43,8 @@ use pop3_upstream::*;
 fn main() {
     println!("Hello, world!");
 
+    assert_eq!(intersect_vec(&vec![1, 2, 3, 4, 5], &vec![2, 4, 6, 8]), vec![&2, &4]);
+
     if false {
         match test_my_crypto() {
             Ok(()) => (),
@@ -95,6 +97,12 @@ fn main() {
         Ok(()) => (),
         Err(e) => panic!("{:?}", e),
     };
+}
+
+fn intersect_vec<'a, 'b, S>(a: &'a [S], b: &'b [S]) -> Vec<&'a S>
+    where S: PartialEq + Sized
+{
+    a.iter().filter(|aa| b.contains(aa)).collect()
 }
 
 fn normalize_string<P: AsRef<str>>(s: P) -> String {
@@ -584,42 +592,48 @@ fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
             if &mx_spf_status != spf_result.as_status() {
                 println!("WARNING: my SPF checker says different result to \"Authentication-Results\" header: my={} vs header={}", spf_result.as_status(), mx_spf_status);
             }
-            let mx_spf_domain = table.get("spf-target-domain").map(|s| s.to_string());
-            if mx_spf_domain.is_some() && spf_result.as_domain().is_some() && &mx_spf_domain != spf_result.as_domain() {
-                let my_domain = spf_result.as_domain().clone().unwrap_or_default();
-                let mx_domain = mx_spf_domain.clone().unwrap();
-                println!("WARNING: my SPF checker says different target domain to \"Authentication-Results\" header: my={} vs header={}", my_domain, mx_domain);
+            let my_spf_domain_list = spf_result.as_domains().clone();
+            let mx_spf_domain_list = table.get("spf-target-domains").map(|s| s.split(',').map(str::to_string).collect::<Vec<String>>()).unwrap_or_default();
+            if my_spf_domain_list.len() > 0 && mx_spf_domain_list.len() > 0 && intersect_vec(&my_spf_domain_list, &mx_spf_domain_list).len() == 0 {
+                println!("WARNING: my SPF checker says different target domain to \"Authentication-Results\" header: my={:?} vs header={:?}", my_spf_domain_list, mx_spf_domain_list);
             }
             if mx_spf_status != SPFStatus::NONE {
-                let domain = mx_spf_domain.or_else(|| spf_result.as_domain().clone());
-                spf_result = SPFResult::new(mx_spf_status, domain); // overwrite
+                spf_result = SPFResult::new(mx_spf_status, mx_spf_domain_list); // overwrite
             }
         }
     }
     let mut dkim_result = my_dkim_verifier::dkim_verify(&message, &MY_DNS_RESOLVER);
     if let Some(table) = &table_of_authentication_results_header {
-        if let Some(mx_dkim_status) = table.get("dkim").or_else(|| table.get("dkim-adsp")) {
+        let mx_label = ["dkim", "dkim-adsp"].into_iter().filter(|s| table.contains_key(*s)).take(1).next();
+        if let Some(mx_label) = mx_label {
+            let mx_dkim_status = table.get(mx_label).unwrap();
             let mx_dkim_status = mx_dkim_status.parse::<DKIMStatus>().unwrap(); // TODO: unknown string may have to be an error, not panic
             if &mx_dkim_status != dkim_result.as_status() {
                 println!("WARNING: my DKIM checker says different result to \"Authentication-Results\" header: my={} vs header={}", dkim_result.as_status(), mx_dkim_status);
             }
-            let mx_dkim_domain = table.get("dkim-target-domain").or_else(|| table.get("dkim-adsp-target-domain")).map(|s| s.to_string());
-            if mx_dkim_domain.is_some() && dkim_result.as_domain().is_some() && &mx_dkim_domain != dkim_result.as_domain() {
-                let my_domain = dkim_result.as_domain().clone().unwrap_or_default();
-                let mx_domain = mx_dkim_domain.clone().unwrap();
-                println!("WARNING: my DKIM checker says different target domain to \"Authentication-Results\" header: my={} vs header={}", my_domain, mx_domain);
+            let my_dkim_domain_list = dkim_result.as_domains().clone();
+            let mx_dkim_domain_list = table.get(&format!("{}-target-domains", mx_label)).map(|s| s.split(',').map(str::to_string).collect::<Vec<String>>()).unwrap_or_default();
+            if my_dkim_domain_list.len() > 0 && mx_dkim_domain_list.len() > 0 && intersect_vec(&my_dkim_domain_list, &mx_dkim_domain_list).len() == 0 {
+                println!("WARNING: my DKIM checker says different target domain to \"Authentication-Results\" header: my={:?} vs header={:?}", my_dkim_domain_list, mx_dkim_domain_list);
             }
             if mx_dkim_status != DKIMStatus::NONE {
-                let domain = mx_dkim_domain.or_else(|| dkim_result.as_domain().clone());
-                dkim_result = DKIMResult::new(mx_dkim_status, domain); // overwrite
+                dkim_result = DKIMResult::new(mx_dkim_status, mx_dkim_domain_list); // overwrite
             }
         }
     }
     let mut dmarc_result;
     {
-        let spf_domain = if spf_result.as_status() == &SPFStatus::PASS { Some(spf_result.as_domain().clone().unwrap()) } else { None }; // set only if PASS
-        let dkim_domain = if dkim_result.as_status() == &DKIMStatus::PASS { Some(dkim_result.as_domain().clone().unwrap()) } else { None }; // set only if PASS
-        dmarc_result = my_dmarc_verifier::dmarc_verify(&message, &spf_domain, &dkim_domain, &MY_DNS_RESOLVER);
+        let spf_domain_list: Vec<String> = if spf_result.as_status() == &SPFStatus::PASS {
+            spf_result.as_domains().clone()
+        } else {
+            Vec::new()
+        };
+        let dkim_domain_list: Vec<String> = if dkim_result.as_status() == &DKIMStatus::PASS {
+            dkim_result.as_domains().clone()
+        } else {
+            Vec::new()
+        };
+        dmarc_result = my_dmarc_verifier::dmarc_verify(&message, &spf_domain_list, &dkim_domain_list, &MY_DNS_RESOLVER);
         if let Some(table) = &table_of_authentication_results_header {
             if let Some(mx_dmarc_status) = table.get("dmarc") {
                 let mx_dmarc_status = mx_dmarc_status.parse::<DMARCStatus>().unwrap(); // TODO: unknown string may have to be an error, not panic
