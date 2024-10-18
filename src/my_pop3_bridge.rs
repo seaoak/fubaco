@@ -291,7 +291,9 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
                 let fubaco_headers;
                 if let Some(info) = unique_id_to_message_info.get(unique_id) {
                     if command_name == "RETR" {
-                        assert_eq!(body_u8.len(), message_number_to_nbytes[&arg_message_number]);
+                        if body_u8.len() != message_number_to_nbytes[&arg_message_number] {
+                            println!("WARNING: message size is different from the response of LIST comand: {} vs {}", body_u8.len(), message_number_to_nbytes[&arg_message_number]);
+                        }
                     }
                     fubaco_headers = info.fubaco_headers.clone();
                 } else {
