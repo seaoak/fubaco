@@ -68,6 +68,7 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
         println!("parse response body of UIDL command");
         let body_u8 = &response_lines[status_line.len()..(response_lines.len() - b".\r\n".len())];
         let body_text = String::from_utf8_lossy(body_u8);
+        println!("{}", body_text);
         let mut table: HashMap<MessageNumber, UniqueID> = HashMap::new();
         for line in body_text.split_terminator("\r\n") {
             if let Some(caps) = REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
@@ -101,6 +102,7 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
         println!("parse response body of LIST command");
         let body_u8 = &response_lines[status_line.len()..(response_lines.len() - b".\r\n".len())];
         let body_text = String::from_utf8_lossy(body_u8);
+        println!("{}", body_text);
         let mut table: HashMap<MessageNumber, usize> = HashMap::new();
         for line in body_text.split_terminator("\r\n") {
             if let Some(caps) = REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND.captures(line) {
