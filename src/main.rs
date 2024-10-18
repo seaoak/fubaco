@@ -113,13 +113,13 @@ fn make_fubaco_padding_header(nbytes: usize) -> String { // generate just-nbyte-
 
     // split buf into multi-line
     let mut pos = line_length_limit - "\r\n".len();
-    while pos <= buf.len() - "\r\n x\r\n".len() {
-        buf.replace_range(pos..(pos + "\r\n ".len()), "\r\n ");
+    while pos <= buf.len() - "\r\n\tx\r\n".len() {
+        buf.replace_range(pos..(pos + "\r\n\t".len()), "\r\n\t");
         pos += line_length_limit;
     }
     if pos < buf.len() { // odd position
-        pos = buf.len() - "\r\n x\r\n".len(); // roll back
-        buf.replace_range(pos..(pos + "\r\n ".len()), "\r\n ");
+        pos = buf.len() - "\r\n\tx\r\n".len(); // roll back
+        buf.replace_range(pos..(pos + "\r\n\t".len()), "\r\n\t");
     }
     assert!(buf.ends_with("x\r\n")); // at least one "x" is contained in last line
     buf
