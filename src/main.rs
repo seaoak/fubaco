@@ -491,9 +491,9 @@ fn spam_checker_fully_html_encoded_text(message: &Message) -> Option<String> {
         None => return None,
     }
     lazy_static! {
-        static ref REGEX_NUMERIC_CARACTER_REFERENCE: Regex = Regex::new(r"^([&][#](\d+|x[0-9a-fA-F]+)[;])+[=]?\r?\n").unwrap();
+        static ref REGEX_NUMERIC_CHARACTER_REFERENCE: Regex = Regex::new(r"(^|\r?\n)([&][#](\d+|x[0-9a-fA-F]+)[;]){8}").unwrap();
     }
-    if REGEX_NUMERIC_CARACTER_REFERENCE.is_match(&text) {
+    if REGEX_NUMERIC_CHARACTER_REFERENCE.is_match(&text) {
         return Some("fully-html-encoding-text".to_string());
     }
     None
