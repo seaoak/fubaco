@@ -122,9 +122,22 @@ fn load_tsv_file<P: AsRef<Path>>(path: P) -> Result<Vec<Vec<String>>> {
     Ok(lines)
 }
 
+fn get_trusted_domains() -> Result<Vec<String>> {
+    let lines = load_tsv_file(&*SUSPICIOUS_LIST_FILENAME)?;
+    let mut list = lines.into_iter().filter(|l| l.len() > 1).flat_map(|l| l[1..].to_owned().into_iter()).collect::<Vec<String>>();
+    for s in list.iter_mut() {
+        // remove redundant dot at the start of string
+        if s.starts_with(".") {
+            s.remove(0);
+        }
+    }
+    Ok(list)
+}
+
 lazy_static! {
     static ref BLACKLIST_TLD_LIST: Vec<String> = vec![".cn", ".ru", ".hu", ".br", ".su", ".nz", ".in", ".cz", ".be", ".cl"].into_iter().map(|s| s.to_string()).collect();
     static ref FUBACO_HEADER_TOTAL_SIZE: usize = 512; // (78+2)*6+(30+2)
+    static ref SUSPICIOUS_LIST_FILENAME: String = "./list_suspicious_from.tsv".to_string();
 }
 
 lazy_static! {
@@ -340,19 +353,23 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
     let (expected_from_address_regex, prohibited_words): (Regex, Vec<String>) = (|| {
         lazy_static! {
             static ref REGEX_ALWAYS_MATCH: Regex = Regex::new(r".").unwrap();
-            static ref REGEX_DOT_AT_THE_FIRST: Regex = Regex::new(r"^[.]").unwrap();
         }
-        let filename = "list_suspicious_from.tsv";
-        let mut lines = match load_tsv_file(filename) {
+        let mut lines = match load_tsv_file(&*SUSPICIOUS_LIST_FILENAME) {
             Ok(v) => v,
             Err(e) => {
-                println!("can not load \"{}\": {}", filename, e);
+                println!("can not load \"{}\": {}", &*SUSPICIOUS_LIST_FILENAME, e);
                 return (REGEX_ALWAYS_MATCH.clone(), Vec::new());
             },
         };
         assert!(lines.iter().all(|fields| fields.len() > 0));
         for fields in &mut lines {
             fields[0] = normalize_string(&fields[0]);
+            for s in fields[1..].iter_mut() {
+                // remove redundant dot at the start of string
+                if s.starts_with(".") {
+                    s.remove(0);
+                }
+            }
         }
         let (v1, v2): (Vec<Vec<String>>, Vec<Vec<String>>) = lines.into_iter().partition(|fields| fields.len() == 1);
         let prohibited_words = v1.into_iter().map(|fields| fields[0].clone()).collect::<Vec<String>>();
@@ -363,7 +380,7 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         let mut domains = Vec::new();
         for fields in matched_lines.into_iter() { // merge all matched lines
             assert!(fields.len() > 1);
-            domains.extend(fields.into_iter().skip(1).map(|s| REGEX_DOT_AT_THE_FIRST.replace(&s, "").to_string())); // remove redundant dot
+            domains.extend(fields.into_iter().skip(1));
         }
         assert_ne!(domains.len(), 0);
         let joined_string = domains.into_iter().map(|s| s.replace(".", "[.]")).collect::<Vec<String>>().join("|");
@@ -394,6 +411,10 @@ fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
 }
 
 fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
+    let trusted_domains = get_trusted_domains().unwrap_or_else(|err| {
+        println!("WARNING: can not get list of trusted domains: {:?}", err);
+        Vec::new()
+    });
     let html;
     match message.body_html(0) {
         Some(v) => html = v,
@@ -415,6 +436,9 @@ fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
             println!("suspicious-href: \"{}\"", url);
             table.insert("suspicious-href"); // camouflaged hostname
             continue;
+        }
+        if trusted_domains.iter().any(|d| d == &host_in_href || host_in_href.ends_with(&format!(".{}", d))) {
+            continue; // skip later checks (treat as "OK")
         }
         for tld in BLACKLIST_TLD_LIST.iter() {
             if host_in_href.ends_with(tld) {
