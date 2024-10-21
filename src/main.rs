@@ -465,7 +465,9 @@ fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
     None
 }
 
+#[allow(unreachable_code, unused)]
 fn spam_checker_hidden_text_in_html(message: &Message) -> Option<String> {
+    return None; // temporally disable because some sender (Amazon, iCloud) use hidden text in HTML
     let html;
     match message.body_html(0) {
         Some(v) => html = v,
