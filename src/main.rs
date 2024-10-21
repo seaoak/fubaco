@@ -55,7 +55,11 @@ fn main() {
         "test_spam_checker_with_local_files" => test_spam_checker_with_local_files(),
         "test_pop3_bridge" => test_pop3_bridge(),
         "test_pop3_upstream" => test_pop3_upstream(),
-        _ => test_spam_checker_with_local_files(),
+        "" => test_spam_checker_with_local_files(),
+        _ => {
+            println!("ERROR: unknown string in the environment variable \"FUBACO_MODE\": {}", fubaco_mode);
+            std::process::exit(1);
+        },
     };
 
     match status {
