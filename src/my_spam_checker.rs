@@ -174,7 +174,15 @@ pub fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
     for elem in dom.select(&selector) {
         let url = elem.value().attr("href").unwrap().trim();
         lazy_static! {
+            static ref REGEX_URL_WITH_MAILTO: Regex = Regex::new(r"^mailto[:][-_.+=0-9a-z]+[@][-_.0-9a-z]+$").unwrap();
             static ref REGEX_URL_WITH_NORMAL_HOST: Regex = Regex::new(r"^https?[:][/][/]([-_a-z0-9.]+)([/]\S*)?$").unwrap();
+        }
+        if url.starts_with("mailto:") {
+            if !REGEX_URL_WITH_MAILTO.is_match(url) {
+                println!("suspicious-mailto: \"{}\"", url);
+                table.insert("suspicious-mailto");
+            }
+            continue;
         }
         let host_in_href;
         if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(url) {
