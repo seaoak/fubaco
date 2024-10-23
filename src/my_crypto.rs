@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use ed25519_dalek::{Verifier};
+use ed25519_dalek::Verifier;
 use rsa::{RsaPublicKey, pkcs1::DecodeRsaPublicKey, pkcs1v15::Pkcs1v15Sign, pkcs8::DecodePublicKey};
 use sha1::{Digest, Sha1};
 use sha2::Sha256;
