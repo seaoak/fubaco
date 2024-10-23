@@ -22,7 +22,6 @@ pub struct MyDNSResolver {
 
 impl MyDNSResolver {
 
-    #[allow(unused)]
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
             .use_rustls_tls()
@@ -37,7 +36,6 @@ impl MyDNSResolver {
         }
     }
 
-    #[allow(unused)]
     pub fn query_spf_record(&self, fqdn: &str) -> Result<Option<String>> {
         let records = self.query_simple(fqdn, "TXT")?;
         let spf_records: Vec<String> = records.into_iter().filter(|s| s.starts_with("v=spf1 ")).collect();
@@ -53,7 +51,6 @@ impl MyDNSResolver {
         Ok(Some(spf_record))
     }
 
-    #[allow(unused)]
     pub fn query_mx_record(&self, fqdn: &str) -> Result<Vec<String>> { // Vec may be empty
         let records = self.query_simple(fqdn, "MX")?;
         lazy_static! {
@@ -69,7 +66,6 @@ impl MyDNSResolver {
         Ok(hosts)
     }
 
-    #[allow(unused)]
     pub fn query_simple(&self, fqdn: &str, query_type: &str) -> Result<Vec<String>> { // Vec may be empty
         let query_result =
             tokio::runtime::Builder::new_multi_thread()
@@ -86,7 +82,6 @@ impl MyDNSResolver {
         Ok(records)
     }
 
-    #[allow(unused)]
     pub async fn lookup(&self, fqdn: String, query_type: String) -> Result<Vec<String>> {
         // https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/make-api-requests/dns-json/
         // https://developers.google.com/speed/public-dns/docs/doh/json?hl=ja
@@ -111,7 +106,7 @@ impl MyDNSResolver {
         let query_string = options.into_iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<String>>().join("&");
         let url = format!("{}?{}", *DNS_PROVIDER_BASE_URL, query_string);
         let cache_data = {
-            let mut guard = self.cache.lock().unwrap();
+            let guard = self.cache.lock().unwrap();
             if let Some(v) = guard.get(&url) {
                 Some(v.clone())
             } else {
