@@ -11,9 +11,9 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::FUBACO_HEADER_TOTAL_SIZE;
 use crate::my_disconnect::MyDisconnect;
 use crate::my_dns_resolver::MyDNSResolver;
+use crate::my_fubaco_header::{self, FUBACO_HEADER_TOTAL_SIZE};
 use crate::my_text_line_stream::MyTextLineStream;
 
 lazy_static! {
@@ -341,7 +341,7 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
                     fubaco_headers = info.fubaco_headers.clone();
                 } else {
                     // TODO: SPAM checker
-                    fubaco_headers = crate::make_fubaco_headers(body_u8)?;
+                    fubaco_headers = my_fubaco_header::make_fubaco_headers(body_u8)?;
                     println!("add fubaco headers:\n----------\n{}----------", fubaco_headers);
                     unique_id_to_message_info.insert(
                         unique_id.clone(),
