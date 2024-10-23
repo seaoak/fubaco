@@ -34,7 +34,6 @@ use my_text_line_stream::MyTextLineStream;
 use pop3_upstream::*;
 
 //====================================================================
-#[allow(unreachable_code)]
 fn main() {
     println!("Hello, world!");
 
