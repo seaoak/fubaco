@@ -177,6 +177,9 @@ pub fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
             static ref REGEX_URL_WITH_MAILTO: Regex = Regex::new(r"^mailto[:][-_.+=0-9a-z]+[@][-_.0-9a-z]+$").unwrap();
             static ref REGEX_URL_WITH_NORMAL_HOST: Regex = Regex::new(r"^https?[:][/][/]([-_a-z0-9.]+)([/]\S*)?$").unwrap();
         }
+        if url.starts_with('#') {
+            continue; // skip "in-page" hyperlink
+        }
         if url.starts_with("mailto:") {
             if !REGEX_URL_WITH_MAILTO.is_match(url) {
                 println!("suspicious-mailto: \"{}\"", url);
