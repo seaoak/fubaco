@@ -204,7 +204,7 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
             lazy_static! {
                 static ref REGEX_INTEGER_FROM_0_to_100: Regex = Regex::new(r"^([0-9]|[1-9][0-9]|100)$").unwrap();
                 static ref REGEX_INTEGER_GREATER_THAN_0: Regex = Regex::new(r"^([1-9][0-9]*)$").unwrap();
-                static ref REGEX_MAIL_ADDRESS_LIST: Regex = Regex::new(r"^mailto[:]([-_.+=0-9a-zA-Z]+[@][-_.0-9a-zA-Z]+)([,]mailto[:]([-_.+=0-9a-zA-Z]+[@][-_.0-9a-zA-Z]+))*$").unwrap();
+                static ref REGEX_MAIL_ADDRESS_LIST: Regex = Regex::new(r"^mailto[:]([-_.+=0-9a-zA-Z]+[@][-_.0-9a-zA-Z]+)(\s*[,]\s*mailto[:]([-_.+=0-9a-zA-Z]+[@][-_.0-9a-zA-Z]+))*$").unwrap();
             }
 
             if let Some(r) = validate(&mut table, "adkim", Some("r"), |s| s == "r" || s == "s") {
