@@ -7,6 +7,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use base64::prelude::*;
 use lazy_static::lazy_static;
+use regex::Regex;
 use rustls;
 use tokio;
 use webpki_roots;
@@ -243,6 +244,11 @@ fn test_spam_checker_with_local_files() -> Result<()> {
         reader.read_to_end(&mut buf)?;
         let fubaco_headers = my_fubaco_header::make_fubaco_headers(&buf)?;
         print!("{}", fubaco_headers);
+        lazy_static! {
+            static ref REGEX_FILENAME_AS_SUCCESSFUL: Regex = Regex::new(r"[-._](ok|pass|valid)[-._]").unwrap();
+        }
+        let is_error = !fubaco_headers.contains("X-Fubaco-Spam-Judgement: none\r\n") || !fubaco_headers.contains("dmarc=pass");
+        assert_eq!(!is_error, REGEX_FILENAME_AS_SUCCESSFUL.is_match(&filename));
     }
     MY_DNS_RESOLVER.save_cache()?;
     Ok(())
