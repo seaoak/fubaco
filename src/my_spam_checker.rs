@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -7,6 +7,7 @@ use anyhow::Result;
 use mail_parser::Message;
 use kana::wide2ascii;
 use lazy_static::lazy_static;
+use lingua;
 use regex::Regex;
 use scraper;
 use unicode_normalization::UnicodeNormalization;
@@ -154,6 +155,34 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
     }
     if address == destination { // header.from is camoflaged with destination address
         return Some("suspicious-from".to_string());
+    }
+    lazy_static! {
+        static ref LANGUAGES_FOR_DETECTOR: Vec<lingua::Language> = vec![lingua::Language::English, lingua::Language::Japanese];
+        static ref DETECTOR: lingua::LanguageDetector = lingua::LanguageDetectorBuilder::from_languages(&LANGUAGES_FOR_DETECTOR).build();
+        static ref EXCEPTION_CHARS: Vec<char> = vec!['ー']; // these characters are "is_alphabetic()=true", but do not recognize a Japanese character
+    }
+    let is_suspicious_alphabet = |c: &char| {
+        if !c.is_alphabetic() {
+            return false;
+        }
+        if EXCEPTION_CHARS.contains(c) {
+            return false;
+        }
+        // see https://crates.io/crates/lingua
+        let confidence_values = DETECTOR.compute_language_confidence_values(*c).into_iter().collect::<HashMap<lingua::Language, f64>>();
+        let is_english = confidence_values[&lingua::Language::English] > 0.9;
+        let is_japanese = confidence_values[&lingua::Language::Japanese] > 0.9;
+        let is_ok = (is_english && c.is_ascii_alphabetic()) || is_japanese;
+        if !is_ok {
+            println!("suspicious-alphabet: {} ({:?})", *c, confidence_values);
+        }
+        !is_ok
+    };
+    if name.chars().any(|c| is_suspicious_alphabet(&c)) {
+        return Some("suspicious-alphabet-in-from".to_string());
+    }
+    if subject.chars().any(|c| is_suspicious_alphabet(&c)) {
+        return Some("suspicious-alphabet-in-subject".to_string());
     }
     None
 }
