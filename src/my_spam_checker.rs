@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -7,7 +7,6 @@ use anyhow::Result;
 use mail_parser::Message;
 use kana::wide2ascii;
 use lazy_static::lazy_static;
-use lingua;
 use regex::Regex;
 use scraper;
 use unicode_normalization::UnicodeNormalization;
@@ -166,79 +165,22 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         return Some("suspicious-from".to_string());
     }
     lazy_static! {
-        static ref LANGUAGES_FOR_DETECTOR: Vec<lingua::Language> = vec![lingua::Language::English, lingua::Language::Japanese];
-        static ref DETECTOR: lingua::LanguageDetector = lingua::LanguageDetectorBuilder::from_languages(&LANGUAGES_FOR_DETECTOR).build();
-        static ref EXCEPTION_CHARS: Vec<char> = vec!['ー']; // these characters are "is_alphabetic()=true", but do not recognize a Japanese character
-
-        // static ref REGEX_NON_ENGLISH_ALPHABET: Regex = Regex::new(r"[^\p{Latin}\p{Hiragana}\p{Katakana}\p{Han}\p{Punct}ー]").unwrap();
-        // static ref REGEX_NON_ENGLISH_ALPHABET: Regex = Regex::new(r"[^\x00-\x7F\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3000-\u303Fー]").unwrap();
-        // static ref REGEX_NON_ENGLISH_ALPHABET: Regex = Regex::new(r"[^\x00-\x7F\p{Hiragana}\p{Katakana}\p{Han}\p{Punct}ー]").unwrap();
-        // static ref REGEX_NON_ENGLISH_ALPHABET: Regex = Regex::new(r"[\p{Alphabetic}&&[^\x00-\x7F\p{Hiragana}\p{Katakana}\p{Han}\p{Punct}ー]]").unwrap();
-        static ref REGEX_NON_ENGLISH_ALPHABET: Regex = Regex::new(r"[\p{Alphabetic}&&[^\p{ASCII}\p{Hiragana}\p{Katakana}\p{Han}\p{Punct}ー]]").unwrap();
+        static ref REGEX_NON_ENGLISH_ALPHABET: Regex = Regex::new(r"([\p{Alphabetic}&&[^\p{ASCII}\p{Hiragana}\p{Katakana}\p{Han}\p{Punct}ー]])").unwrap();
     }
-    if REGEX_NON_ENGLISH_ALPHABET.is_match(&name) {
-        println!("detect Non-English alphabet: {}", name);
-
-    }
-    if REGEX_NON_ENGLISH_ALPHABET.is_match(&subject) {
-        println!("detect Non-English alphabet: {}", subject);
-    }
-    let is_suspicious_alphabet = |c: &char| {
-        if !c.is_alphabetic() {
-            return false;
-        }
-        if EXCEPTION_CHARS.contains(c) {
-            return false;
-        }
-        // see https://crates.io/crates/lingua
-        let detector = lingua::LanguageDetectorBuilder::from_all_languages().build();
-        let lang = detector.detect_language_of(*c);
-        let is_suspicious = match &lang {
-            &Some(lingua::Language::English) => false,
-            &Some(lingua::Language::Japanese) => false,
-            _ => true,
-        };
-        if is_suspicious {
-            println!("suspicious-alphabet: {} ({:?})", *c, lang);
-        }
-        is_suspicious
-    };
-    let is_suspicious_alphabet = |c: &char| {
-        if !c.is_alphabetic() {
-            return false;
-        }
-        if EXCEPTION_CHARS.contains(c) {
-            return false;
-        }
-        // see https://crates.io/crates/lingua
-        let confidence_values = DETECTOR.compute_language_confidence_values(*c).into_iter().collect::<HashMap<lingua::Language, f64>>();
-        let is_english = confidence_values[&lingua::Language::English] > 0.9;
-        let is_japanese = confidence_values[&lingua::Language::Japanese] > 0.9;
-        let is_ok = (is_english && c.is_ascii_alphabetic()) || is_japanese;
-        if !is_ok {
-            println!("suspicious-alphabet: {} ({:?})", *c, confidence_values);
-        }
-        !is_ok
-    };
-    let test = |s: &str| {
-        let c = s.chars().nth(0).unwrap();
-        assert!(c.is_alphabetic());
-        let is_suspicious = is_suspicious_alphabet(&c);
-        println!("is_suspicious={} for {}", is_suspicious, s);
-        assert_eq!(is_suspicious, REGEX_NON_ENGLISH_ALPHABET.is_match(s));
-    };
-    test("𠮷"); // \u9FFF より大きいコードポイントの漢字
-    test("賣"); // 繁体字の「売」
-    test("卖"); // 簡体字の「売」
-    test("프로그래밍"); // ハングルで「プログラミング」
-    test("發"); // 繁体字の「発」
-    test("发"); // 簡体字の「発」
-    test("В"); // キリル文字
-    test("Д");
-    if name.chars().any(|c| is_suspicious_alphabet(&c)) {
+    assert!(!REGEX_NON_ENGLISH_ALPHABET.is_match("𠮷")); // \u9FFF より大きいコードポイントの漢字
+    assert!(!REGEX_NON_ENGLISH_ALPHABET.is_match("賣")); // 繁体字の「売」
+    assert!(!REGEX_NON_ENGLISH_ALPHABET.is_match("卖")); // 簡体字の「売」
+    assert!(REGEX_NON_ENGLISH_ALPHABET.is_match("프로그래밍")); // ハングルで「プログラミング」
+    assert!(!REGEX_NON_ENGLISH_ALPHABET.is_match("發")); // 繁体字の「発」
+    assert!(!REGEX_NON_ENGLISH_ALPHABET.is_match("发")); // 簡体字の「発」
+    assert!(REGEX_NON_ENGLISH_ALPHABET.is_match("В")); // キリル文字
+    assert!(REGEX_NON_ENGLISH_ALPHABET.is_match("Д"));
+    if let Some(caps) = REGEX_NON_ENGLISH_ALPHABET.captures(&name) {
+        println!("suspicious-alphabet-in-from: {}", &caps[1]);
         return Some("suspicious-alphabet-in-from".to_string());
     }
-    if subject.chars().any(|c| is_suspicious_alphabet(&c)) {
+    if let Some(caps) = REGEX_NON_ENGLISH_ALPHABET.captures(&subject) {
+        println!("suspicious-alphabet-in-subject: {}", &caps[1]);
         return Some("suspicious-alphabet-in-subject".to_string());
     }
     None
