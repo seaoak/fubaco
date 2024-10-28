@@ -203,7 +203,7 @@ pub fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
         let url = elem.value().attr("href").unwrap().trim();
         lazy_static! {
             static ref REGEX_URL_WITH_MAILTO: Regex = Regex::new(r"^mailto[:][-_.+=0-9a-z]+[@][-_.0-9a-z]+$").unwrap();
-            static ref REGEX_URL_WITH_NORMAL_HOST: Regex = Regex::new(r"^https?[:][/][/]([-_a-z0-9.]+)([/]\S*)?$").unwrap();
+            static ref REGEX_URL_WITH_NORMAL_HOST: Regex = Regex::new(r"^https?[:][/][/]([-_a-z0-9.]+)([/?#]\S*)?$").unwrap();
         }
         if url.starts_with('#') {
             continue; // skip "in-page" hyperlink
