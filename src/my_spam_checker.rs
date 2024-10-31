@@ -53,13 +53,12 @@ fn load_tsv_file<P: AsRef<Path>>(path: P) -> Result<Vec<Vec<String>>> {
 
 fn get_trusted_domains() -> Result<Vec<String>> {
     let lines = load_tsv_file(&*SUSPICIOUS_LIST_FILENAME)?;
-    let mut list = lines.into_iter().filter(|l| l.len() > 1).flat_map(|l| l[1..].to_owned().into_iter()).collect::<Vec<String>>();
-    for s in list.iter_mut() {
-        // remove redundant dot at the start of string
-        if s.starts_with(".") {
-            s.remove(0);
-        }
-    }
+    let it = lines.into_iter().filter(|l| l[0] != "!");
+    let it = it.filter(|l| l.len() > 1);
+    let it = it.flat_map(|l| l[1..].to_owned().into_iter());
+    let list = it.collect::<Vec<_>>();
+    assert!(list.iter().all(|s| !s.starts_with('.'))); // redundant dot at the start of string is not allowed
+    assert!(list.iter().all(|s| !s.contains('@'))); // localpart is not allowed
     Ok(list)
 }
 
@@ -107,11 +106,26 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
     println!("Subject: \"{}\"", subject);
     let destination = normalize_string(message.to().map(|x| x.first().map(|addr| addr.address.clone().unwrap()).unwrap_or_default()).unwrap_or_default()); // may be empty string
     println!("To.address: \"{}\"", destination);
+
+    let trusted_domains = {
+        let lines = load_tsv_file(&*SUSPICIOUS_LIST_FILENAME).unwrap_or_default();
+        let it = lines.into_iter().filter(|l| l[0] == "!");
+        let it = it.inspect(|l| assert!(l.len() > 1));
+        let it = it.flat_map(|l| l[1..].to_owned().into_iter());
+        let it = it.chain(vec!["\0".to_string()].into_iter()); // add dummy for when "it" is empty
+        let list = it.collect::<Vec<_>>();
+        assert!(list.iter().all(|s| !s.starts_with('.'))); // redundant dot at the start of string is not allowed
+        assert!(list.iter().all(|s| !s.contains('@'))); // localpart is not allowed
+        list
+    };
+    let trusted_pattern = trusted_domains.join("|").replace(".", "[.]");
+    let trusted_regex = Regex::new(&format!("(?i)[.@]({})$", trusted_pattern)).unwrap();
+
     let (expected_from_address_regex, prohibited_words): (Regex, Vec<String>) = (|| {
         lazy_static! {
             static ref REGEX_ALWAYS_MATCH: Regex = Regex::new(r".").unwrap();
         }
-        let mut lines = match load_tsv_file(&*SUSPICIOUS_LIST_FILENAME) {
+        let lines = match load_tsv_file(&*SUSPICIOUS_LIST_FILENAME) {
             Ok(v) => v,
             Err(e) => {
                 println!("can not load \"{}\": {}", &*SUSPICIOUS_LIST_FILENAME, e);
@@ -119,14 +133,9 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
             },
         };
         assert!(lines.iter().all(|fields| fields.len() > 0));
+        let mut lines = lines.into_iter().filter(|l| l[0] != "!").collect::<Vec<_>>();
         for fields in &mut lines {
             fields[0] = normalize_string(&fields[0]);
-            for s in fields[1..].iter_mut() {
-                // remove redundant dot at the start of string
-                if s.starts_with(".") {
-                    s.remove(0);
-                }
-            }
         }
         let (v1, v2): (Vec<Vec<String>>, Vec<Vec<String>>) = lines.into_iter().partition(|fields| fields.len() == 1);
         let prohibited_words = v1.into_iter().map(|fields| fields[0].clone()).collect::<Vec<String>>();
@@ -140,6 +149,8 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
             domains.extend(fields.into_iter().skip(1));
         }
         assert_ne!(domains.len(), 0);
+        assert!(domains.iter().all(|s| !s.starts_with('.'))); // redundant dot at the start of string is not allowed
+        assert!(domains.iter().all(|s| !s.contains('@'))); // localpart is not allowed
         let joined_string = domains.into_iter().map(|s| s.replace(".", "[.]")).collect::<Vec<String>>().join("|");
         let pattern_string = format!("(?i)[.@]({})$", joined_string); // case-insensitive
         let regex = match Regex::new(&pattern_string) {
@@ -152,6 +163,10 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         (regex, prohibited_words)
     })();
 
+    if trusted_regex.is_match(&address) {
+        println!("skip trusted domain: {}", address);
+        return None;
+    }
     if !expected_from_address_regex.is_match(&address) {
         return Some("suspicious-from".to_string());
     }

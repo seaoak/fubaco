@@ -1,3 +1,11 @@
+##----------------------------------------------------------------------------
+## trusted domains
+
+!	icloud.com
+
+##----------------------------------------------------------------------------
+## expected domains for each keyword
+
 Amazon					amazon.co.jp					amazon.com
 
 JCB						jcb.co.jp		dnp-cdms.jp
@@ -77,5 +85,6 @@ p-mail					aiful.co.jp		aiful.jp
 
 ###---------------------------------------------------------------------------
 ### 禁止ワード
+
 Viagra
 Cialis
