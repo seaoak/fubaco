@@ -163,21 +163,22 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         (regex, prohibited_words)
     })();
 
+    let mut table = HashSet::<&'static str>::new();
     if trusted_regex.is_match(&address) {
         println!("skip trusted domain: {}", address);
         return None;
     }
     if !expected_from_address_regex.is_match(&address) {
-        return Some("suspicious-from".to_string());
+        table.insert("suspicious-from");
     }
     if prohibited_words.iter().any(|s| name.contains(s)) {
-        return Some("prohibited-word-in-from".to_string());
+        table.insert("prohibited-word-in-from");
     }
     if prohibited_words.iter().any(|s| subject.contains(s)) {
-        return Some("prohibited-word-in-subject".to_string());
+        table.insert("prohibited-word-in-subject");
     }
     if address == destination { // header.from is camoflaged with destination address
-        return Some("suspicious-from".to_string());
+        table.insert("suspicious-from");
     }
     lazy_static! {
         static ref REGEX_NON_ENGLISH_ALPHABET: Regex = Regex::new(r"([\p{Alphabetic}&&[^\p{ASCII}\p{Hiragana}\p{Katakana}\p{Han}\p{Punct}ー]])").unwrap();
@@ -192,11 +193,17 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
     assert!(REGEX_NON_ENGLISH_ALPHABET.is_match("Д"));
     if let Some(caps) = REGEX_NON_ENGLISH_ALPHABET.captures(&name) {
         println!("suspicious-alphabet-in-from: {}", &caps[1]);
-        return Some("suspicious-alphabet-in-from".to_string());
+        table.insert("suspicious-alphabet-in-from");
     }
     if let Some(caps) = REGEX_NON_ENGLISH_ALPHABET.captures(&subject) {
         println!("suspicious-alphabet-in-subject: {}", &caps[1]);
-        return Some("suspicious-alphabet-in-subject".to_string());
+        table.insert("suspicious-alphabet-in-subject");
+    }
+    if !table.is_empty() {
+        let mut list = table.into_iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        list.sort();
+        let text = list.join(" ");
+        return Some(text);
     }
     None
 }
