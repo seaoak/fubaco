@@ -53,9 +53,10 @@ fn load_tsv_file<P: AsRef<Path>>(path: P) -> Result<Vec<Vec<String>>> {
 
 fn get_trusted_domains() -> Result<Vec<String>> {
     let lines = load_tsv_file(&*SUSPICIOUS_LIST_FILENAME)?;
-    let it = lines.into_iter().filter(|l| l[0] != "!");
+    let it = lines.into_iter().filter(|l| l[0] == "!");
     let it = it.filter(|l| l.len() > 1);
     let it = it.flat_map(|l| l[1..].to_owned().into_iter());
+    let it = it.chain(vec!["\0".to_string()].into_iter()); // add dummy for when "it" is empty
     let list = it.collect::<Vec<_>>();
     assert!(list.iter().all(|s| !s.starts_with('.'))); // redundant dot at the start of string is not allowed
     assert!(list.iter().all(|s| !s.contains('@'))); // localpart is not allowed
@@ -107,17 +108,7 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
     let destination = normalize_string(message.to().map(|x| x.first().map(|addr| addr.address.clone().unwrap()).unwrap_or_default()).unwrap_or_default()); // may be empty string
     println!("To.address: \"{}\"", destination);
 
-    let trusted_domains = {
-        let lines = load_tsv_file(&*SUSPICIOUS_LIST_FILENAME).unwrap_or_default();
-        let it = lines.into_iter().filter(|l| l[0] == "!");
-        let it = it.inspect(|l| assert!(l.len() > 1));
-        let it = it.flat_map(|l| l[1..].to_owned().into_iter());
-        let it = it.chain(vec!["\0".to_string()].into_iter()); // add dummy for when "it" is empty
-        let list = it.collect::<Vec<_>>();
-        assert!(list.iter().all(|s| !s.starts_with('.'))); // redundant dot at the start of string is not allowed
-        assert!(list.iter().all(|s| !s.contains('@'))); // localpart is not allowed
-        list
-    };
+    let trusted_domains = get_trusted_domains().unwrap_or_default();
     let trusted_pattern = trusted_domains.join("|").replace(".", "[.]");
     let trusted_regex = Regex::new(&format!("(?i)[.@]({})$", trusted_pattern)).unwrap();
 
