@@ -12,7 +12,7 @@ use scraper;
 use unicode_normalization::UnicodeNormalization;
 
 lazy_static! {
-    static ref BLACKLIST_TLD_LIST: Vec<String> = vec![".cn", ".ru", ".hu", ".br", ".su", ".nz", ".in", ".cz", ".be", ".cl"].into_iter().map(|s| s.to_string()).collect();
+    static ref BLACKLIST_TLD_LIST: Vec<String> = vec![".cn", ".ru", ".hu", ".br", ".su", ".nz", ".in", ".cz", ".be", ".cl", ".kz"].into_iter().map(|s| s.to_string()).collect();
     static ref SUSPICIOUS_LIST_FILENAME: String = "./list_suspicious_from.tsv".to_string();
 }
 
