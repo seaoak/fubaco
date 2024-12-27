@@ -211,10 +211,7 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
 
 pub fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
     let blacklist = get_blacklist_tld().unwrap_or_default();
-    let trusted_domains = get_trusted_domains().unwrap_or_else(|err| {
-        println!("WARNING: can not get list of trusted domains: {:?}", err);
-        Vec::new()
-    });
+    let trusted_domains = get_trusted_domains().unwrap_or_default();
     let html;
     match message.body_html(0) {
         Some(v) => html = v,
