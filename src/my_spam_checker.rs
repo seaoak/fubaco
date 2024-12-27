@@ -12,7 +12,6 @@ use scraper;
 use unicode_normalization::UnicodeNormalization;
 
 lazy_static! {
-    static ref BLACKLIST_TLD_LIST: Vec<String> = vec![".cn", ".ru", ".hu", ".br", ".su", ".nz", ".in", ".cz", ".be", ".cl", ".kz"].into_iter().map(|s| s.to_string()).collect();
     static ref SUSPICIOUS_LIST_FILENAME: String = "./list_suspicious_from.tsv".to_string();
 }
 
@@ -51,6 +50,16 @@ fn load_tsv_file<P: AsRef<Path>>(path: P) -> Result<Vec<Vec<String>>> {
     Ok(lines)
 }
 
+fn get_blacklist_tld() -> Result<Vec<String>> {
+    let lines = load_tsv_file(&*SUSPICIOUS_LIST_FILENAME).unwrap_or_default();
+    let it = lines.into_iter().filter(|l| l[0] == "@");
+    let it = it.filter(|l| l.len() > 1);
+    let it = it.flat_map(|l| l[1..].to_owned().into_iter());
+    let list = it.collect::<Vec<_>>();
+    assert!(list.iter().all(|s| s.starts_with('.')));
+    Ok(list)
+}
+
 fn get_trusted_domains() -> Result<Vec<String>> {
     let lines = load_tsv_file(&*SUSPICIOUS_LIST_FILENAME)?;
     let it = lines.into_iter().filter(|l| l[0] == "!");
@@ -75,17 +84,18 @@ pub fn spam_checker_suspicious_envelop_from(message: &Message) -> Option<String>
 }
 
 pub fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
+    let blacklist = get_blacklist_tld().unwrap_or_default();
     let header_from = message.from().map(|x| x.first().map(|addr| addr.address.clone().unwrap_or_default().to_string()).unwrap_or_default().to_lowercase()).unwrap_or_default();
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string().replace(&['<', '>'], "").to_lowercase(); // may be empty string
     println!("Evelop.from: \"{}\"", envelop_from);
     let mut is_spam = false;
-    for tld in BLACKLIST_TLD_LIST.iter() {
+    for tld in blacklist.iter() {
         if header_from.ends_with(tld) {
             println!("blacklist-tld in from header address: \"{}\"", header_from);
             is_spam = true;
         }
     }
-    for tld in BLACKLIST_TLD_LIST.iter() {
+    for tld in blacklist.iter() {
         if envelop_from.ends_with(tld) {
             println!("blacklist-tld in envelop from address: \"{}\"", envelop_from);
             is_spam = true;
@@ -124,7 +134,7 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
             },
         };
         assert!(lines.iter().all(|fields| fields.len() > 0));
-        let mut lines = lines.into_iter().filter(|l| l[0] != "!").collect::<Vec<_>>();
+        let mut lines = lines.into_iter().filter(|l| l[0] != "@" && l[0] != "!").collect::<Vec<_>>();
         for fields in &mut lines {
             fields[0] = normalize_string(&fields[0]);
         }
@@ -200,6 +210,7 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
 }
 
 pub fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
+    let blacklist = get_blacklist_tld().unwrap_or_default();
     let trusted_domains = get_trusted_domains().unwrap_or_else(|err| {
         println!("WARNING: can not get list of trusted domains: {:?}", err);
         Vec::new()
@@ -240,7 +251,7 @@ pub fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
         if trusted_domains.iter().any(|d| d == &host_in_href || host_in_href.ends_with(&format!(".{}", d))) {
             continue; // skip later checks (treat as "OK")
         }
-        for tld in BLACKLIST_TLD_LIST.iter() {
+        for tld in blacklist.iter() {
             if host_in_href.ends_with(tld) {
                 println!("blacklist-tld-in-href: \"{}\"", host_in_href);
                 table.insert("blacklist-tld-in-href");
