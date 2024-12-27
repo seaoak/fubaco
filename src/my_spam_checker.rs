@@ -109,11 +109,13 @@ pub fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
 }
 
 pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
-    let name = normalize_string(message.from().map(|x| x.first().unwrap().name.clone().unwrap_or_default()).unwrap_or_default());
+    let name_raw = message.from().map(|x| x.first().unwrap().name.clone().unwrap_or_default()).unwrap_or_default();
+    let name = normalize_string(&name_raw);
     println!("From.name: \"{}\"", name);
     let address = normalize_string(message.from().map(|x| x.first().unwrap().address.clone().unwrap_or_default()).unwrap_or_default());
     println!("From.address: \"{}\"", address);
-    let subject = normalize_string(message.subject().unwrap_or_default());
+    let subject_raw = message.subject().unwrap_or_default();
+    let subject = normalize_string(subject_raw);
     println!("Subject: \"{}\"", subject);
     let destination = normalize_string(message.to().map(|x| x.first().map(|addr| addr.address.clone().unwrap()).unwrap_or_default()).unwrap_or_default()); // may be empty string
     println!("To.address: \"{}\"", destination);
@@ -192,11 +194,11 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
     assert!(!REGEX_NON_ENGLISH_ALPHABET.is_match("发")); // 簡体字の「発」
     assert!(REGEX_NON_ENGLISH_ALPHABET.is_match("В")); // キリル文字
     assert!(REGEX_NON_ENGLISH_ALPHABET.is_match("Д"));
-    if let Some(caps) = REGEX_NON_ENGLISH_ALPHABET.captures(&name) {
+    if let Some(caps) = REGEX_NON_ENGLISH_ALPHABET.captures(&name_raw) {
         println!("suspicious-alphabet-in-from: {}", &caps[1]);
         table.insert("suspicious-alphabet-in-from");
     }
-    if let Some(caps) = REGEX_NON_ENGLISH_ALPHABET.captures(&subject) {
+    if let Some(caps) = REGEX_NON_ENGLISH_ALPHABET.captures(&subject_raw) {
         println!("suspicious-alphabet-in-subject: {}", &caps[1]);
         table.insert("suspicious-alphabet-in-subject");
     }
