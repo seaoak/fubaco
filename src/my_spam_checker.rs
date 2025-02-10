@@ -226,6 +226,7 @@ pub fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
         let url = elem.value().attr("href").unwrap().trim();
         lazy_static! {
             static ref REGEX_URL_WITH_MAILTO: Regex = Regex::new(r"^mailto[:][-_.+=0-9a-z]+[@][-_.0-9a-z]+$").unwrap();
+            static ref REGEX_URL_WITH_TEL: Regex = Regex::new(r"^tel[:][-0-9]+$").unwrap();
             static ref REGEX_URL_WITH_NORMAL_HOST: Regex = Regex::new(r"^https?[:][/][/]([-_a-z0-9.]+)([/?#]\S*)?$").unwrap();
         }
         if url.len() == 0 {
@@ -238,6 +239,13 @@ pub fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
             if !REGEX_URL_WITH_MAILTO.is_match(url) {
                 println!("suspicious-mailto: \"{}\"", url);
                 table.insert("suspicious-mailto");
+            }
+            continue;
+        }
+        if url.starts_with("tel:") {
+            if !REGEX_URL_WITH_TEL.is_match(url) {
+                println!("suspicious-tel: \"{}\"", url);
+                table.insert("suspicious-tel");
             }
             continue;
         }
