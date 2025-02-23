@@ -13,6 +13,7 @@ use crate::my_message_parser::MyMessageParser;
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum SPFStatus {
     NONE,
+    NEUTRAL,
     PASS,
     FAIL,
     SOFTFAIL,
@@ -25,6 +26,7 @@ impl std::fmt::Display for SPFStatus {
     fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
         let s = match self {
             Self::NONE      => "none",
+            Self::NEUTRAL   => "neutral",
             Self::PASS      => "pass",
             Self::FAIL      => "fail",
             Self::SOFTFAIL  => "softfail",
@@ -42,6 +44,7 @@ impl std::str::FromStr for SPFStatus {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "none"         => Ok(Self::NONE),
+            "neutral"      => Ok(Self::NEUTRAL),
             "pass"         => Ok(Self::PASS),
             "fail"         => Ok(Self::FAIL),
             "softfail"     => Ok(Self::SOFTFAIL),
@@ -320,6 +323,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str, r
                 &SPFStatus::PERMERROR => return result,
                 &SPFStatus::TEMPERROR => return result,
                 &SPFStatus::NONE      => (), // ignored
+                &SPFStatus::NEUTRAL   => (), // ignored
                 &SPFStatus::FAIL      => (), // ignored
                 &SPFStatus::SOFTFAIL  => (), // ignored
                 &SPFStatus::HARDFAIL  => (), // ignored
