@@ -9,6 +9,10 @@ use regex::Regex;
 use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_message_parser::MyMessageParser;
 
+lazy_static! {
+    static ref DUMMY_DMARC_RECORD_FOR_ENFORCEMENT: String = "v=DMARC1;p=quarantine".to_string();
+}
+
 //====================================================================
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum IdentifierAlignmentStatus {
@@ -141,16 +145,17 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
     let dns_fields = {
         let fqdn = format!("_dmarc.{}", target_domain);
         let dns_record = match resolver.query_simple(&fqdn, "TXT") {
-            Ok(v) => {
-                if v.len() == 0 {
+            Ok(v) => match v.len() {
+                0 => {
                     println!("DMARC record is not found by DNS lookup: {}", fqdn);
-                    return DMARCResult::new(DMARCStatus::NONE, None);
-                }
-                if v.len() > 1 {
+                    println!("Enforce DMARC with dummy DNS record \"{}\"", *DUMMY_DMARC_RECORD_FOR_ENFORCEMENT);
+                    DUMMY_DMARC_RECORD_FOR_ENFORCEMENT.clone()
+                },
+                1 => v[0].clone(),
+                _ => {
                     println!("multiple DMARC records are found by DNS lookup ({}): {:?}", target_domain, v);
                     return DMARCResult::new(DMARCStatus::PERMERROR, None);
-                }
-                v[0].clone()
+                },
             },
             Err(e) => {
                 println!("DNS lookup failed for DMARC record ({}): {:?}", fqdn, e);
