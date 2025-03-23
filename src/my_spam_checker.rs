@@ -110,11 +110,13 @@ pub fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
 
 pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
     let name_raw = message.from().map(|x| x.first().unwrap().name.clone().unwrap_or_default()).unwrap_or_default();
+    println!("From.name_raw: \"{}\"", name_raw);
     let name = normalize_string(&name_raw);
     println!("From.name: \"{}\"", name);
     let address = normalize_string(message.from().map(|x| x.first().unwrap().address.clone().unwrap_or_default()).unwrap_or_default());
     println!("From.address: \"{}\"", address);
     let subject_raw = message.subject().unwrap_or_default();
+    println!("Subject_raw: \"{}\"", subject_raw);
     let subject = normalize_string(subject_raw);
     println!("Subject: \"{}\"", subject);
     let destination = normalize_string(message.to().map(|x| x.first().map(|addr| addr.address.clone().unwrap()).unwrap_or_default()).unwrap_or_default()); // may be empty string
@@ -183,6 +185,7 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
     if address == destination { // header.from is camoflaged with destination address
         table.insert("suspicious-from");
     }
+
     lazy_static! {
         static ref REGEX_NON_ENGLISH_ALPHABET: Regex = Regex::new(r"([\p{Alphabetic}&&[^\p{ASCII}\p{Hiragana}\p{Katakana}\p{Han}\p{Punct}ーａ-ｚＡ-Ｚ]])").unwrap();
     }
@@ -205,6 +208,24 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         println!("suspicious-alphabet-in-subject: {}", &caps[1]);
         table.insert("suspicious-alphabet-in-subject");
     }
+
+    lazy_static! {
+        // GeneralCategory="Cf" is https://www.unicode.org/reports/tr44/tr44-24.html#General_Category_Values
+        // GeneralCategory="Mn" is https://www.unicode.org/reports/tr24/
+        static ref REGEX_UNICODE_CONTROL_CODEPOINT: Regex = Regex::new(r"([\p{Mn}\p{Cf}])").unwrap();
+    }
+    assert!(REGEX_UNICODE_CONTROL_CODEPOINT.is_match("J͎"));
+    if let Some(caps) = REGEX_UNICODE_CONTROL_CODEPOINT.captures(&name_raw) {
+        // https://ja.wikipedia.org/wiki/Unicode一覧_0000-0FFF
+        println!("suspicious-control-codepoint-in-from: {} (codepoint=U+{:x})", &caps[1], u32::from(caps[1].chars().nth(0).unwrap()));
+        table.insert("suspicious-control-codepoint-in-from");
+    }
+    if let Some(caps) = REGEX_UNICODE_CONTROL_CODEPOINT.captures(&subject_raw) {
+        // https://ja.wikipedia.org/wiki/Unicode一覧_0000-0FFF
+        println!("suspicious-control-codepoint-in-subject: {} (codepoint=U+{:x})", &caps[1], u32::from(caps[1].chars().nth(0).unwrap()));
+        table.insert("suspicious-control-codepoint-in-subject");
+    }
+
     if !table.is_empty() {
         let mut list = table.into_iter().map(|s| s.to_string()).collect::<Vec<_>>();
         list.sort();
