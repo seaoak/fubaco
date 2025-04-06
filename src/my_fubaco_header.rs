@@ -57,6 +57,7 @@ pub fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
         my_spam_checker::spam_checker_blacklist_tld,
         my_spam_checker::spam_checker_suspicious_from,
         my_spam_checker::spam_checker_suspicious_hyperlink,
+        my_spam_checker::spam_checker_suspicious_link_in_plain_text,
         my_spam_checker::spam_checker_hidden_text_in_html,
         my_spam_checker::spam_checker_fully_html_encoded_text,
         my_spam_checker::spam_checker_suspicious_delivery_report,

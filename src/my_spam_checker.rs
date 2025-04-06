@@ -235,9 +235,67 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
     None
 }
 
-pub fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
+fn check_hyperlink(url: &str, text: Option<String>, table: &mut HashSet<&'static str>) {
     let blacklist = get_blacklist_tld().unwrap_or_default();
     let trusted_domains = get_trusted_domains().unwrap_or_default();
+    lazy_static! {
+        static ref REGEX_URL_WITH_MAILTO: Regex = Regex::new(r"^mailto[:][-_.+=0-9a-z]+[@][-_.0-9a-z]+$").unwrap();
+        static ref REGEX_URL_WITH_TEL: Regex = Regex::new(r"^tel[:][-0-9]+$").unwrap();
+        static ref REGEX_URL_WITH_NORMAL_HOST: Regex = Regex::new(r"^https?[:][/][/]([-_a-z0-9.]+)([/?#]\S*)?$").unwrap();
+    }
+    let url = url.trim();
+    if url.len() == 0 {
+        return; // skip dummy hyperlink (usually used for JavaScript)
+    }
+    if url.starts_with('#') {
+        return; // skip "in-page" hyperlink
+    }
+    if url.to_ascii_lowercase().starts_with("mailto:") {
+        if !REGEX_URL_WITH_MAILTO.is_match(url) {
+            println!("suspicious-mailto: \"{}\"", url);
+            table.insert("suspicious-mailto");
+        }
+        return;
+    }
+    if url.to_ascii_lowercase().starts_with("tel:") {
+        if !REGEX_URL_WITH_TEL.is_match(url) {
+            println!("suspicious-tel: \"{}\"", url);
+            table.insert("suspicious-tel");
+        }
+        return;
+    }
+    let host_in_href;
+    if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(url) {
+        host_in_href = caps[1].to_string();
+    } else {
+        // for example, "with port number", "with percent-encoded", "with BASIC authentication info"
+        println!("suspicious-href: \"{}\"", url);
+        table.insert("suspicious-href");
+        return;
+    }
+    if trusted_domains.iter().any(|d| d == &host_in_href || host_in_href.ends_with(&format!(".{}", d))) {
+        return; // skip later checks (treat as "OK")
+    }
+    for tld in blacklist.iter() {
+        if host_in_href.ends_with(tld) {
+            println!("blacklist-tld-in-href: \"{}\"", host_in_href);
+            table.insert("blacklist-tld-in-href");
+            break;
+        }
+    }
+    if let Some(text) = text {
+        let text = text.trim();
+        if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(text) {
+            let host_in_text = caps[1].to_string();
+            if host_in_href != host_in_text {
+                println!("camouflage-hyperlink: \"{}\" vs \"{}\"", host_in_href, host_in_text);
+                table.insert("camouflaged-hyperlink");
+            }
+        }
+    }
+}
+
+pub fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
     let html;
     match message.body_html(0) {
         Some(v) => html = v,
@@ -248,57 +306,36 @@ pub fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
     let mut table = HashSet::<&'static str>::new();
     for elem in dom.select(&selector) {
         let url = elem.value().attr("href").unwrap().trim();
-        lazy_static! {
-            static ref REGEX_URL_WITH_MAILTO: Regex = Regex::new(r"^mailto[:][-_.+=0-9a-z]+[@][-_.0-9a-z]+$").unwrap();
-            static ref REGEX_URL_WITH_TEL: Regex = Regex::new(r"^tel[:][-0-9]+$").unwrap();
-            static ref REGEX_URL_WITH_NORMAL_HOST: Regex = Regex::new(r"^https?[:][/][/]([-_a-z0-9.]+)([/?#]\S*)?$").unwrap();
-        }
-        if url.len() == 0 {
-            continue; // skip dummy hyperlink (usually used for JavaScript)
-        }
-        if url.starts_with('#') {
-            continue; // skip "in-page" hyperlink
-        }
-        if url.starts_with("mailto:") {
-            if !REGEX_URL_WITH_MAILTO.is_match(url) {
-                println!("suspicious-mailto: \"{}\"", url);
-                table.insert("suspicious-mailto");
-            }
-            continue;
-        }
-        if url.starts_with("tel:") {
-            if !REGEX_URL_WITH_TEL.is_match(url) {
-                println!("suspicious-tel: \"{}\"", url);
-                table.insert("suspicious-tel");
-            }
-            continue;
-        }
-        let host_in_href;
-        if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(url) {
-            host_in_href = caps[1].to_string();
-        } else {
-            // for example, "with port number", "with percent-encoded", "with BASIC authentication info"
-            println!("suspicious-href: \"{}\"", url);
-            table.insert("suspicious-href"); // camouflaged hostname
-            continue;
-        }
-        if trusted_domains.iter().any(|d| d == &host_in_href || host_in_href.ends_with(&format!(".{}", d))) {
-            continue; // skip later checks (treat as "OK")
-        }
-        for tld in blacklist.iter() {
-            if host_in_href.ends_with(tld) {
-                println!("blacklist-tld-in-href: \"{}\"", host_in_href);
-                table.insert("blacklist-tld-in-href");
-            }
-        }
         let text = elem.inner_html();
-        let text = text.trim();
-        if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(text) {
-            let host_in_text = caps[1].to_string();
-            if host_in_href != host_in_text {
-                println!("camouflage-hyperlink: \"{}\" vs \"{}\"", host_in_href, host_in_text);
-                table.insert("camouflaged-hyperlink");
-            }
+        let text = text.trim().to_owned();
+        check_hyperlink(url, Some(text), &mut table);
+    }
+    if !table.is_empty() {
+        let mut list = table.into_iter().map(|s| s.to_string()).collect::<Vec<String>>();
+        list.sort();
+        let text = list.join(" ");
+        return Some(text);
+    }
+    None
+}
+
+pub fn spam_checker_suspicious_link_in_plain_text(message: &Message) -> Option<String> {
+    let body_text;
+    match message.body_text(0) {
+        Some(v) => body_text = v,
+        None => return None,
+    }
+    let mut table = HashSet::<&'static str>::new();
+    lazy_static! {
+        static ref REGEX_LIKE_URL: Regex = Regex::new(r"(?i)(^|\s)(https?[:][/][/]\S+)(\s|$)").unwrap();
+    }
+    for line in body_text.lines() {
+        if line.len() > 1024 {
+            continue; // skip too long line (avoid DoS)
+        }
+        if let Some(caps) = REGEX_LIKE_URL.captures(line) {
+            let url = caps[2].as_ref();
+            check_hyperlink(url, None, &mut table);
         }
     }
     if !table.is_empty() {
