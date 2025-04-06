@@ -19,10 +19,9 @@ Cargo.lock
 /debug_*
 /dns_cache.json
 /mail-sample
-/nodejs_dkim
+/nodejs_*
 /pubkey.der
-/rust_dkimdo
-/rust_viadkim
+/rust_*
 /sample-*
 
 # backup files
