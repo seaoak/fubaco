@@ -72,18 +72,16 @@ fn get_trusted_domains() -> Result<Vec<String>> {
     Ok(list)
 }
 
-pub fn spam_checker_suspicious_envelop_from(message: &Message) -> Option<String> {
+pub fn spam_checker_suspicious_envelop_from(table: &mut HashSet<&'static str>, message: &Message) {
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
     let envelop_from = envelop_from.replace(&['<', '>'], "").to_lowercase().trim().to_string();
     println!("Evelop.from: \"{}\"", envelop_from);
     if envelop_from.len() == 0 {
-        Some("suspicious-envelop-from".to_string())
-    } else {
-        None
+        table.insert("suspicious-envelop-from");
     }
 }
 
-pub fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
+pub fn spam_checker_blacklist_tld(table: &mut HashSet<&'static str>, message: &Message) {
     let blacklist = get_blacklist_tld().unwrap_or_default();
     let header_from = message.from().map(|x| x.first().map(|addr| addr.address.clone().unwrap_or_default().to_string()).unwrap_or_default().to_lowercase()).unwrap_or_default();
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string().replace(&['<', '>'], "").to_lowercase(); // may be empty string
@@ -102,13 +100,11 @@ pub fn spam_checker_blacklist_tld(message: &Message) -> Option<String> {
         }
     }
     if is_spam {
-        Some("blacklist-tld".to_string())
-    } else {
-        None
+        table.insert("blacklist-tld");
     }
 }
 
-pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
+pub fn spam_checker_suspicious_from(table: &mut HashSet<&'static str>, message: &Message) {
     let name_raw = message.from().map(|x| x.first().unwrap().name.clone().unwrap_or_default()).unwrap_or_default();
     println!("From.name_raw: \"{}\"", name_raw);
     let name = normalize_string(&name_raw);
@@ -168,10 +164,9 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         (regex, prohibited_words)
     })();
 
-    let mut table = HashSet::<&'static str>::new();
     if trusted_regex.is_match(&address) {
         println!("skip trusted domain: {}", address);
-        return None;
+        return;
     }
     if !expected_from_address_regex.is_match(&address) {
         table.insert("suspicious-from");
@@ -225,17 +220,9 @@ pub fn spam_checker_suspicious_from(message: &Message) -> Option<String> {
         println!("suspicious-control-codepoint-in-subject: {} (codepoint=U+{:x})", &caps[1], u32::from(caps[1].chars().nth(0).unwrap()));
         table.insert("suspicious-control-codepoint-in-subject");
     }
-
-    if !table.is_empty() {
-        let mut list = table.into_iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        list.sort();
-        let text = list.join(" ");
-        return Some(text);
-    }
-    None
 }
 
-fn check_hyperlink(url: &str, text: Option<String>, table: &mut HashSet<&'static str>) {
+fn check_hyperlink(table: &mut HashSet<&'static str>, url: &str, text: Option<String>) {
     let blacklist = get_blacklist_tld().unwrap_or_default();
     let trusted_domains = get_trusted_domains().unwrap_or_default();
     lazy_static! {
@@ -295,37 +282,28 @@ fn check_hyperlink(url: &str, text: Option<String>, table: &mut HashSet<&'static
     }
 }
 
-pub fn spam_checker_suspicious_hyperlink(message: &Message) -> Option<String> {
+pub fn spam_checker_suspicious_hyperlink(table: &mut HashSet<&'static str>, message: &Message) {
     let html;
     match message.body_html(0) {
         Some(v) => html = v,
-        None => return None,
+        None => return,
     }
     let dom = scraper::Html::parse_document(&html);
     let selector = scraper::Selector::parse(r"a[href]").unwrap();
-    let mut table = HashSet::<&'static str>::new();
     for elem in dom.select(&selector) {
         let url = elem.value().attr("href").unwrap().trim();
         let text = elem.inner_html();
         let text = text.trim().to_owned();
-        check_hyperlink(url, Some(text), &mut table);
+        check_hyperlink(table, url, Some(text));
     }
-    if !table.is_empty() {
-        let mut list = table.into_iter().map(|s| s.to_string()).collect::<Vec<String>>();
-        list.sort();
-        let text = list.join(" ");
-        return Some(text);
-    }
-    None
 }
 
-pub fn spam_checker_suspicious_link_in_plain_text(message: &Message) -> Option<String> {
+pub fn spam_checker_suspicious_link_in_plain_text(table: &mut HashSet<&'static str>, message: &Message) {
     let body_text;
     match message.body_text(0) {
         Some(v) => body_text = v,
-        None => return None,
+        None => return,
     }
-    let mut table = HashSet::<&'static str>::new();
     lazy_static! {
         static ref REGEX_LIKE_URL: Regex = Regex::new(r"(?i)(^|\s)(https?[:][/][/]\S+)(\s|$)").unwrap();
     }
@@ -335,56 +313,47 @@ pub fn spam_checker_suspicious_link_in_plain_text(message: &Message) -> Option<S
         }
         if let Some(caps) = REGEX_LIKE_URL.captures(line) {
             let url = caps[2].as_ref();
-            check_hyperlink(url, None, &mut table);
+            check_hyperlink(table, url, None);
         }
     }
-    if !table.is_empty() {
-        let mut list = table.into_iter().map(|s| s.to_string()).collect::<Vec<String>>();
-        list.sort();
-        let text = list.join(" ");
-        return Some(text);
-    }
-    None
 }
 
 #[allow(unreachable_code, unused)]
-pub fn spam_checker_hidden_text_in_html(message: &Message) -> Option<String> {
-    return None; // temporally disable because some sender (Amazon, iCloud) use hidden text in HTML
+pub fn spam_checker_hidden_text_in_html(table: &mut HashSet<&'static str>, message: &Message) {
+    return; // temporally disable because some sender (Amazon, iCloud) use hidden text in HTML
     let html;
     match message.body_html(0) {
         Some(v) => html = v,
-        None => return None,
+        None => return,
     }
     lazy_static! {
         static ref REGEX_CSS_FOR_HIDDEN_TEXT: Regex = Regex::new(r"(?i)\bfont-size:\s*0").unwrap(); // case insensitive
     }
     if REGEX_CSS_FOR_HIDDEN_TEXT.is_match(&html) {
-        return Some("hidden-text-in-html".to_string());
+        table.insert("hidden-text-in-html");
     }
-    None
 }
 
-pub fn spam_checker_fully_html_encoded_text(message: &Message) -> Option<String> {
+pub fn spam_checker_fully_html_encoded_text(table: &mut HashSet<&'static str>, message: &Message) {
     // https://ja.wikipedia.org/wiki/文字参照
     // https://ja.wikipedia.org/wiki/Quoted-printable
     let text;
     match message.body_text(0) {
         Some(v) => text = v,
-        None => return None,
+        None => return,
     }
     lazy_static! {
         static ref REGEX_NUMERIC_CHARACTER_REFERENCE: Regex = Regex::new(r"([&][#](\d+|x[0-9a-fA-F]+)[;]){8}").unwrap();
     }
     if REGEX_NUMERIC_CHARACTER_REFERENCE.is_match(&text) {
-        return Some("fully-html-encoding-text".to_string());
+        table.insert("fully-html-encoding-text");
     }
-    None
 }
 
-pub fn spam_checker_suspicious_delivery_report(message: &Message) -> Option<String> {
+pub fn spam_checker_suspicious_delivery_report(table: &mut HashSet<&'static str>, message: &Message) {
     let from_address = message.from().map(|x| x.first().unwrap().address.clone().unwrap_or_default().to_ascii_lowercase()).unwrap_or_default();
     if !from_address.starts_with("postmaster@") {
-        return None;
+        return;
     }
     for part in message.parts.iter() {
         let mut is_target_part = false;
@@ -429,14 +398,13 @@ pub fn spam_checker_suspicious_delivery_report(message: &Message) -> Option<Stri
                 println!("delivery_report: report_domain={} destination_domain={}", domain1, domain2);
                 if domain1 != domain2 {
                     // report_domain may be an "open relay" mail server
-                    return Some("suspicious-delivery-report".to_string());
+                    table.insert("suspicious-delivery-report");
                 }
             },
             _ => {
                 println!("delivery report syntax error");
-                return Some("invalid-delivery-report-format".to_string());
+                table.insert("invalid-delivery-report-format");
             }
         }
     }
-    None
 }

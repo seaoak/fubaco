@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use mail_parser::MessageParser;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::my_dkim_verifier::{self, DKIMResult, DKIMStatus};
@@ -52,19 +53,25 @@ pub fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
         return Err(anyhow!("can not parse the message"));
     }
 
-    let mut spam_judgement: Vec<String> = [
-        my_spam_checker::spam_checker_suspicious_envelop_from,
-        my_spam_checker::spam_checker_blacklist_tld,
-        my_spam_checker::spam_checker_suspicious_from,
-        my_spam_checker::spam_checker_suspicious_hyperlink,
-        my_spam_checker::spam_checker_suspicious_link_in_plain_text,
-        my_spam_checker::spam_checker_hidden_text_in_html,
-        my_spam_checker::spam_checker_fully_html_encoded_text,
-        my_spam_checker::spam_checker_suspicious_delivery_report,
-    ].iter().filter_map(|f| f(&message)).collect();
-    if spam_judgement.len() == 0 {
-        spam_judgement.push("none".to_string());
-    }
+    let spam_judgement = {
+        let mut table = HashSet::<&'static str>::new();
+        [
+            my_spam_checker::spam_checker_suspicious_envelop_from,
+            my_spam_checker::spam_checker_blacklist_tld,
+            my_spam_checker::spam_checker_suspicious_from,
+            my_spam_checker::spam_checker_suspicious_hyperlink,
+            my_spam_checker::spam_checker_suspicious_link_in_plain_text,
+            my_spam_checker::spam_checker_hidden_text_in_html,
+            my_spam_checker::spam_checker_fully_html_encoded_text,
+            my_spam_checker::spam_checker_suspicious_delivery_report,
+        ].into_iter().for_each(|f| f(&mut table, &message));
+        if table.is_empty() {
+            table.insert("none");
+        }
+        let mut list = table.into_iter().collect::<Vec<&'static str>>();
+        list.sort();
+        list
+    };
 
     let table_of_authentication_results_header = message.get_authentication_results();
 
