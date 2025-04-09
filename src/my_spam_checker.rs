@@ -53,10 +53,10 @@ pub fn spam_checker_suspicious_from(table: &mut HashSet<&'static str>, message: 
         println!("skip trusted domain: {}", address);
         return;
     }
-    if !my_fqdn::is_valid_domain_by_guessing_from_text(&address, &name) {
+    if let Some(false) = my_fqdn::is_valid_domain_by_guessing_from_text(&address, &name) {
         table.insert("suspicious-from");
     }
-    if !my_fqdn::is_valid_domain_by_guessing_from_text(&address, &subject) {
+    if let Some(false) = my_fqdn::is_valid_domain_by_guessing_from_text(&address, &subject) {
         table.insert("suspicious-from");
     }
     if my_fqdn::is_prohibited_word_included(&name) {

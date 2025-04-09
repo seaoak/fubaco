@@ -116,7 +116,7 @@ pub fn is_prohibited_word_included(text: &str) -> bool {
     list.iter().any(|word| text.contains(word))
 }
 
-pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text: &str) -> bool {
+pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text: &str) -> Option<bool> {
     let fqdn = fqdn.trim().to_ascii_lowercase();
     let table = get_table_of_valid_domains().unwrap_or_default();
     let it = table.into_iter().filter(|(keyword, _domains)| text.contains(keyword));
@@ -124,15 +124,15 @@ pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text: &str) -> bool {
     let it = it.map(|s| s.trim_start_matches(['.', '@']).to_owned());
     let joined_string = it.map(|s| s.replace(".", "[.]")).collect::<Vec<_>>().join("|");
     if joined_string.len() == 0 {
-        return true; // no keyword is detected
+        return None; // no keyword is detected
     }
     let pattern_string = format!("(?i)[.@]({})$", joined_string); // case-insensitive
     let regex = match Regex::new(&pattern_string) {
         Ok(v) => v,
         Err(_e) => {
             println!("ERROR: REGEX for suspicious-from is invalid: {}", pattern_string);
-            return true;
+            return None;
         },
     };
-    regex.is_match(&fqdn)
+    Some(regex.is_match(&fqdn))
 }
