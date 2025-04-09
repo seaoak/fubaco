@@ -1,76 +1,12 @@
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::Path;
 
-use anyhow::Result;
 use mail_parser::Message;
-use kana::wide2ascii;
 use lazy_static::lazy_static;
 use regex::Regex;
 use scraper;
-use unicode_normalization::UnicodeNormalization;
 
-lazy_static! {
-    static ref SUSPICIOUS_LIST_FILENAME: String = "./list_suspicious_from.tsv".to_string();
-}
-
-fn normalize_string<P: AsRef<str>>(s: P) -> String {
-    // normalize string (Unicode NFKC, uppercase, no-whitespace, no-bullet)
-    let s: &str = s.as_ref();
-    let s = s.nfkc();
-    let s = String::from_iter(s);
-    let s = wide2ascii(&s);
-    let s = s.chars();
-    let s = s.filter(|c| !c.is_control());
-    let s = s.filter(|c| !c.is_whitespace());
-    // let s = s.filter(|c| !c.is_ascii_graphic());
-    let s = s.filter(|c| c.is_alphanumeric() || *c == '@' || *c == '.' || *c == '-' || *c == '_');
-    let s = String::from_iter(s);
-    // let s = s.replace(&[' ', '　', '・'], "");
-    let s = s.to_uppercase();
-    s
-}
-
-fn load_tsv_file<P: AsRef<Path>>(path: P) -> Result<Vec<Vec<String>>> {
-    let f = File::open(path)?;
-    let reader = BufReader::new(f);
-    let mut lines = Vec::new();
-    for line in reader.lines() {
-        let line = line?;
-        if line.starts_with("#") {
-            continue; // skip comment
-        }
-        let fields = line.split("\t").filter(|s| s.len() > 0).map(|s| s.to_string()).collect::<Vec<String>>();
-        if fields.len() == 0 {
-            continue; // skip empty line
-        }
-        lines.push(fields);
-    }
-    Ok(lines)
-}
-
-fn get_blacklist_tld() -> Result<Vec<String>> {
-    let lines = load_tsv_file(&*SUSPICIOUS_LIST_FILENAME).unwrap_or_default();
-    let it = lines.into_iter().filter(|l| l[0] == "@");
-    let it = it.filter(|l| l.len() > 1);
-    let it = it.flat_map(|l| l[1..].to_owned().into_iter());
-    let list = it.collect::<Vec<_>>();
-    assert!(list.iter().all(|s| s.starts_with('.')));
-    Ok(list)
-}
-
-fn get_trusted_domains() -> Result<Vec<String>> {
-    let lines = load_tsv_file(&*SUSPICIOUS_LIST_FILENAME)?;
-    let it = lines.into_iter().filter(|l| l[0] == "!");
-    let it = it.filter(|l| l.len() > 1);
-    let it = it.flat_map(|l| l[1..].to_owned().into_iter());
-    let it = it.chain(vec!["\0".to_string()].into_iter()); // add dummy for when "it" is empty
-    let list = it.collect::<Vec<_>>();
-    assert!(list.iter().all(|s| !s.starts_with('.'))); // redundant dot at the start of string is not allowed
-    assert!(list.iter().all(|s| !s.contains('@'))); // localpart is not allowed
-    Ok(list)
-}
+use crate::my_fqdn;
+use crate::my_str::normalize_string;
 
 pub fn spam_checker_suspicious_envelop_from(table: &mut HashSet<&'static str>, message: &Message) {
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
@@ -82,22 +18,17 @@ pub fn spam_checker_suspicious_envelop_from(table: &mut HashSet<&'static str>, m
 }
 
 pub fn spam_checker_blacklist_tld(table: &mut HashSet<&'static str>, message: &Message) {
-    let blacklist = get_blacklist_tld().unwrap_or_default();
     let header_from = message.from().map(|x| x.first().map(|addr| addr.address.clone().unwrap_or_default().to_string()).unwrap_or_default().to_lowercase()).unwrap_or_default();
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string().replace(&['<', '>'], "").to_lowercase(); // may be empty string
     println!("Evelop.from: \"{}\"", envelop_from);
     let mut is_spam = false;
-    for tld in blacklist.iter() {
-        if header_from.ends_with(tld) {
-            println!("blacklist-tld in from header address: \"{}\"", header_from);
-            is_spam = true;
-        }
+    if my_fqdn::is_blacklist_tld(&header_from) {
+        println!("blacklist-tld in from header address: \"{}\"", header_from);
+        is_spam = true;
     }
-    for tld in blacklist.iter() {
-        if envelop_from.ends_with(tld) {
-            println!("blacklist-tld in envelop from address: \"{}\"", envelop_from);
-            is_spam = true;
-        }
+    if my_fqdn::is_blacklist_tld(&envelop_from) {
+        println!("blacklist-tld in envelop from address: \"{}\"", envelop_from);
+        is_spam = true;
     }
     if is_spam {
         table.insert("blacklist-tld");
@@ -118,63 +49,20 @@ pub fn spam_checker_suspicious_from(table: &mut HashSet<&'static str>, message: 
     let destination = normalize_string(message.to().map(|x| x.first().map(|addr| addr.address.clone().unwrap()).unwrap_or_default()).unwrap_or_default()); // may be empty string
     println!("To.address: \"{}\"", destination);
 
-    let trusted_domains = get_trusted_domains().unwrap_or_default();
-    let trusted_pattern = trusted_domains.join("|").replace(".", "[.]");
-    let trusted_regex = Regex::new(&format!("(?i)[.@]({})$", trusted_pattern)).unwrap();
-
-    let (expected_from_address_regex, prohibited_words): (Regex, Vec<String>) = (|| {
-        lazy_static! {
-            static ref REGEX_ALWAYS_MATCH: Regex = Regex::new(r".").unwrap();
-        }
-        let lines = match load_tsv_file(&*SUSPICIOUS_LIST_FILENAME) {
-            Ok(v) => v,
-            Err(e) => {
-                println!("can not load \"{}\": {}", &*SUSPICIOUS_LIST_FILENAME, e);
-                return (REGEX_ALWAYS_MATCH.clone(), Vec::new());
-            },
-        };
-        assert!(lines.iter().all(|fields| fields.len() > 0));
-        let mut lines = lines.into_iter().filter(|l| l[0] != "@" && l[0] != "!").collect::<Vec<_>>();
-        for fields in &mut lines {
-            fields[0] = normalize_string(&fields[0]);
-        }
-        let (v1, v2): (Vec<Vec<String>>, Vec<Vec<String>>) = lines.into_iter().partition(|fields| fields.len() == 1);
-        let prohibited_words = v1.into_iter().map(|fields| fields[0].clone()).collect::<Vec<String>>();
-        let matched_lines = v2.into_iter().filter(|fields| name.contains(&fields[0]) || subject.contains(&fields[0])).collect::<Vec<Vec<String>>>();
-        if matched_lines.len() == 0 {
-            return (REGEX_ALWAYS_MATCH.clone(), prohibited_words);
-        }
-        let mut domains = Vec::new();
-        for fields in matched_lines.into_iter() { // merge all matched lines
-            assert!(fields.len() > 1);
-            domains.extend(fields.into_iter().skip(1));
-        }
-        assert_ne!(domains.len(), 0);
-        assert!(domains.iter().all(|s| !s.starts_with('.'))); // redundant dot at the start of string is not allowed
-        assert!(domains.iter().all(|s| !s.contains('@'))); // localpart is not allowed
-        let joined_string = domains.into_iter().map(|s| s.replace(".", "[.]")).collect::<Vec<String>>().join("|");
-        let pattern_string = format!("(?i)[.@]({})$", joined_string); // case-insensitive
-        let regex = match Regex::new(&pattern_string) {
-            Ok(v) => v,
-            Err(_e) => {
-                println!("REGEX for suspicious-from is invalid: {}", pattern_string);
-                return (REGEX_ALWAYS_MATCH.clone(), prohibited_words);
-            },
-        };
-        (regex, prohibited_words)
-    })();
-
-    if trusted_regex.is_match(&address) {
+    if my_fqdn::is_trusted_domain(&address) {
         println!("skip trusted domain: {}", address);
         return;
     }
-    if !expected_from_address_regex.is_match(&address) {
+    if !my_fqdn::is_valid_domain_by_guessing_from_text(&address, &name) {
         table.insert("suspicious-from");
     }
-    if prohibited_words.iter().any(|s| name.contains(s)) {
+    if !my_fqdn::is_valid_domain_by_guessing_from_text(&address, &subject) {
+        table.insert("suspicious-from");
+    }
+    if my_fqdn::is_prohibited_word_included(&name) {
         table.insert("prohibited-word-in-from");
     }
-    if prohibited_words.iter().any(|s| subject.contains(s)) {
+    if my_fqdn::is_prohibited_word_included(&subject) {
         table.insert("prohibited-word-in-subject");
     }
     if address == destination { // header.from is camoflaged with destination address
@@ -223,8 +111,6 @@ pub fn spam_checker_suspicious_from(table: &mut HashSet<&'static str>, message: 
 }
 
 fn check_hyperlink(table: &mut HashSet<&'static str>, url: &str, text: Option<String>) {
-    let blacklist = get_blacklist_tld().unwrap_or_default();
-    let trusted_domains = get_trusted_domains().unwrap_or_default();
     lazy_static! {
         static ref REGEX_URL_WITH_MAILTO: Regex = Regex::new(r"^mailto[:][-_.+=0-9a-z]+[@][-_.0-9a-z]+$").unwrap();
         static ref REGEX_URL_WITH_TEL: Regex = Regex::new(r"^tel[:][-0-9]+$").unwrap();
@@ -260,15 +146,12 @@ fn check_hyperlink(table: &mut HashSet<&'static str>, url: &str, text: Option<St
         table.insert("suspicious-href");
         return;
     }
-    if trusted_domains.iter().any(|d| d == &host_in_href || host_in_href.ends_with(&format!(".{}", d))) {
+    if my_fqdn::is_trusted_domain(&host_in_href) {
         return; // skip later checks (treat as "OK")
     }
-    for tld in blacklist.iter() {
-        if host_in_href.ends_with(tld) {
-            println!("blacklist-tld-in-href: \"{}\"", host_in_href);
-            table.insert("blacklist-tld-in-href");
-            break;
-        }
+    if my_fqdn::is_blacklist_tld(&host_in_href) {
+        println!("blacklist-tld-in-href: \"{}\"", host_in_href);
+        table.insert("blacklist-tld-in-href");
     }
     if let Some(text) = text {
         let text = text.trim();

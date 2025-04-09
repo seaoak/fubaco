@@ -17,11 +17,13 @@ mod my_disconnect;
 mod my_dkim_verifier;
 mod my_dns_resolver;
 mod my_dmarc_verifier;
+mod my_fqdn;
 mod my_fubaco_header;
 mod my_message_parser;
 mod my_pop3_bridge;
 mod my_spam_checker;
 mod my_spf_verifier;
+mod my_str;
 mod my_text_line_stream;
 mod pop3_upstream;
 
