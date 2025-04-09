@@ -76,20 +76,10 @@ pub fn spam_checker_suspicious_from(table: &mut HashSet<&'static str>, message: 
         table.insert("suspicious-alphabet-in-subject");
     }
 
-    lazy_static! {
-        // GeneralCategory="Cf" is https://www.unicode.org/reports/tr44/tr44-24.html#General_Category_Values
-        // GeneralCategory="Mn" is https://www.unicode.org/reports/tr24/
-        static ref REGEX_UNICODE_CONTROL_CODEPOINT: Regex = Regex::new(r"([\p{Mn}\p{Cf}])").unwrap();
-    }
-    assert!(REGEX_UNICODE_CONTROL_CODEPOINT.is_match("J͎"));
-    if let Some(caps) = REGEX_UNICODE_CONTROL_CODEPOINT.captures(&name_raw) {
-        // https://ja.wikipedia.org/wiki/Unicode一覧_0000-0FFF
-        println!("suspicious-control-codepoint-in-from: {} (codepoint=U+{:x})", &caps[1], u32::from(caps[1].chars().nth(0).unwrap()));
+    if is_unicode_control_codepoint_included(&name_raw) {
         table.insert("suspicious-control-codepoint-in-from");
     }
-    if let Some(caps) = REGEX_UNICODE_CONTROL_CODEPOINT.captures(&subject_raw) {
-        // https://ja.wikipedia.org/wiki/Unicode一覧_0000-0FFF
-        println!("suspicious-control-codepoint-in-subject: {} (codepoint=U+{:x})", &caps[1], u32::from(caps[1].chars().nth(0).unwrap()));
+    if is_unicode_control_codepoint_included(&subject_raw) {
         table.insert("suspicious-control-codepoint-in-subject");
     }
 }
