@@ -6,7 +6,7 @@ use regex::Regex;
 use scraper;
 
 use crate::my_fqdn;
-use crate::my_str::normalize_string;
+use crate::my_str::*;
 
 pub fn spam_checker_suspicious_envelop_from(table: &mut HashSet<&'static str>, message: &Message) {
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
@@ -69,26 +69,10 @@ pub fn spam_checker_suspicious_from(table: &mut HashSet<&'static str>, message: 
         table.insert("suspicious-from");
     }
 
-    lazy_static! {
-        static ref REGEX_NON_ENGLISH_ALPHABET: Regex = Regex::new(r"([\p{Alphabetic}&&[^\p{ASCII}\p{Hiragana}\p{Katakana}\p{Han}\p{Punct}ーａ-ｚＡ-Ｚ]])").unwrap();
-    }
-    assert!(!REGEX_NON_ENGLISH_ALPHABET.is_match("Ｖ")); // 全角アルファベットは許容する
-    assert!(!REGEX_NON_ENGLISH_ALPHABET.is_match("５")); // 全角数字は許容する
-    assert!(!REGEX_NON_ENGLISH_ALPHABET.is_match("＋")); // 全角のASCII記号は許容する
-    assert!(!REGEX_NON_ENGLISH_ALPHABET.is_match("𠮷")); // \u9FFF より大きいコードポイントの漢字
-    assert!(!REGEX_NON_ENGLISH_ALPHABET.is_match("賣")); // 繁体字の「売」
-    assert!(!REGEX_NON_ENGLISH_ALPHABET.is_match("卖")); // 簡体字の「売」
-    assert!(REGEX_NON_ENGLISH_ALPHABET.is_match("프로그래밍")); // ハングルで「プログラミング」
-    assert!(!REGEX_NON_ENGLISH_ALPHABET.is_match("發")); // 繁体字の「発」
-    assert!(!REGEX_NON_ENGLISH_ALPHABET.is_match("发")); // 簡体字の「発」
-    assert!(REGEX_NON_ENGLISH_ALPHABET.is_match("В")); // キリル文字
-    assert!(REGEX_NON_ENGLISH_ALPHABET.is_match("Д"));
-    if let Some(caps) = REGEX_NON_ENGLISH_ALPHABET.captures(&name_raw) {
-        println!("suspicious-alphabet-in-from: {}", &caps[1]);
+    if is_non_english_alphabet_included(&name_raw) {
         table.insert("suspicious-alphabet-in-from");
     }
-    if let Some(caps) = REGEX_NON_ENGLISH_ALPHABET.captures(&subject_raw) {
-        println!("suspicious-alphabet-in-subject: {}", &caps[1]);
+    if is_non_english_alphabet_included(&subject_raw) {
         table.insert("suspicious-alphabet-in-subject");
     }
 
