@@ -37,7 +37,7 @@ fn load_tsv_file<P: AsRef<Path>>(path: P) -> Result<Vec<Vec<String>>> {
 }
 
 fn normalize_domain_string(text: &str) -> String {
-    text.trim_start_matches(['.', '@']).trim_end_matches('.').to_ascii_lowercase()
+    text.trim().trim_start_matches(['.', '@']).trim_end_matches('.').to_ascii_lowercase()
 }
 
 fn get_blacklist_tld() -> Result<Vec<String>> {
@@ -93,7 +93,7 @@ fn get_table_of_valid_domains() -> Result<HashMap<String, Vec<String>>> {
 
 //================================================================================
 pub fn is_blacklist_tld(fqdn: &str) -> bool {
-    let fqdn = fqdn.trim().to_ascii_lowercase();
+    let fqdn = normalize_domain_string(fqdn); // just to make sure
     let blacklist = get_blacklist_tld().unwrap_or_default();
     for tld in blacklist.iter() {
         if fqdn.ends_with(tld) {
@@ -104,10 +104,10 @@ pub fn is_blacklist_tld(fqdn: &str) -> bool {
 }
 
 pub fn is_trusted_domain(fqdn: &str) -> bool {
-    let fqdn = fqdn.trim().to_ascii_lowercase();
+    let fqdn = normalize_domain_string(fqdn); // just to make sure
     let trusted_domains = get_trusted_domains().unwrap_or_default();
     let trusted_pattern = trusted_domains.join("|").replace(".", "[.]");
-    let trusted_regex = Regex::new(&format!("(?i)[.@]({})$", trusted_pattern)).unwrap();
+    let trusted_regex = Regex::new(&format!("(?i)(^|[.@])({})$", trusted_pattern)).unwrap();
     trusted_regex.is_match(&fqdn)
 }
 
@@ -117,7 +117,7 @@ pub fn is_prohibited_word_included(text: &str) -> bool {
 }
 
 pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text: &str) -> Option<bool> {
-    let fqdn = fqdn.trim().to_ascii_lowercase();
+    let fqdn = normalize_domain_string(fqdn); // just to make sure
     let table = get_table_of_valid_domains().unwrap_or_default();
     let it = table.into_iter().filter(|(keyword, _domains)| text.contains(keyword));
     let it = it.flat_map(|(_keyword, domains)| domains.into_iter());
