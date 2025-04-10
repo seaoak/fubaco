@@ -41,7 +41,7 @@ fn normalize_domain_string(text: &str) -> String {
 }
 
 fn get_blacklist_tld() -> Result<Vec<String>> {
-    let lines = load_tsv_file(&*SUSPICIOUS_LIST_FILENAME).unwrap_or_default();
+    let lines = load_tsv_file(&*SUSPICIOUS_LIST_FILENAME)?;
     let it = lines.iter().filter(|l| l[0] == "@");
     let it = it.filter(|l| l.len() > 1);
     let it = it.flat_map(|l| l[1..].iter());
@@ -120,32 +120,42 @@ pub fn extract_fqdn_in_url_with_validation(url: &str) -> Option<String> {
 
 pub fn is_blacklist_tld(fqdn: &str) -> bool {
     let fqdn = normalize_domain_string(fqdn); // just to make sure
-    let blacklist = get_blacklist_tld().unwrap_or_default();
-    for tld in blacklist.iter() {
-        if fqdn.ends_with(tld) {
-            return true;
-        }
+    lazy_static! {
+        static ref BLACKLIST: Vec<String> = get_blacklist_tld().unwrap_or_default();
     }
-    false
+    BLACKLIST.iter().any(|tld| fqdn.ends_with(tld))
 }
 
 pub fn is_trusted_domain(fqdn: &str) -> bool {
     let fqdn = normalize_domain_string(fqdn); // just to make sure
-    let trusted_domains = get_trusted_domains().unwrap_or_default();
-    let trusted_pattern = trusted_domains.iter().map(|s| regex::escape(s)).collect::<Vec<_>>().join("|");
-    let trusted_regex = Regex::new(&format!("(?i)(^|[.@])({})$", trusted_pattern)).unwrap();
-    trusted_regex.is_match(&fqdn)
+    lazy_static! {
+        static ref REGEX_FOR_TRUSTED_DOMAIN: Regex = {
+            let domain_list = get_trusted_domains().unwrap_or_default();
+            if domain_list.len() == 0 {
+                Regex::new(r"^[^\s\S]").unwrap() // never matching pattern
+            } else {
+                let joined_string = domain_list.into_iter().map(|s| regex::escape(&s)).collect::<Vec<_>>().join("|");
+                Regex::new(&format!("(?i)(^|[.@])({})$", joined_string)).unwrap()
+            }
+        };
+    }
+    REGEX_FOR_TRUSTED_DOMAIN.is_match(&fqdn)
 }
 
 pub fn is_prohibited_word_included(text: &str) -> bool {
-    let list = get_prohibited_words().unwrap_or_default();
-    list.iter().any(|word| text.contains(word))
+    let text = normalize_string(text); // jsut to make sure
+    lazy_static! {
+        static ref PROHIBITED_WORDS: Vec<String> = get_prohibited_words().unwrap_or_default();
+    }
+    PROHIBITED_WORDS.iter().any(|word| text.contains(word))
 }
 
 pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text: &str) -> Option<bool> {
     let fqdn = normalize_domain_string(fqdn); // just to make sure
-    let table = get_table_of_valid_domains().unwrap_or_default();
-    let it = table.into_iter().filter(|(keyword, _domains)| text.contains(keyword));
+    lazy_static! {
+        static ref TABLE_OF_VALID_DOMAINS: HashMap<String, Vec<String>> = get_table_of_valid_domains().unwrap_or_default();
+    }
+    let it = TABLE_OF_VALID_DOMAINS.iter().filter(|(keyword, _domains)| text.contains(*keyword));
     let it = it.flat_map(|(_keyword, domains)| domains.into_iter());
     let it = it.map(|s| s.trim_start_matches(['.', '@']).to_owned());
     let joined_string = it.map(|s| regex::escape(&s)).collect::<Vec<_>>().join("|");
