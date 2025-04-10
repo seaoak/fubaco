@@ -90,7 +90,7 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
             _ => unreachable!(), // unexpected type for "Return-Path" header
         };
         let envelop_from = address.replace(&['<', '>'], "").to_lowercase().trim().to_string();
-        println!("Evelop.from: \"{}\"", envelop_from);
+        println!("Envelop.from: \"{}\"", envelop_from);
         if envelop_from.len() == 0 {
             None
         } else {

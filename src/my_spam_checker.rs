@@ -11,7 +11,7 @@ use crate::my_str::*;
 pub fn spam_checker_suspicious_envelop_from(table: &mut HashSet<&'static str>, message: &Message) {
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
     let envelop_from = envelop_from.replace(&['<', '>'], "").to_lowercase().trim().to_string();
-    println!("Evelop.from: \"{}\"", envelop_from);
+    println!("Envelop.from: \"{}\"", envelop_from);
     if envelop_from.len() == 0 {
         table.insert("suspicious-envelop-from");
     }
@@ -20,7 +20,7 @@ pub fn spam_checker_suspicious_envelop_from(table: &mut HashSet<&'static str>, m
 pub fn spam_checker_blacklist_tld(table: &mut HashSet<&'static str>, message: &Message) {
     let header_from = message.from().map(|x| x.first().map(|addr| addr.address.clone().unwrap_or_default().to_string()).unwrap_or_default().to_lowercase()).unwrap_or_default();
     let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string().replace(&['<', '>'], "").to_lowercase(); // may be empty string
-    println!("Evelop.from: \"{}\"", envelop_from);
+    println!("Envelop.from: \"{}\"", envelop_from);
     let mut is_spam = false;
     if my_fqdn::is_blacklist_tld(&header_from) {
         println!("blacklist-tld in from header address: \"{}\"", header_from);
