@@ -10,6 +10,7 @@ use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_message_parser::MyMessageParser;
 use crate::my_spam_checker;
 use crate::my_spf_verifier::{self, SPFResult, SPFStatus};
+use crate::my_str;
 
 lazy_static! {
     pub static ref FUBACO_HEADER_TOTAL_SIZE: usize = 512; // (78+2)*6+(30+2)
@@ -46,8 +47,12 @@ fn make_fubaco_padding_header(nbytes: usize) -> String { // generate just-nbyte-
 }
 
 pub fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
+    let fixed_message_u8 = my_str::fix_incorrect_quoted_printable_text(message_u8);
+    if fixed_message_u8.len() != message_u8.len() {
+        println!("fixed_message_u8: {} bytes ({:+})", fixed_message_u8.len(), fixed_message_u8.len() as isize - message_u8.len() as isize);
+    }
     let message;
-    if let Some(v) = MessageParser::default().parse(message_u8) {
+    if let Some(v) = MessageParser::default().parse(&fixed_message_u8) {
         message = v;
     } else {
         return Err(anyhow!("can not parse the message"));
