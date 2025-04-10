@@ -132,7 +132,7 @@ pub fn is_blacklist_tld(fqdn: &str) -> bool {
 pub fn is_trusted_domain(fqdn: &str) -> bool {
     let fqdn = normalize_domain_string(fqdn); // just to make sure
     let trusted_domains = get_trusted_domains().unwrap_or_default();
-    let trusted_pattern = trusted_domains.join("|").replace(".", "[.]");
+    let trusted_pattern = trusted_domains.iter().map(|s| regex::escape(s)).collect::<Vec<_>>().join("|");
     let trusted_regex = Regex::new(&format!("(?i)(^|[.@])({})$", trusted_pattern)).unwrap();
     trusted_regex.is_match(&fqdn)
 }
@@ -148,7 +148,7 @@ pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text: &str) -> Option<b
     let it = table.into_iter().filter(|(keyword, _domains)| text.contains(keyword));
     let it = it.flat_map(|(_keyword, domains)| domains.into_iter());
     let it = it.map(|s| s.trim_start_matches(['.', '@']).to_owned());
-    let joined_string = it.map(|s| s.replace(".", "[.]")).collect::<Vec<_>>().join("|");
+    let joined_string = it.map(|s| regex::escape(&s)).collect::<Vec<_>>().join("|");
     if joined_string.len() == 0 {
         return None; // no keyword is detected
     }
