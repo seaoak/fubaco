@@ -116,7 +116,7 @@ pub fn fix_incorrect_quoted_printable_text(raw_u8: &[u8]) -> Vec<u8> {
     if let Some(encoding) = get_header_value(&text, "Content-Transfer-Encoding: ") {
         if encoding.to_ascii_lowercase().contains("quoted-printable") {
             // fix incorrect quoted-printable encoding
-            let fixed = body_part.replace("=\r\n..", "=\r\n.");
+            let fixed = body_part.replace("\r\n..", "\r\n.");
             if fixed.len() != body_part.len() {
                 println!("Fix incorrect quoted-printable encoding: {}", body_part.len() - fixed.len());
             }
