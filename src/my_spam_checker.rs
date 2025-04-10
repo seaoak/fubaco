@@ -88,7 +88,6 @@ fn check_hyperlink(table: &mut HashSet<&'static str>, url: &str, text: Option<St
     lazy_static! {
         static ref REGEX_URL_WITH_MAILTO: Regex = Regex::new(r"^mailto[:][-_.+=0-9a-z]+[@][-_.0-9a-z]+$").unwrap();
         static ref REGEX_URL_WITH_TEL: Regex = Regex::new(r"^tel[:][-0-9]+$").unwrap();
-        static ref REGEX_URL_WITH_NORMAL_HOST: Regex = Regex::new(r"^https?[:][/][/]([-_a-z0-9.]+)([/?#]\S*)?$").unwrap();
     }
     let url = url.trim();
     if url.len() == 0 {
@@ -112,10 +111,9 @@ fn check_hyperlink(table: &mut HashSet<&'static str>, url: &str, text: Option<St
         return;
     }
     let host_in_href;
-    if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(url) {
-        host_in_href = caps[1].to_string();
+    if let Some(host) = my_fqdn::extract_fqdn_in_url_with_validation(url) {
+        host_in_href = host;
     } else {
-        // for example, "with port number", "with percent-encoded", "with BASIC authentication info"
         println!("suspicious-href: \"{}\"", url);
         table.insert("suspicious-href");
         return;
@@ -129,8 +127,7 @@ fn check_hyperlink(table: &mut HashSet<&'static str>, url: &str, text: Option<St
     }
     if let Some(text) = text {
         let text = text.trim();
-        if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(text) {
-            let host_in_text = caps[1].to_string();
+        if let Some(host_in_text) = my_fqdn::extract_fqdn_in_url_with_validation(&text) {
             if host_in_href != host_in_text {
                 println!("camouflage-hyperlink: \"{}\" vs \"{}\"", host_in_href, host_in_text);
                 table.insert("camouflaged-hyperlink");

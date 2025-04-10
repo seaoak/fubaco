@@ -7,7 +7,7 @@ use anyhow::Result;
 use lazy_static::lazy_static;
 use regex::Regex;
 
-use crate::my_str::normalize_string;
+use crate::my_str::*;
 
 lazy_static! {
     static ref SUSPICIOUS_LIST_FILENAME: String = "./list_suspicious_from.tsv".to_string();
@@ -92,6 +92,32 @@ fn get_table_of_valid_domains() -> Result<HashMap<String, Vec<String>>> {
 
 
 //================================================================================
+pub fn extract_fqdn_in_url_with_validation(url: &str) -> Option<String> {
+    lazy_static! {
+        static ref REGEX_URL_WITH_NORMAL_HOST: Regex = Regex::new(r"^https?[:][/][/]([-a-z0-9.]+)([/?#]\S*)?$").unwrap();
+    }
+    if url.len() > 1024 {
+        return None; // too long string (avoid DoS)
+    }
+    let url = url.trim().to_ascii_lowercase();
+    let fqdn;
+    if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(&url) {
+        fqdn = caps[1].to_string();
+    } else {
+        return None; // for example, "with port number", "with percent-encoded", "with BASIC authentication info"
+    }
+    if fqdn.starts_with('.') || fqdn.ends_with('.') {
+        return None;
+    }
+    if fqdn.contains("..") {
+        return None;
+    }
+    if !fqdn.contains('.') {
+        return None; // such as "localhost"
+    }
+    Some(fqdn)
+}
+
 pub fn is_blacklist_tld(fqdn: &str) -> bool {
     let fqdn = normalize_domain_string(fqdn); // just to make sure
     let blacklist = get_blacklist_tld().unwrap_or_default();
