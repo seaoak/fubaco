@@ -2,7 +2,6 @@ use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use mail_parser::MessageParser;
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use crate::my_dkim_verifier::{self, DKIMResult, DKIMStatus};
 use crate::my_dmarc_verifier::{self, DMARCResult, DMARCStatus};
@@ -14,10 +13,6 @@ use crate::my_str;
 
 lazy_static! {
     pub static ref FUBACO_HEADER_TOTAL_SIZE: usize = 512; // (78+2)*6+(30+2)
-}
-
-lazy_static! {
-    static ref MY_DNS_RESOLVER: Arc<MyDNSResolver> = Arc::new(MyDNSResolver::new());
 }
 
 fn intersect_vec<'a, 'b, S>(a: &'a [S], b: &'b [S]) -> Vec<&'a S>
@@ -46,7 +41,7 @@ fn make_fubaco_padding_header(nbytes: usize) -> String { // generate just-nbyte-
     buf
 }
 
-pub fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
+pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Result<String> {
     let fixed_message_u8 = my_str::fix_incorrect_quoted_printable_text(message_u8);
     if fixed_message_u8.len() != message_u8.len() {
         println!("fixed_message_u8: {} bytes ({:+})", fixed_message_u8.len(), fixed_message_u8.len() as isize - message_u8.len() as isize);
@@ -80,7 +75,7 @@ pub fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
 
     let table_of_authentication_results_header = message.get_authentication_results();
 
-    let mut spf_result = my_spf_verifier::spf_verify(&message, &MY_DNS_RESOLVER);
+    let mut spf_result = my_spf_verifier::spf_verify(&message, resolver);
     if let Some(table) = &table_of_authentication_results_header {
         if let Some(mx_spf_status) = table.get("spf") {
             let mx_spf_status = mx_spf_status.parse::<SPFStatus>().unwrap(); // TODO: unknonw string may have to be an error, not panic
@@ -97,7 +92,7 @@ pub fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
             }
         }
     }
-    let mut dkim_result = my_dkim_verifier::dkim_verify(&message, &MY_DNS_RESOLVER);
+    let mut dkim_result = my_dkim_verifier::dkim_verify(&message, resolver);
     if let Some(table) = &table_of_authentication_results_header {
         let mx_label = ["dkim", "dkim-adsp"].into_iter().filter(|s| table.contains_key(*s)).take(1).next();
         if let Some(mx_label) = mx_label {
@@ -128,7 +123,7 @@ pub fn make_fubaco_headers(message_u8: &[u8]) -> Result<String> {
         } else {
             Vec::new()
         };
-        dmarc_result = my_dmarc_verifier::dmarc_verify(&message, &spf_domain_list, &dkim_domain_list, &MY_DNS_RESOLVER);
+        dmarc_result = my_dmarc_verifier::dmarc_verify(&message, &spf_domain_list, &dkim_domain_list, resolver);
         if let Some(table) = &table_of_authentication_results_header {
             if let Some(mx_dmarc_status) = table.get("dmarc") {
                 let mx_dmarc_status = mx_dmarc_status.parse::<DMARCStatus>().unwrap(); // TODO: unknown string may have to be an error, not panic

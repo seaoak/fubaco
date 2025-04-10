@@ -244,7 +244,7 @@ fn test_spam_checker_with_local_files() -> Result<()> {
         let mut reader = BufReader::new(f);
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf)?;
-        let fubaco_headers = my_fubaco_header::make_fubaco_headers(&buf)?;
+        let fubaco_headers = my_fubaco_header::make_fubaco_headers(&buf, &MY_DNS_RESOLVER)?;
         print!("{}", fubaco_headers);
         lazy_static! {
             static ref REGEX_FILENAME_AS_SUCCESSFUL: Regex = Regex::new(r"[-._](ok|pass|valid)[-._]").unwrap();

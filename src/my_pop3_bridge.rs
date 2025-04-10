@@ -138,7 +138,12 @@ fn parse_response_for_list_command<S>(response_lines: &[u8]) -> Result<Vec<(Mess
     Ok(list)
 }
 
-fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, downstream_stream: &mut MyTextLineStream<T>, database: &mut HashMap<UniqueID, MessageInfo>) -> Result<()>
+fn process_pop3_transaction<S, T>(
+    upstream_stream: &mut MyTextLineStream<S>,
+    downstream_stream: &mut MyTextLineStream<T>,
+    database: &mut HashMap<UniqueID, MessageInfo>,
+    resolver: &MyDNSResolver,
+) -> Result<()>
     where S: Read + Write + MyDisconnect,
           T: Read + Write + MyDisconnect,
 {
@@ -341,7 +346,7 @@ fn process_pop3_transaction<S, T>(upstream_stream: &mut MyTextLineStream<S>, dow
                     fubaco_headers = info.fubaco_headers.clone();
                 } else {
                     // TODO: SPAM checker
-                    fubaco_headers = my_fubaco_header::make_fubaco_headers(body_u8)?;
+                    fubaco_headers = my_fubaco_header::make_fubaco_headers(body_u8, resolver)?;
                     println!("add fubaco headers:\n----------\n{}----------", fubaco_headers);
                     unique_id_to_message_info.insert(
                         unique_id.clone(),
@@ -562,7 +567,7 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                     assert!(status_line.starts_with("+OK"));
                 }
 
-                process_pop3_transaction(&mut upstream_stream, &mut downstream_stream, database.get_mut(&username).unwrap())?;
+                process_pop3_transaction(&mut upstream_stream, &mut downstream_stream, database.get_mut(&username).unwrap(), resolver)?;
 
                 // https://serde.rs/derive.html
                 save_db_file(&serde_json::to_string(&database).unwrap())?;
