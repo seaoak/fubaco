@@ -26,6 +26,7 @@ pub fn init() {
         .without_time()
         .with_ansi(false)
         .with_file(false)
+        .with_level(false)
         .with_line_number(false)
         .with_target(false)
         .with_thread_ids(false)
@@ -40,6 +41,7 @@ pub fn init() {
             .with_timer(timer) // with local timestamp
             .with_ansi(false)
             .with_file(false)
+            .with_level(false)
             .with_line_number(false)
             .with_target(false)
             .with_thread_ids(false)
