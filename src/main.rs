@@ -20,6 +20,7 @@ mod my_dmarc_verifier;
 mod my_fqdn;
 mod my_fubaco_header;
 mod my_message_parser;
+mod my_logger;
 mod my_pop3_bridge;
 mod my_spam_checker;
 mod my_spf_verifier;
@@ -29,12 +30,17 @@ mod pop3_upstream;
 
 use my_crypto::*;
 use my_dns_resolver::MyDNSResolver;
+use my_logger::prelude::*;
 use my_text_line_stream::MyTextLineStream;
 use pop3_upstream::*;
 
 //====================================================================
 fn main() {
     println!("Hello, world!");
+
+    my_logger::init();
+    debug!("This is debug message for MyLogger");
+    warn!("This is warning message for MyLogger");
 
     let fubaco_mode = env::var("FUBACO_MODE").unwrap_or_default();
 
