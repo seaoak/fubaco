@@ -46,7 +46,6 @@ fn get_blacklist_tld() -> Result<Vec<String>> {
     let it = it.filter(|l| l.len() > 1);
     let it = it.flat_map(|l| l[1..].iter());
     let it = it.map(|s| normalize_domain_string(s));
-    let it = it.map(|s| format!(".{}", s));
     let list = it.collect::<Vec<_>>();
     Ok(list)
 }
@@ -121,9 +120,19 @@ pub fn extract_fqdn_in_url_with_validation(url: &str) -> Option<String> {
 pub fn is_blacklist_tld(fqdn: &str) -> bool {
     let fqdn = normalize_domain_string(fqdn); // just to make sure
     lazy_static! {
-        static ref BLACKLIST: Vec<String> = get_blacklist_tld().unwrap_or_default();
+        static ref REGEX_BLACKLIST_DOMAIN: Regex = {
+            let list = get_blacklist_tld().unwrap_or_default();
+            if list.is_empty() {
+                Regex::new(r"^[^\s\S]").unwrap() // never matching pattern
+            } else {
+                assert!(list.iter().all(|s| !s.starts_with('.')));
+                let list = list.into_iter().map(|s| regex::escape(&s)).collect::<Vec<_>>();
+                let pattern = format!("(^|[.])({})$", list.join("|"));
+                Regex::new(&pattern).unwrap()
+            }
+        };
     }
-    BLACKLIST.iter().any(|tld| fqdn.ends_with(tld))
+    REGEX_BLACKLIST_DOMAIN.is_match(&fqdn)
 }
 
 pub fn is_trusted_domain(fqdn: &str) -> bool {
