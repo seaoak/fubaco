@@ -89,23 +89,19 @@ fn get_table_of_valid_domains() -> Result<HashMap<String, Vec<String>>> {
 // use crate "publicsuffix"
 // https://crates.io/crates/publicsuffix
 
-
 //================================================================================
-pub fn extract_fqdn_in_url_with_validation(url: &str) -> Option<String> {
-    lazy_static! {
-        static ref REGEX_URL_WITH_NORMAL_HOST: Regex = Regex::new(r"^https?[:][/][/]([-a-z0-9.]+)([/?#]\S*)?$").unwrap();
-    }
-    if url.len() > 1024 {
+fn extract_fqdn_with_regex(target: &str, re: &Regex) -> Option<String> {
+    if target.len() > 1024 {
         return None; // too long string (avoid DoS)
     }
-    let url = url.trim().to_ascii_lowercase();
+    let url = target.trim().to_ascii_lowercase();
     let fqdn;
-    if let Some(caps) = REGEX_URL_WITH_NORMAL_HOST.captures(&url) {
+    if let Some(caps) = re.captures(&url) {
         fqdn = caps[1].to_string();
     } else {
         return None; // for example, "with port number", "with percent-encoded", "with BASIC authentication info"
     }
-    if fqdn.starts_with('.') || fqdn.ends_with('.') {
+    if fqdn.starts_with(['.', '-']) || fqdn.ends_with(['.', '-']) {
         return None;
     }
     if fqdn.contains("..") {
@@ -115,6 +111,21 @@ pub fn extract_fqdn_in_url_with_validation(url: &str) -> Option<String> {
         return None; // such as "localhost"
     }
     Some(fqdn)
+}
+
+//================================================================================
+pub fn extract_fqdn_in_mail_address_with_validation(mail_address: &str) -> Option<String> {
+    lazy_static! {
+        static ref REGEX_MAIL_ADDRESS: Regex = Regex::new(r"^(?:[-=_~^+.a-zA-Z0-9]+)[@]([-a-z0-9.]+)?$").unwrap();
+    }
+    extract_fqdn_with_regex(mail_address, &REGEX_MAIL_ADDRESS)
+}
+
+pub fn extract_fqdn_in_url_with_validation(url: &str) -> Option<String> {
+    lazy_static! {
+        static ref REGEX_URL_WITH_NORMAL_HOST: Regex = Regex::new(r"^https?[:][/][/]([-a-z0-9.]+)([/?#]\S*)?$").unwrap();
+    }
+    extract_fqdn_with_regex(url, &REGEX_URL_WITH_NORMAL_HOST)
 }
 
 pub fn is_blacklist_tld(fqdn: &str) -> bool {

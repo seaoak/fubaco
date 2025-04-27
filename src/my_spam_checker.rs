@@ -8,34 +8,63 @@ use scraper;
 use crate::my_fqdn;
 use crate::my_str::*;
 
-pub fn spam_checker_suspicious_envelop_from(table: &mut HashSet<&'static str>, message: &Message) {
-    let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string(); // may be empty string
-    let envelop_from = envelop_from.replace(&['<', '>'], "").to_lowercase().trim().to_string();
+pub fn spam_checker_envelop_from(table: &mut HashSet<&'static str>, message: &Message) {
+    let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string();
+    let envelop_from = envelop_from.trim().trim_start_matches('<').trim_end_matches('>').trim(); // may be empty string
     println!("Envelop.from: \"{}\"", envelop_from);
-    if envelop_from.len() == 0 {
-        table.insert("suspicious-envelop-from");
+    if let Some(fqdn) = my_fqdn::extract_fqdn_in_mail_address_with_validation(&envelop_from) {
+        if my_fqdn::is_blacklist_tld(&fqdn) {
+            println!("blacklist-tld in envelop from address: \"{}\"", envelop_from);
+            table.insert("blacklist-tld-in-envelop-from");
+        }
+    } else {
+        table.insert("invalid-envelop-from");
     }
 }
 
-pub fn spam_checker_blacklist_tld(table: &mut HashSet<&'static str>, message: &Message) {
-    let header_from = message.from().map(|x| x.first().map(|addr| addr.address.clone().unwrap_or_default().to_string()).unwrap_or_default().to_lowercase()).unwrap_or_default();
-    let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string().replace(&['<', '>'], "").to_lowercase(); // may be empty string
-    println!("Envelop.from: \"{}\"", envelop_from);
-    let mut is_spam = false;
-    if my_fqdn::is_blacklist_tld(&header_from) {
-        println!("blacklist-tld in from header address: \"{}\"", header_from);
-        is_spam = true;
-    }
-    if my_fqdn::is_blacklist_tld(&envelop_from) {
-        println!("blacklist-tld in envelop from address: \"{}\"", envelop_from);
-        is_spam = true;
-    }
-    if is_spam {
-        table.insert("blacklist-tld");
+fn get_list_of_header_from(message: &Message) -> Vec<(Option<String>, Option<String>)> {
+    let address = match message.from() {
+        Some(a) => a,
+        _ => return Vec::new(),
+    };
+    let list = match address {
+        mail_parser::Address::List(v) => v.to_vec(),
+        mail_parser::Address::Group(groups) => {
+            groups.into_iter().flat_map(|g| g.addresses.iter()).map(|addr| addr.to_owned()).collect()
+        },
+    };
+    list.into_iter().map(|addr| {
+        let name = addr.name().map(|s| s.trim().to_owned());
+        let address = addr.address().map(|s| s.trim().to_owned());
+        (name, address)
+    }).collect()
+}
+
+pub fn spam_checker_header_from(table: &mut HashSet<&'static str>, message: &Message) {
+    let list_header_from = get_list_of_header_from(message);
+    if list_header_from.len() > 1024 {
+        table.insert("too-many-header-from");
+    } else {
+        list_header_from.into_iter().for_each(|(_name, address)| {
+            if address.is_none() {
+                table.insert("malformed-header-from");
+                return;
+            }
+            let address = address.unwrap();
+            if let Some(fqdn) = my_fqdn::extract_fqdn_in_mail_address_with_validation(&address) {
+                if my_fqdn::is_blacklist_tld(&fqdn) {
+                    println!("blacklist-tld in from header address: \"{}\"", address);
+                    table.insert("blacklist-tld-in-header-from");
+                }
+            } else {
+                table.insert("invalid-header-from");
+            }
+        });
     }
 }
 
 pub fn spam_checker_suspicious_from(table: &mut HashSet<&'static str>, message: &Message) {
+    // TODO: support multiple header from
     let name_raw = message.from().map(|x| x.first().unwrap().name.clone().unwrap_or_default()).unwrap_or_default();
     println!("From.name_raw: \"{}\"", name_raw);
     let name = normalize_string(&name_raw);
