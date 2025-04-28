@@ -107,6 +107,11 @@ fn check_and_extract_address_list(table: &mut HashSet<String>, label: &str, list
     Some((name.unwrap_or_default(), address.unwrap()))
 }
 
+pub fn spam_checker_header_to(table: &mut HashSet<String>, message: &Message) {
+    let list = parse_address_of_mail_parser(message.to());
+    let _ = check_and_extract_address_list(table, "to", list);
+}
+
 pub fn spam_checker_header_from(table: &mut HashSet<String>, message: &Message) {
     let list_of_header_from = parse_address_of_mail_parser(message.from());
     if list_of_header_from.len() > 1 {
