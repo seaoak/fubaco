@@ -182,7 +182,7 @@ pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text: &str) -> Option<b
     if joined_string.len() == 0 {
         return None; // no keyword is detected
     }
-    let pattern_string = format!("(?i)[.@]({})$", joined_string); // case-insensitive
+    let pattern_string = format!("(?i)(^|[.@])({})$", joined_string); // case-insensitive
     let regex = match Regex::new(&pattern_string) {
         Ok(v) => v,
         Err(_e) => {
