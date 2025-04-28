@@ -39,8 +39,11 @@ fn main() {
     println!("Hello, world!");
 
     my_logger::init();
-    debug!("This is debug message for MyLogger");
-    warn!("This is warning message for MyLogger");
+    trace!("This is TRACE message for MyLogger");
+    debug!("This is DEBUG message for MyLogger");
+    info!("This is INFO message for MyLogger");
+    warn!("This is WARN message for MyLogger");
+    error!("This is ERROR message for MyLogger");
 
     let fubaco_mode = env::var("FUBACO_MODE").unwrap_or_default();
 
