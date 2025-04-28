@@ -54,7 +54,7 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
     }
 
     let spam_judgement = {
-        let mut table = HashSet::<&'static str>::new();
+        let mut table = HashSet::<String>::new();
         [
             my_spam_checker::spam_checker_envelop_from,
             my_spam_checker::spam_checker_header_from,
@@ -66,9 +66,9 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
             my_spam_checker::spam_checker_suspicious_delivery_report,
         ].into_iter().for_each(|f| f(&mut table, &message));
         if table.is_empty() {
-            table.insert("none");
+            table.insert("none".into());
         }
-        let mut list = table.into_iter().collect::<Vec<&'static str>>();
+        let mut list = table.into_iter().collect::<Vec<_>>();
         list.sort();
         list
     };
