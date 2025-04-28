@@ -28,6 +28,24 @@ pub fn spam_checker_envelop_from(table: &mut HashSet<String>, message: &Message)
     }
 }
 
+pub fn spam_checker_header_subject(table: &mut HashSet<String>, message: &Message) {
+    let header_value = message.subject();
+    if header_value.is_none() {
+        table.insert("lack-of-header-subject".into());
+        return;
+    }
+    let text_raw = header_value.unwrap();
+    if my_fqdn::is_prohibited_word_included(&text_raw) {
+        table.insert("prohibited-word-in-subject".into());
+    }
+    if is_non_english_alphabet_included(&text_raw) {
+        table.insert("suspicious-alphabet-in-subject".into());
+    }
+    if is_unicode_control_codepoint_included(&text_raw) {
+        table.insert("suspicious-control-codepoint-in-subject".into());
+    }
+}
+
 fn get_list_of_header_from(message: &Message) -> Vec<(Option<String>, Option<String>)> {
     let address = match message.from() {
         Some(a) => a,
@@ -97,9 +115,6 @@ pub fn spam_checker_suspicious_from(table: &mut HashSet<String>, message: &Messa
     if my_fqdn::is_prohibited_word_included(&name) {
         table.insert("prohibited-word-in-from".into());
     }
-    if my_fqdn::is_prohibited_word_included(&subject) {
-        table.insert("prohibited-word-in-subject".into());
-    }
     if address == destination { // header.from is camoflaged with destination address
         table.insert("suspicious-from".into());
     }
@@ -107,15 +122,9 @@ pub fn spam_checker_suspicious_from(table: &mut HashSet<String>, message: &Messa
     if is_non_english_alphabet_included(&name_raw) {
         table.insert("suspicious-alphabet-in-from".into());
     }
-    if is_non_english_alphabet_included(&subject_raw) {
-        table.insert("suspicious-alphabet-in-subject".into());
-    }
 
     if is_unicode_control_codepoint_included(&name_raw) {
         table.insert("suspicious-control-codepoint-in-from".into());
-    }
-    if is_unicode_control_codepoint_included(&subject_raw) {
-        table.insert("suspicious-control-codepoint-in-subject".into());
     }
 }
 

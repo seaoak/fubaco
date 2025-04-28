@@ -57,6 +57,7 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
         let mut table = HashSet::<String>::new();
         [
             my_spam_checker::spam_checker_envelop_from,
+            my_spam_checker::spam_checker_header_subject,
             my_spam_checker::spam_checker_header_from,
             my_spam_checker::spam_checker_suspicious_from,
             my_spam_checker::spam_checker_suspicious_hyperlink,
