@@ -46,8 +46,8 @@ pub fn spam_checker_header_subject(table: &mut HashSet<String>, message: &Messag
     }
 }
 
-fn get_list_of_header_from(message: &Message) -> Vec<(Option<String>, Option<String>)> {
-    let address = match message.from() {
+fn parse_address_of_mail_parser(address: Option<&mail_parser::Address>) -> Vec<(Option<String>, Option<String>)> {
+    let address = match address {
         Some(a) => a,
         _ => return Vec::new(),
     };
@@ -64,67 +64,88 @@ fn get_list_of_header_from(message: &Message) -> Vec<(Option<String>, Option<Str
     }).collect()
 }
 
-pub fn spam_checker_header_from(table: &mut HashSet<String>, message: &Message) {
-    let list_header_from = get_list_of_header_from(message);
-    if list_header_from.len() > 1024 {
-        table.insert("too-many-header-from".into());
-    } else {
-        list_header_from.into_iter().for_each(|(_name, address)| {
-            if address.is_none() {
-                table.insert("malformed-header-from".into());
-                return;
-            }
-            let address = address.unwrap();
-            if let Some(fqdn) = my_fqdn::extract_fqdn_in_mail_address_with_validation(&address) {
-                if my_fqdn::is_blacklist_tld(&fqdn) {
-                    println!("blacklist-tld in from header address: \"{}\"", address);
-                    table.insert("blacklist-tld-in-header-from".into());
-                }
-            } else {
-                table.insert("invalid-header-from".into());
-            }
-        });
+fn check_and_extract_address_list(table: &mut HashSet<String>, label: &str, list: Vec<(Option<String>, Option<String>)>) -> Option<(String, String)> {
+    if list.len() > 1024 { // avoid DoS
+        table.insert(format!("too-many-header-{}", label));
+        return None;
     }
+    if list.is_empty() {
+        table.insert(format!("lack-of-header-{}", label));
+        return None;
+    }
+    let first = list[0].clone();
+    list.into_iter().for_each(|(name, address)| {
+        if let Some(text) = name {
+            if my_fqdn::is_prohibited_word_included(&text) {
+                table.insert(format!("prohibited-word-in-{}", label));
+            }
+            if is_non_english_alphabet_included(&text) {
+                table.insert(format!("suspicious-alphabet-in-{}", label));
+            }
+            if is_unicode_control_codepoint_included(&text) {
+                table.insert(format!("suspicious-control-codepoint-in-{}", label));
+            }
+        }
+        if address.is_none() {
+            table.insert(format!("malformed-header-{}", label));
+            return;
+        }
+        let address = address.clone().unwrap();
+        if let Some(fqdn) = my_fqdn::extract_fqdn_in_mail_address_with_validation(&address) {
+            if my_fqdn::is_blacklist_tld(&fqdn) {
+                println!("blacklist-tld in {} header address: \"{}\"", label, address);
+                table.insert(format!("blacklist-tld-in-header-{}", label));
+            }
+        } else {
+            table.insert(format!("invalid-header-{}", label));
+        }
+    });
+    let (name, address) = first;
+    if address.is_none() {
+        return None;
+    }
+    Some((name.unwrap_or_default(), address.unwrap()))
 }
 
-pub fn spam_checker_suspicious_from(table: &mut HashSet<String>, message: &Message) {
-    // TODO: support multiple header from
-    let name_raw = message.from().map(|x| x.first().unwrap().name.clone().unwrap_or_default()).unwrap_or_default();
+pub fn spam_checker_header_from(table: &mut HashSet<String>, message: &Message) {
+    let list_of_header_from = parse_address_of_mail_parser(message.from());
+    if list_of_header_from.len() > 1 {
+        table.insert("multiple-header-from".into());
+    }
+    let header_from = check_and_extract_address_list(table, "from", list_of_header_from);
+    if header_from.is_none() {
+        return;
+    }
+    let (name_raw, address_raw) = header_from.unwrap();
     println!("From.name_raw: \"{}\"", name_raw);
     let name = normalize_string(&name_raw);
     println!("From.name: \"{}\"", name);
-    let address = normalize_string(message.from().map(|x| x.first().unwrap().address.clone().unwrap_or_default()).unwrap_or_default());
+    let address = normalize_string(&address_raw);
     println!("From.address: \"{}\"", address);
     let subject_raw = message.subject().unwrap_or_default();
     println!("Subject_raw: \"{}\"", subject_raw);
     let subject = normalize_string(subject_raw);
     println!("Subject: \"{}\"", subject);
-    let destination = normalize_string(message.to().map(|x| x.first().map(|addr| addr.address.clone().unwrap()).unwrap_or_default()).unwrap_or_default()); // may be empty string
-    println!("To.address: \"{}\"", destination);
+    let list_of_header_to = parse_address_of_mail_parser(message.to());
+    println!("To.address: \"{:?}\"", list_of_header_to);
+    let table_of_address_of_header_to = list_of_header_to.into_iter().filter_map(|(_name, address)| address).collect::<HashSet<_>>();
 
-    if my_fqdn::is_trusted_domain(&address) {
+    let fqdn = my_fqdn::extract_fqdn_in_mail_address_with_validation(&address).unwrap_or_default();
+    if fqdn.is_empty() {
+        return;
+    }
+    if my_fqdn::is_trusted_domain(&fqdn) {
         println!("skip trusted domain: {}", address);
         return;
     }
-    if let Some(false) = my_fqdn::is_valid_domain_by_guessing_from_text(&address, &name) {
+    if let Some(false) = my_fqdn::is_valid_domain_by_guessing_from_text(&fqdn, &name) {
         table.insert("suspicious-from".into());
     }
-    if let Some(false) = my_fqdn::is_valid_domain_by_guessing_from_text(&address, &subject) {
+    if let Some(false) = my_fqdn::is_valid_domain_by_guessing_from_text(&fqdn, &subject) {
         table.insert("suspicious-from".into());
     }
-    if my_fqdn::is_prohibited_word_included(&name) {
-        table.insert("prohibited-word-in-from".into());
-    }
-    if address == destination { // header.from is camoflaged with destination address
+    if table_of_address_of_header_to.contains(&address) { // header.from is camoflaged with destination address
         table.insert("suspicious-from".into());
-    }
-
-    if is_non_english_alphabet_included(&name_raw) {
-        table.insert("suspicious-alphabet-in-from".into());
-    }
-
-    if is_unicode_control_codepoint_included(&name_raw) {
-        table.insert("suspicious-control-codepoint-in-from".into());
     }
 }
 

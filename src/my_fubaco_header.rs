@@ -59,7 +59,6 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
             my_spam_checker::spam_checker_envelop_from,
             my_spam_checker::spam_checker_header_subject,
             my_spam_checker::spam_checker_header_from,
-            my_spam_checker::spam_checker_suspicious_from,
             my_spam_checker::spam_checker_suspicious_hyperlink,
             my_spam_checker::spam_checker_suspicious_link_in_plain_text,
             my_spam_checker::spam_checker_hidden_text_in_html,
