@@ -9,7 +9,13 @@ use crate::my_fqdn;
 use crate::my_str::*;
 
 pub fn spam_checker_envelop_from(table: &mut HashSet<String>, message: &Message) {
-    let envelop_from = message.return_path().clone().as_text().unwrap_or_default().to_string();
+    let header_value = message.return_path().as_text();
+    if header_value.is_none() {
+        println!("Envelop.from: NOT FOUND");
+        table.insert("lack-of-envelop-from".into());
+        return;
+    }
+    let envelop_from = header_value.unwrap().to_string();
     let envelop_from = envelop_from.trim().trim_start_matches('<').trim_end_matches('>').trim(); // may be empty string
     println!("Envelop.from: \"{}\"", envelop_from);
     if let Some(fqdn) = my_fqdn::extract_fqdn_in_mail_address_with_validation(&envelop_from) {
@@ -18,7 +24,7 @@ pub fn spam_checker_envelop_from(table: &mut HashSet<String>, message: &Message)
             table.insert("blacklist-tld-in-envelop-from".into());
         }
     } else {
-        table.insert("invalid-envelop-from".into());
+        table.insert("invalid-envelop-from".into()); // include the case of empty string
     }
 }
 
