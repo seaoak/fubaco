@@ -53,7 +53,7 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
         return Err(anyhow!("can not parse the message"));
     }
 
-    let spam_judgement = {
+    let mut spam_judgement_table = {
         let mut table = HashSet::<String>::new();
         [
             my_spam_checker::spam_checker_envelop_from,
@@ -66,12 +66,7 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
             my_spam_checker::spam_checker_fully_html_encoded_text,
             my_spam_checker::spam_checker_suspicious_delivery_report,
         ].into_iter().for_each(|f| f(&mut table, &message));
-        if table.is_empty() {
-            table.insert("none".into());
-        }
-        let mut list = table.into_iter().collect::<Vec<_>>();
-        list.sort();
-        list
+        table
     };
 
     let table_of_authentication_results_header = message.get_authentication_results();
@@ -138,6 +133,15 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
         }
     }
 
+    let spam_judgement_results = {
+        if spam_judgement_table.is_empty() {
+            spam_judgement_table.insert("none".into());
+        }
+        let mut list = spam_judgement_table.into_iter().collect::<Vec<_>>();
+        list.sort();
+        list
+    };
+
     let auth_results = vec![
         format!("spf={}", spf_result.as_status()),
         format!("dkim={}", dkim_result.as_status()),
@@ -145,7 +149,7 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
     ];
 
     let mut fubaco_headers = Vec::new();
-    fubaco_headers.push(format!("X-Fubaco-Spam-Judgement: {}\r\n", spam_judgement.join(" ")));
+    fubaco_headers.push(format!("X-Fubaco-Spam-Judgement: {}\r\n", spam_judgement_results.join(" ")));
     fubaco_headers.push(format!("X-Fubaco-Authentication: {}\r\n", auth_results.join(" ")));
     let nbytes = fubaco_headers.iter().fold(0, |acc, s| acc + s.len());
     fubaco_headers.push(make_fubaco_padding_header(*FUBACO_HEADER_TOTAL_SIZE - nbytes));
