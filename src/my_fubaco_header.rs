@@ -7,6 +7,7 @@ use crate::my_dkim_verifier::{self, DKIMResult, DKIMStatus};
 use crate::my_dmarc_verifier::{self, DMARCResult, DMARCStatus};
 use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_message_parser::MyMessageParser;
+use crate::my_plugin_yondakiji;
 use crate::my_spam_checker;
 use crate::my_spf_verifier::{self, SPFResult, SPFStatus};
 use crate::my_str;
@@ -132,6 +133,11 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
             }
         }
     }
+
+    let plugins = [
+        my_plugin_yondakiji::plugin_yondakiji,
+    ];
+    plugins.iter().for_each(|f| f(&message));
 
     let spam_judgement_results = {
         if spam_judgement_table.is_empty() {

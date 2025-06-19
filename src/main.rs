@@ -21,6 +21,7 @@ mod my_fqdn;
 mod my_fubaco_header;
 mod my_message_parser;
 mod my_logger;
+mod my_plugin_yondakiji;
 mod my_pop3_bridge;
 mod my_spam_checker;
 mod my_spf_verifier;

@@ -18,6 +18,7 @@ target/
 /db.json
 /debug_*
 /dns_cache.json
+/fubaco_yondakiji.json
 /mail-sample
 /nodejs_*
 /pubkey.der
