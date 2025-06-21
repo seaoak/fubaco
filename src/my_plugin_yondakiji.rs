@@ -62,7 +62,7 @@ impl MyItem {
             return Err(anyhow!("empty body"));
         }
         let url = line.unwrap();
-        if url.chars().any(|c| !c.is_ascii() || c.is_ascii_whitespace() || c.is_ascii_control()) {
+        if url.chars().any(|c| c.is_whitespace() || c.is_control()) {
             return Err(anyhow!("detect invalid character: {}", url));
         }
         if !url.starts_with("https://") {
