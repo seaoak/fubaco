@@ -111,7 +111,7 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
                                 static ref REGEX_NIFTY_MAILSERVER: Regex = Regex::new(r"^concspmx-\d+$").unwrap();
                             }
                             if s.ends_with(".nifty.com") && REGEX_NIFTY_MAILSERVER.is_match(ss) {
-                                info!("skip \"Receivec\" header (internal relay in nifty)");
+                                info!("skip \"Received\" header (internal relay in nifty)");
                                 continue; // skip (internal relay in nifty)
                             }
                         }
