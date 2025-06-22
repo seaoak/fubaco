@@ -107,12 +107,13 @@ pub fn plugin_yondakiji(message: &Message) {
     lazy_static! {
         static ref TABLE_OF_MAIL_ADDRESS_TO_TAGS: HashMap<String, Vec<String>> = {
             let mut table = HashMap::new();
-            if let Ok(mail_address_for_ff14_articles) = env::var("FUBACO_PLUGIN_YONDAKIJI_ADDRESS_FF14") {
-                table.insert(mail_address_for_ff14_articles, vec!["FUBACO".into(), "FF14".into()]);
+            if let Ok(mail_address) = env::var("FUBACO_PLUGIN_YONDAKIJI_ADDRESS_FF14") {
+                table.insert(mail_address, vec!["FUBACO".into(), "FF14".into()]);
             }
-            if let Ok(mail_address_for_ff14_articles) = env::var("FUBACO_PLUGIN_YONDAKIJI_ADDRESS_OTHERS") {
-                table.insert(mail_address_for_ff14_articles, vec!["FUBACO".into(), "OTHERS".into()]);
+            if let Ok(mail_address) = env::var("FUBACO_PLUGIN_YONDAKIJI_ADDRESS_OTHERS") {
+                table.insert(mail_address, vec!["FUBACO".into(), "OTHERS".into()]);
             }
+            assert_ne!(table.len(), 0);
             table
         };
     }
