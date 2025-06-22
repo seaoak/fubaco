@@ -20,7 +20,7 @@ pub fn init() {
     let timer = tracing_subscriber::fmt::time::LocalTime::new(format_description!("[year]-[month]-[day] [hour]:[minute]:[second]"));
 
     let filter_for_stdout = tracing_subscriber::EnvFilter::builder()
-        .with_default_directive(LevelFilter::DEBUG.into())
+        .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy(); // you can change log level by the environment variable `RUST_LOG`
     let stdout_logger = tracing_subscriber::fmt::layer()
         .without_time()
