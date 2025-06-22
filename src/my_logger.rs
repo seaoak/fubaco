@@ -20,7 +20,7 @@ pub fn init() {
     let timer = tracing_subscriber::fmt::time::LocalTime::new(format_description!("[year]-[month]-[day] [hour]:[minute]:[second]"));
 
     let filter_for_stdout = tracing_subscriber::EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
+        .with_default_directive(LevelFilter::DEBUG.into())
         .from_env_lossy(); // you can change log level by the environment variable `RUST_LOG`
     let stdout_logger = tracing_subscriber::fmt::layer()
         .without_time()
@@ -34,7 +34,7 @@ pub fn init() {
         .compact()
         .with_filter(filter_for_stdout);
 
-    let filter_for_logfile = LevelFilter::INFO;
+    let filter_for_logfile = LevelFilter::TRACE;
     let logfile_logger = (|| -> std::io::Result<_> {
         let file = File::options().append(true).create(true).open(FILEPATH_TO_LOG_FILE.as_str())?;
         let logger = tracing_subscriber::fmt::layer()
