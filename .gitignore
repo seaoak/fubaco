@@ -25,6 +25,7 @@ target/
 /pubkey.der
 /rust_*
 /sample-*
+/start_fubaco*.bat
 /*.log
 
 # backup files
