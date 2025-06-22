@@ -8,6 +8,7 @@ use crate::my_dmarc_verifier::{self, DMARCResult, DMARCStatus};
 use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_message_parser::MyMessageParser;
 use crate::my_plugin_yondakiji;
+use crate::my_plugin_yondatweet;
 use crate::my_spam_checker;
 use crate::my_spf_verifier::{self, SPFResult, SPFStatus};
 use crate::my_str;
@@ -136,8 +137,9 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
 
     let plugins = [
         my_plugin_yondakiji::plugin_yondakiji,
+        my_plugin_yondatweet::plugin_yondatweet,
     ];
-    plugins.iter().for_each(|f| f(&message));
+    plugins.iter().for_each(|f| f(&mut spam_judgement_table, &message));
 
     let spam_judgement_results = {
         if spam_judgement_table.is_empty() {

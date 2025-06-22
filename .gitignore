@@ -19,6 +19,7 @@ target/
 /debug_*
 /dns_cache.json
 /fubaco_yondakiji.json
+/fubaco_yondatweet.json
 /mail-sample
 /nodejs_*
 /pubkey.der

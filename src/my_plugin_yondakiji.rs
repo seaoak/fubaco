@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -96,7 +96,7 @@ impl MyItem {
 }
 
 //================================================================================
-pub fn plugin_yondakiji(message: &Message) {
+pub fn plugin_yondakiji(table_of_spam_check_result: &mut HashSet<String>, message: &Message) {
     let header_to = message.to().and_then(|to| to.first()).and_then(|addr| addr.address());
     if header_to.is_none() {
         println!("WARNING: plugin_yondakiji: there is no \"to\" header");
@@ -120,6 +120,10 @@ pub fn plugin_yondakiji(message: &Message) {
 
     if let Some(tags) = TABLE_OF_MAIL_ADDRESS_TO_TAGS.get(header_to) {
         println!("plugin_yondakiji: detect target mail address: {header_to}");
+        if !table_of_spam_check_result.is_empty() {
+            println!("plugin_yondakiji: clear results of SPAM CHECKER");
+            table_of_spam_check_result.clear();
+        }
         let item = MyItem::from_message(message, tags);
         let result = item.and_then(|item| item.save_to_json_file());
         if let Err(e) = result {
