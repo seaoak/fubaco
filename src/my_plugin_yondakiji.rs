@@ -65,7 +65,7 @@ impl MyItem {
     }
 
     pub fn save_to_json_file(&self) -> Result<()> {
-        debug!("plugin_yondakiji: write to JSON file: {}", *DB_FILENAME);
+        info!("plugin_yondakiji: write to JSON file: {}", *DB_FILENAME);
         let mut f = OpenOptions::new().append(true).create(true).open(&*DB_FILENAME)?;
         let mut text = serde_json::to_string_pretty(self)?;
         text.push_str(",\n");
@@ -79,7 +79,7 @@ impl MyItem {
 pub fn plugin_yondakiji(table_of_spam_check_result: &mut HashSet<String>, message: &Message) {
     let header_to = message.to().and_then(|to| to.first()).and_then(|addr| addr.address());
     if header_to.is_none() {
-        debug!("WARNING: plugin_yondakiji: there is no \"to\" header");
+        info!("WARNING: plugin_yondakiji: there is no \"to\" header");
         return;
     }
     let header_to = header_to.unwrap();
@@ -99,7 +99,7 @@ pub fn plugin_yondakiji(table_of_spam_check_result: &mut HashSet<String>, messag
     }
 
     if let Some(tags) = TABLE_OF_MAIL_ADDRESS_TO_TAGS.get(header_to) {
-        debug!("plugin_yondakiji: detect target mail address: {header_to}");
+        info!("plugin_yondakiji: detect target mail address: {header_to}");
         if !table_of_spam_check_result.is_empty() {
             info!("plugin_yondakiji: clear results of SPAM CHECKER");
             table_of_spam_check_result.clear();

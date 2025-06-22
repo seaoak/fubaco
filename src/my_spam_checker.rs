@@ -12,7 +12,7 @@ use crate::my_str::*;
 pub fn spam_checker_envelop_from(table: &mut HashSet<String>, message: &Message) {
     let header_value = message.return_path().as_text();
     if header_value.is_none() {
-        debug!("Envelop.from: NOT FOUND");
+        info!("Envelop.from: NOT FOUND");
         table.insert("lack-of-envelop-from".into());
         return;
     }
@@ -21,7 +21,7 @@ pub fn spam_checker_envelop_from(table: &mut HashSet<String>, message: &Message)
     trace!("Envelop.from: \"{}\"", envelop_from);
     if let Some(fqdn) = my_fqdn::extract_fqdn_in_mail_address_with_validation(&envelop_from) {
         if my_fqdn::is_blacklist_tld(&fqdn) {
-            debug!("blacklist-tld in envelop from address: \"{}\"", envelop_from);
+            info!("blacklist-tld in envelop from address: \"{}\"", envelop_from);
             table.insert("blacklist-tld-in-envelop-from".into());
         }
     } else {
@@ -94,7 +94,7 @@ fn check_and_extract_address_list(table: &mut HashSet<String>, label: &str, list
         let address = address.clone().unwrap();
         if let Some(fqdn) = my_fqdn::extract_fqdn_in_mail_address_with_validation(&address) {
             if my_fqdn::is_blacklist_tld(&fqdn) {
-                debug!("blacklist-tld in {} header address: \"{}\"", label, address);
+                info!("blacklist-tld in {} header address: \"{}\"", label, address);
                 table.insert(format!("blacklist-tld-in-header-{}", label));
             }
         } else {
@@ -141,7 +141,7 @@ pub fn spam_checker_header_from(table: &mut HashSet<String>, message: &Message) 
         return;
     }
     if my_fqdn::is_trusted_domain(&fqdn) {
-        debug!("skip trusted domain: {}", address);
+        info!("skip trusted domain: {}", address);
         return;
     }
     if let Some(false) = my_fqdn::is_valid_domain_by_guessing_from_text(&fqdn, &name) {
@@ -169,14 +169,14 @@ fn check_hyperlink(table: &mut HashSet<String>, url: &str, text: Option<String>)
     }
     if url.to_ascii_lowercase().starts_with("mailto:") {
         if !REGEX_URL_WITH_MAILTO.is_match(url) {
-            debug!("suspicious-mailto: \"{}\"", url);
+            info!("suspicious-mailto: \"{}\"", url);
             table.insert("suspicious-mailto".into());
         }
         return;
     }
     if url.to_ascii_lowercase().starts_with("tel:") {
         if !REGEX_URL_WITH_TEL.is_match(url) {
-            debug!("suspicious-tel: \"{}\"", url);
+            info!("suspicious-tel: \"{}\"", url);
             table.insert("suspicious-tel".into());
         }
         return;
@@ -185,7 +185,7 @@ fn check_hyperlink(table: &mut HashSet<String>, url: &str, text: Option<String>)
     if let Some(host) = my_fqdn::extract_fqdn_in_url_with_validation(url) {
         host_in_href = host;
     } else {
-        debug!("suspicious-href: \"{}\"", url);
+        info!("suspicious-href: \"{}\"", url);
         table.insert("suspicious-href".into());
         return;
     }
@@ -193,14 +193,14 @@ fn check_hyperlink(table: &mut HashSet<String>, url: &str, text: Option<String>)
         return; // skip later checks (treat as "OK")
     }
     if my_fqdn::is_blacklist_tld(&host_in_href) {
-        debug!("blacklist-tld-in-href: \"{}\"", host_in_href);
+        info!("blacklist-tld-in-href: \"{}\"", host_in_href);
         table.insert("blacklist-tld-in-href".into());
     }
     if let Some(text) = text {
         let text = text.trim();
         if let Some(host_in_text) = my_fqdn::extract_fqdn_in_url_with_validation(&text) {
             if host_in_href != host_in_text {
-                debug!("camouflage-hyperlink: \"{}\" vs \"{}\"", host_in_href, host_in_text);
+                info!("camouflage-hyperlink: \"{}\" vs \"{}\"", host_in_href, host_in_text);
                 table.insert("camouflaged-hyperlink".into());
             }
         }
@@ -327,7 +327,7 @@ pub fn spam_checker_suspicious_delivery_report(table: &mut HashSet<String>, mess
                 }
             },
             _ => {
-                debug!("delivery report syntax error");
+                info!("delivery report syntax error");
                 table.insert("invalid-delivery-report-format".into());
             }
         }

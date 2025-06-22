@@ -57,16 +57,16 @@ fn read_one_response_completely<S>(upstream_stream: &mut MyTextLineStream<S>, is
             status_line = MyTextLineStream::<S>::take_first_line(&response_lines)?;
         }
         if status_line.starts_with("-ERR") {
-            debug!("ERR response is received: {}", status_line.trim());
+            info!("ERR response is received: {}", status_line.trim());
             break;
         }
         assert!(status_line.starts_with("+OK"));
         if !is_multi_line_response_expected {
-            debug!("single-line response is received: {}", status_line.trim());
+            info!("single-line response is received: {}", status_line.trim());
             break;
         }
         if MyTextLineStream::<S>::ends_with_u8(&response_lines, b"\r\n.\r\n") {
-            debug!("multl-line response ({} byte body) is received: {}", response_lines.len() - status_line.len() - b".\r\n".len(), status_line.trim());
+            info!("multl-line response ({} byte body) is received: {}", response_lines.len() - status_line.len() - b".\r\n".len(), status_line.trim());
             break;
         }
         is_first_response = false;
@@ -153,39 +153,39 @@ fn process_pop3_transaction<S, T>(
     // issue internal "UIDL" command (to get unique-id for all mails)
     let message_number_to_unique_id;
     {
-        debug!("issue internal UIDL command");
+        info!("issue internal UIDL command");
         let command_line = format!("UIDL\r\n").into_bytes();
         upstream_stream.write_all_and_flush(&command_line)?;
-        debug!("wait the response for UIDL command");
+        info!("wait the response for UIDL command");
         let (status_line, response_lines) = read_one_response_completely(upstream_stream, true)?;
-        debug!("the response for UIDL command is received: {}", status_line.trim());
+        info!("the response for UIDL command is received: {}", status_line.trim());
         if status_line.starts_with("-ERR") {
             return Err(anyhow!("FATAL: ERR response is received for UIDL command"));
         }
         assert!(status_line.starts_with("+OK"));
-        debug!("parse response body of UIDL command");
+        info!("parse response body of UIDL command");
         let list = parse_response_for_uidl_command::<S>(&response_lines)?;
         message_number_to_unique_id = list.into_iter().collect::<HashMap<MessageNumber, UniqueID>>();
-        debug!("Done");
+        info!("Done");
     }
 
     // issue internal "LIST" command (to get message size for all mails)
     let message_number_to_nbytes;
     {
-        debug!("issue internal LIST command");
+        info!("issue internal LIST command");
         let command_line = format!("LIST\r\n").into_bytes();
         upstream_stream.write_all_and_flush(&command_line)?;
-        debug!("wait the response for LIST command");
+        info!("wait the response for LIST command");
         let (status_line, response_lines) = read_one_response_completely(upstream_stream, true)?;
-        debug!("the response for UIDL command is received: {}", status_line.trim());
+        info!("the response for UIDL command is received: {}", status_line.trim());
         if status_line.starts_with("-ERR") {
             return Err(anyhow!("FATAL: ERR response is received for LIST command"));
         }
         assert!(status_line.starts_with("+OK"));
-        debug!("parse response body of LIST command");
+        info!("parse response body of LIST command");
         let list = parse_response_for_list_command::<S>(&response_lines)?;
         message_number_to_nbytes = list.into_iter().collect::<HashMap<MessageNumber, usize>>();
-        debug!("Done");
+        info!("Done");
     }
     assert_eq!(message_number_to_nbytes.len(), message_number_to_unique_id.len());
 
@@ -201,10 +201,10 @@ fn process_pop3_transaction<S, T>(
             assert!(ret.is_none());
         }
     }
-    debug!("{} messages exist in database", unique_id_to_message_info.len());
+    info!("{} messages exist in database", unique_id_to_message_info.len());
 
     let total_nbytes_of_original_maildrop = message_number_to_nbytes.values().fold(0, |acc, nbytes| acc + nbytes);
-    debug!("total_nbytes_of_original_maildrop = {}", total_nbytes_of_original_maildrop);
+    info!("total_nbytes_of_original_maildrop = {}", total_nbytes_of_original_maildrop);
     let total_nbytes_of_modified_maildrop = message_number_to_unique_id
         .iter()
         .map(|(message_number, unique_id)| {
@@ -218,7 +218,7 @@ fn process_pop3_transaction<S, T>(
             }
         })
         .fold(0, |acc, nbytes| acc + nbytes);
-    debug!("total_nbytes_of_modified_maildrop = {}", total_nbytes_of_modified_maildrop);
+    info!("total_nbytes_of_modified_maildrop = {}", total_nbytes_of_modified_maildrop);
 
     // relay POP3 commands/responses
     loop {
@@ -229,9 +229,9 @@ fn process_pop3_transaction<S, T>(
             let mut command_line = Vec::<u8>::new();
             downstream_stream.read_some_lines(&mut command_line)?;
             let command_str = String::from_utf8_lossy(&command_line);
-            debug!("relay POP3 command: {}", command_str.trim());
+            info!("relay POP3 command: {}", command_str.trim());
             upstream_stream.write_all_and_flush(&command_line)?;
-            debug!("Done");
+            info!("Done");
 
             if let Some(caps) = REGEX_POP3_COMMAND_LINE_GENERAL.captures(&command_str) {
                 command_name = caps[1].to_string();
@@ -262,7 +262,7 @@ fn process_pop3_transaction<S, T>(
         if status_line.starts_with("+OK") {
             // modify response
             if command_name == "LIST" && command_arg1.is_some() {
-                debug!("modify single-line response for LIST command");
+                info!("modify single-line response for LIST command");
                 let arg_message_number = MessageNumber(u32::from_str_radix(&command_arg1.clone().unwrap(), 10).unwrap());
                 let unique_id;
                 if let Some(v) = message_number_to_unique_id.get(&arg_message_number) {
@@ -288,10 +288,10 @@ fn process_pop3_transaction<S, T>(
                 }
                 response_lines.clear();
                 response_lines.extend(format!("+OK {} {}\r\n", message_number.0, new_nbytes).into_bytes());
-                debug!("Done");
+                info!("Done");
             }
             if command_name == "LIST" && command_arg1.is_none() {
-                debug!("modify multi-line response for LIST command");
+                info!("modify multi-line response for LIST command");
                 let original_list = parse_response_for_list_command::<S>(&response_lines)?;
                 let modified_list = original_list.into_iter().map(|(message_number, nbytes)| {
                     assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
@@ -324,10 +324,10 @@ fn process_pop3_transaction<S, T>(
                 response_lines.extend(new_status_line.into_bytes());
                 response_lines.extend(modified_body_u8);
                 response_lines.extend(".\r\n".as_bytes());
-                debug!("Done");
+                info!("Done");
             }
             if command_name == "RETR" || command_name == "TOP" {
-                debug!("modify response body for RETR/TOP command");
+                info!("modify response body for RETR/TOP command");
                 let arg_message_number = MessageNumber(u32::from_str_radix(&command_arg1.clone().unwrap(), 10).unwrap());
                 let unique_id;
                 if let Some(v) = message_number_to_unique_id.get(&arg_message_number) {
@@ -348,7 +348,7 @@ fn process_pop3_transaction<S, T>(
                 } else {
                     // TODO: SPAM checker
                     fubaco_headers = my_fubaco_header::make_fubaco_headers(body_u8, resolver)?;
-                    debug!("add fubaco headers:\n----------\n{}----------", fubaco_headers);
+                    info!("add fubaco headers:\n----------\n{}----------", fubaco_headers);
                     unique_id_to_message_info.insert(
                         unique_id.clone(),
                         MessageInfo {
@@ -379,10 +379,10 @@ fn process_pop3_transaction<S, T>(
                 response_lines.extend(new_status_line.into_bytes());
                 response_lines.extend(buf);
                 response_lines.extend(".\r\n".as_bytes());
-                debug!("Done");
+                info!("Done");
             }
             if command_name == "STAT" {
-                debug!("modify single-line response for STAT command");
+                info!("modify single-line response for STAT command");
                 let num_of_messages;
                 let nbytes;
                 if let Some(caps) = REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&status_line) {
@@ -395,12 +395,12 @@ fn process_pop3_transaction<S, T>(
                 assert_eq!(nbytes, total_nbytes_of_original_maildrop);
                 response_lines.clear();
                 response_lines.extend(format!("+OK {} {}\r\n", num_of_messages, total_nbytes_of_modified_maildrop).into_bytes());
-                debug!("Done");
+                info!("Done");
             }
         }
-        debug!("relay the response: {}", status_line.trim());
+        info!("relay the response: {}", status_line.trim());
         downstream_stream.write_all_and_flush(&response_lines)?;
-        debug!("Done");
+        info!("Done");
         if command_name == "QUIT" {
             info!("close POP3 stream");
             upstream_stream.disconnect()?;
@@ -468,7 +468,7 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                 resolver.clear_cache();
 
                 // send dummy greeting message to client (upstream is not opened yet)
-                debug!("send dummy greeting message to downstream");
+                info!("send dummy greeting message to downstream");
                 downstream_stream.write_all_and_flush(b"+OK Greeting\r\n")?;
 
                 // wait for "USER" command to identify mail account
@@ -491,7 +491,7 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                 info!("username: {}", username.0);
                 info!("upstream_addr: {}:{}", upstream_hostname.0, upstream_port);
 
-                debug!("open upstream connection");
+                info!("open upstream connection");
                 let tls_root_store = if false {
                     // use "rustls-native-certs" crate
                     let mut roots = rustls::RootCertStore::empty();
@@ -523,7 +523,7 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                 {
                     let (status_line, response_lines) = read_one_response_completely(&mut upstream_stream, false)?;
                     assert_eq!(status_line.len(), response_lines.len());
-                    debug!("greeting message is received: {}", status_line.trim());
+                    info!("greeting message is received: {}", status_line.trim());
                     if status_line.starts_with("-ERR") {
                         return Err(anyhow!("FATAL: invalid greeting message is received: {}", status_line.trim()));
                     }
@@ -532,15 +532,15 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
 
                 // issue delayed "USER" command
                 {
-                    debug!("issue USER command");
+                    info!("issue USER command");
                     let command_line = format!("USER {}\r\n", username.0).into_bytes();
                     upstream_stream.write_all_and_flush(&command_line)?;
-                    debug!("wait the response for USER command");
+                    info!("wait the response for USER command");
                     let (status_line, response_lines) = read_one_response_completely(&mut upstream_stream, false)?;
                     assert_eq!(status_line.len(), response_lines.len());
-                    debug!("relay the response: {}", status_line.trim());
+                    info!("relay the response: {}", status_line.trim());
                     downstream_stream.write_all_and_flush(&response_lines)?;
-                    debug!("Done");
+                    info!("Done");
                     if status_line.starts_with("-ERR") {
                         return Err(anyhow!("FATAL: ERR response is received for USER command"));
                     }
@@ -552,16 +552,16 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                     let mut command_line = Vec::<u8>::new();
                     downstream_stream.read_some_lines(&mut command_line)?;
                     let command_str = String::from_utf8_lossy(&command_line);
-                    debug!("relay POP3 command: {}", command_str.trim());
+                    info!("relay POP3 command: {}", command_str.trim());
                     if !command_str.starts_with("PASS ") {
                         return Err(anyhow!("2nd command should be \"PASS\" command, but: {}", command_str.trim()));
                     }
                     upstream_stream.write_all_and_flush(&command_line)?;
                     let (status_line, response_lines) = read_one_response_completely(&mut upstream_stream, false)?;
                     assert_eq!(status_line.len(), response_lines.len());
-                    debug!("relay the response: {}", status_line.trim());
+                    info!("relay the response: {}", status_line.trim());
                     downstream_stream.write_all_and_flush(&response_lines)?;
-                    debug!("Done");
+                    info!("Done");
                     if status_line.starts_with("-ERR") {
                         return Err(anyhow!("FATAL: ERR response is received for PASS command"));
                     }

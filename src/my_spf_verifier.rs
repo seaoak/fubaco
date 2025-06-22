@@ -200,7 +200,7 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str, r
                 Err(_e) => return SPFResult::new(SPFStatus::TEMPERROR, vec![target_domain]),
             }
             if hosts.len() != 1 {
-                debug!("can not get PTR record of: {} {}", name, hosts.len());
+                info!("can not get PTR record of: {} {}", name, hosts.len());
                 return SPFResult::new(SPFStatus::PERMERROR, vec![target_domain]); // invalid DNS info
             }
             let host = hosts.pop().unwrap();
@@ -247,16 +247,16 @@ fn spf_check_recursively(domain: &str, source_ip: &IpAddr, envelop_from: &str, r
                 let arg3 = caps.get(3).map_or(I::BITS.to_string(), |s| s.as_str().to_string());
                 bitmask_len = u32::from_str_radix(&arg3, 10).unwrap_or(0);
             } else {
-                debug!("{} syntax error: \"{}\"", prefix, field);
+                info!("{} syntax error: \"{}\"", prefix, field);
                 return Some(SPFResult::new(SPFStatus::PERMERROR, vec![target_domain])); // syntax error (abort immediately)
             }
 
             if addr == I::UNSPECIFIED {
-                debug!("{} address parse error: \"{}\"", prefix, field);
+                info!("{} address parse error: \"{}\"", prefix, field);
                 return Some(SPFResult::new(SPFStatus::PERMERROR, vec![target_domain]));
             }
             if bitmask_len == 0 || bitmask_len > I::BITS {
-                debug!("{} netmask parse error: \"{}\"", prefix, field);
+                info!("{} netmask parse error: \"{}\"", prefix, field);
                 return Some(SPFResult::new(SPFStatus::PERMERROR, vec![target_domain]));
             }
             let bits;

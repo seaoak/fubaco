@@ -38,7 +38,7 @@ pub fn is_non_english_alphabet_included(text: &str) -> bool {
     assert!(REGEX_NON_ENGLISH_ALPHABET.is_match("В")); // キリル文字
     assert!(REGEX_NON_ENGLISH_ALPHABET.is_match("Д"));
     if let Some(caps) = REGEX_NON_ENGLISH_ALPHABET.captures(text) {
-        debug!("non-English alphabet: {}", &caps[1]);
+        info!("non-English alphabet: {}", &caps[1]);
         return true;
     }
     false
@@ -53,7 +53,7 @@ pub fn is_unicode_control_codepoint_included(text: &str) -> bool {
     assert!(REGEX_UNICODE_CONTROL_CODEPOINT.is_match("J͎"));
     if let Some(caps) = REGEX_UNICODE_CONTROL_CODEPOINT.captures(text) {
         // https://ja.wikipedia.org/wiki/Unicode一覧_0000-0FFF
-        debug!("suspicious-control-codepoint-in-from: {} (codepoint=U+{:x})", &caps[1], u32::from(caps[1].chars().nth(0).unwrap()));
+        info!("suspicious-control-codepoint-in-from: {} (codepoint=U+{:x})", &caps[1], u32::from(caps[1].chars().nth(0).unwrap()));
         return true;
     }
     false
