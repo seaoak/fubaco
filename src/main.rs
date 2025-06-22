@@ -28,6 +28,7 @@ mod my_spam_checker;
 mod my_spf_verifier;
 mod my_str;
 mod my_text_line_stream;
+mod my_timestamp;
 mod pop3_upstream;
 
 use my_crypto::*;

@@ -4,36 +4,15 @@ use std::fs::OpenOptions;
 use std::io::Write;
 
 use anyhow::{anyhow, Result};
-use chrono;
 use mail_parser::Message;
 use lazy_static::lazy_static;
 use serde::Serialize;
 use serde_json;
 
+use crate::my_timestamp::MyTimestamp;
+
 lazy_static! {
     static ref DB_FILENAME: String = "./fubaco_yondakiji.json".to_string();
-}
-
-//================================================================================
-#[derive(Debug)]
-struct MyTimestamp {
-    value: chrono::DateTime<chrono::Local>,
-}
-
-impl MyTimestamp {
-    pub fn now() -> Self {
-        MyTimestamp {
-            value: chrono::Local::now(),
-        }
-    }
-
-    pub fn to_int(&self) -> i64 { // elapsed seconds from UNIX EPOCH
-        self.value.timestamp()
-    }
-
-    pub fn to_str(&self) -> String {
-        self.value.format("%Y/%m/%d %H:%M:%S").to_string()
-    }
 }
 
 //================================================================================
