@@ -10,6 +10,8 @@ use regex::Regex;
 use reqwest;
 use serde_json;
 
+use crate::my_logger::prelude::*;
+
 lazy_static! {
     static ref DNS_PROVIDER_BASE_URL: String = "https://1.1.1.1/dns-query".to_string();
 }
@@ -43,11 +45,11 @@ impl MyDNSResolver {
             return Ok(None);
         }
         if spf_records.len() > 1 {
-            println!("detect invalid SPF setting (multiple SPF records): {:?}", spf_records);
+            debug!("detect invalid SPF setting (multiple SPF records): {:?}", spf_records);
             return Ok(Some("*INVALID_SPF_SETTING*".to_string())); // go to "PERMERROR" (see "section 4.5" in RFC7208)
         }
         let spf_record = spf_records[0].clone();
-        println!("spf_record: {}", spf_record);
+        trace!("spf_record: {}", spf_record);
         Ok(Some(spf_record))
     }
 
@@ -77,7 +79,7 @@ impl MyDNSResolver {
                 });
         let records = query_result?; // may be empty
         for s in &records {
-            println!("dns_{}_record: {} {}", query_type, fqdn, s);
+            trace!("dns_{}_record: {} {}", query_type, fqdn, s);
         }
         Ok(records)
     }
@@ -123,7 +125,7 @@ impl MyDNSResolver {
             }
             s
         };
-        // println!("response_text: \"{}\"", response_text);
+        // trace!("response_text: \"{}\"", response_text);
         let json: serde_json::Value = serde_json::from_str(&response_text)?;
         let results = if let serde_json::Value::Array(v) = &json["Answer"] {
             // resolve canonical name (automatically redirected by DoH server)
@@ -140,7 +142,7 @@ impl MyDNSResolver {
                         table.insert(name, vec![data]);
                     }
                 }
-                // println!("DEBUG: fqdn={:?} table={:?}", fqdn, table);
+                // trace!("DEBUG: fqdn={:?} table={:?}", fqdn, table);
                 let mut key = if !table.contains_key(&fqdn) && fqdn.ends_with(".") { fqdn[..(fqdn.len() - 1)].to_string() } else { fqdn.clone() };
                 assert!(table.contains_key(&key));
                 let v = loop {
@@ -189,9 +191,9 @@ impl MyDNSResolver {
         for (k, v) in headers {
             request = request.header(*k, *v);
         }
-        // println!("MyDNSResolver: issue request for: {}", url.to_string()[0..50].to_owned());
+        // trace!("MyDNSResolver: issue request for: {}", url.to_string()[0..50].to_owned());
         let response = request.send().await?;
-        // println!("MyDNSResolver: Response.version(): {:?} for {}", response.version(), url.to_string()[0..50].to_owned());
+        // trace!("MyDNSResolver: Response.version(): {:?} for {}", response.version(), url.to_string()[0..50].to_owned());
         let text = response.text().await?;
         Ok(text)
     }

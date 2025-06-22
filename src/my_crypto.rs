@@ -4,6 +4,8 @@ use rsa::{RsaPublicKey, pkcs1::DecodeRsaPublicKey, pkcs1v15::Pkcs1v15Sign, pkcs8
 use sha1::{Digest, Sha1};
 use sha2::Sha256;
 
+use crate::my_logger::prelude::*;
+
 //====================================================================
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum MyHashAlgo {
@@ -114,7 +116,7 @@ fn my_verify_rsa_sign(pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_valu
     match result {
         Ok(()) => return Ok(true),
         Err(e) => {
-            println!("RSA signature verification is failed: {}", e);
+            debug!("RSA signature verification is failed: {}", e);
             return Ok(false);
         },
     }

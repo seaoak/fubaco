@@ -9,6 +9,7 @@ use lazy_static::lazy_static;
 use serde::Serialize;
 use serde_json;
 
+use crate::my_logger::prelude::*;
 use crate::my_timestamp::MyTimestamp;
 
 lazy_static! {
@@ -64,7 +65,7 @@ impl MyItem {
     }
 
     pub fn save_to_json_file(&self) -> Result<()> {
-        println!("plugin_yondakiji: write to JSON file: {}", *DB_FILENAME);
+        debug!("plugin_yondakiji: write to JSON file: {}", *DB_FILENAME);
         let mut f = OpenOptions::new().append(true).create(true).open(&*DB_FILENAME)?;
         let mut text = serde_json::to_string_pretty(self)?;
         text.push_str(",\n");
@@ -78,7 +79,7 @@ impl MyItem {
 pub fn plugin_yondakiji(table_of_spam_check_result: &mut HashSet<String>, message: &Message) {
     let header_to = message.to().and_then(|to| to.first()).and_then(|addr| addr.address());
     if header_to.is_none() {
-        println!("WARNING: plugin_yondakiji: there is no \"to\" header");
+        debug!("WARNING: plugin_yondakiji: there is no \"to\" header");
         return;
     }
     let header_to = header_to.unwrap();
@@ -98,15 +99,15 @@ pub fn plugin_yondakiji(table_of_spam_check_result: &mut HashSet<String>, messag
     }
 
     if let Some(tags) = TABLE_OF_MAIL_ADDRESS_TO_TAGS.get(header_to) {
-        println!("plugin_yondakiji: detect target mail address: {header_to}");
+        debug!("plugin_yondakiji: detect target mail address: {header_to}");
         if !table_of_spam_check_result.is_empty() {
-            println!("plugin_yondakiji: clear results of SPAM CHECKER");
+            info!("plugin_yondakiji: clear results of SPAM CHECKER");
             table_of_spam_check_result.clear();
         }
         let item = MyItem::from_message(message, tags);
         let result = item.and_then(|item| item.save_to_json_file());
         if let Err(e) = result {
-            println!("ERROR: plugin_yondakiji: {:?}", e);
+            error!("ERROR: plugin_yondakiji: {:?}", e);
             return;
         }
     }

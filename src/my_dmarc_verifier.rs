@@ -8,6 +8,7 @@ use regex::Regex;
 
 use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_message_parser::MyMessageParser;
+use crate::my_logger::prelude::*;
 
 lazy_static! {
     static ref DUMMY_DMARC_RECORD_FOR_ENFORCEMENT: String = "v=DMARC1;p=quarantine".to_string();
@@ -147,18 +148,18 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
         let dns_record = match resolver.query_simple(&fqdn, "TXT") {
             Ok(v) => match v.len() {
                 0 => {
-                    println!("DMARC record is not found by DNS lookup: {}", fqdn);
-                    println!("Enforce DMARC with dummy DNS record \"{}\"", *DUMMY_DMARC_RECORD_FOR_ENFORCEMENT);
+                    debug!("DMARC record is not found by DNS lookup: {}", fqdn);
+                    debug!("Enforce DMARC with dummy DNS record \"{}\"", *DUMMY_DMARC_RECORD_FOR_ENFORCEMENT);
                     DUMMY_DMARC_RECORD_FOR_ENFORCEMENT.clone()
                 },
                 1 => v[0].clone(),
                 _ => {
-                    println!("multiple DMARC records are found by DNS lookup ({}): {:?}", target_domain, v);
+                    debug!("multiple DMARC records are found by DNS lookup ({}): {:?}", target_domain, v);
                     return DMARCResult::new(DMARCStatus::PERMERROR, None);
                 },
             },
             Err(e) => {
-                println!("DNS lookup failed for DMARC record ({}): {:?}", fqdn, e);
+                debug!("DNS lookup failed for DMARC record ({}): {:?}", fqdn, e);
                 return DMARCResult::new(DMARCStatus::NONE, None);
             }
         };
@@ -166,12 +167,12 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
         for field in dns_record.split(';').map(|s| s.trim()) {
             if let Some((left, right)) = field.split_once('=') {
                 if table.contains_key(left) {
-                    println!("invalid DMARC record: key \"{}\" is existed multple times", left);
+                    debug!("invalid DMARC record: key \"{}\" is existed multple times", left);
                     return DMARCResult::new(DMARCStatus::PERMERROR, None);
                 }
                 if table.is_empty() {
                     if left != "v" {
-                        println!("invalid DMARC record: the first tag must be \"v\", but: {}", left);
+                        debug!("invalid DMARC record: the first tag must be \"v\", but: {}", left);
                         return DMARCResult::new(DMARCStatus::PERMERROR, None);
                     }
                 }
@@ -190,7 +191,7 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
                     if is_valid(s.as_str()) {
                         // OK
                     } else {
-                        println!("detect invalid \"{}\" field in DMARC record: \"{}\"", label, s);
+                        debug!("detect invalid \"{}\" field in DMARC record: \"{}\"", label, s);
                         return Some(DMARCResult::new(DMARCStatus::PERMERROR, None));
                     }
                 } else {
@@ -199,7 +200,7 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
                             table.insert(label.to_string(), s.to_string());
                         }
                     } else {
-                        println!("detet lack of required field \"{}\" in DMARC record", label);
+                        debug!("detet lack of required field \"{}\" in DMARC record", label);
                         return Some(DMARCResult::new(DMARCStatus::PERMERROR, None));
                     }
                 }

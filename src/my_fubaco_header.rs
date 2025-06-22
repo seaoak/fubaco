@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use crate::my_dkim_verifier::{self, DKIMResult, DKIMStatus};
 use crate::my_dmarc_verifier::{self, DMARCResult, DMARCStatus};
 use crate::my_dns_resolver::MyDNSResolver;
+use crate::my_logger::prelude::*;
 use crate::my_message_parser::MyMessageParser;
 use crate::my_plugin_yondakiji;
 use crate::my_plugin_yondatweet;
@@ -46,7 +47,7 @@ fn make_fubaco_padding_header(nbytes: usize) -> String { // generate just-nbyte-
 pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Result<String> {
     let fixed_message_u8 = my_str::fix_incorrect_quoted_printable_text(message_u8);
     if fixed_message_u8.len() != message_u8.len() {
-        println!("fixed_message_u8: {} bytes ({:+})", fixed_message_u8.len(), fixed_message_u8.len() as isize - message_u8.len() as isize);
+        info!("fixed_message_u8: {} bytes ({:+})", fixed_message_u8.len(), fixed_message_u8.len() as isize - message_u8.len() as isize);
     }
     let message;
     if let Some(v) = MessageParser::default().parse(&fixed_message_u8) {
@@ -78,12 +79,12 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
         if let Some(mx_spf_status) = table.get("spf") {
             let mx_spf_status = mx_spf_status.parse::<SPFStatus>().unwrap(); // TODO: unknonw string may have to be an error, not panic
             if &mx_spf_status != spf_result.as_status() {
-                println!("WARNING: my SPF checker says different result to \"Authentication-Results\" header: my={} vs header={}", spf_result.as_status(), mx_spf_status);
+                warn!("WARNING: my SPF checker says different result to \"Authentication-Results\" header: my={} vs header={}", spf_result.as_status(), mx_spf_status);
             }
             let my_spf_domain_list = spf_result.as_domains().clone();
             let mx_spf_domain_list = table.get("spf-target-domains").map(|s| s.split(',').map(str::to_string).collect::<Vec<String>>()).unwrap_or_default();
             if my_spf_domain_list.len() > 0 && mx_spf_domain_list.len() > 0 && intersect_vec(&my_spf_domain_list, &mx_spf_domain_list).len() == 0 {
-                println!("WARNING: my SPF checker says different target domain to \"Authentication-Results\" header: my={:?} vs header={:?}", my_spf_domain_list, mx_spf_domain_list);
+                warn!("WARNING: my SPF checker says different target domain to \"Authentication-Results\" header: my={:?} vs header={:?}", my_spf_domain_list, mx_spf_domain_list);
             }
             if mx_spf_status != SPFStatus::NONE {
                 spf_result = SPFResult::new(mx_spf_status, mx_spf_domain_list); // overwrite
@@ -97,12 +98,12 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
             let mx_dkim_status = table.get(mx_label).unwrap();
             let mx_dkim_status = mx_dkim_status.parse::<DKIMStatus>().unwrap(); // TODO: unknown string may have to be an error, not panic
             if &mx_dkim_status != dkim_result.as_status() {
-                println!("WARNING: my DKIM checker says different result to \"Authentication-Results\" header: my={} vs header={}", dkim_result.as_status(), mx_dkim_status);
+                warn!("WARNING: my DKIM checker says different result to \"Authentication-Results\" header: my={} vs header={}", dkim_result.as_status(), mx_dkim_status);
             }
             let my_dkim_domain_list = dkim_result.as_domains().clone();
             let mx_dkim_domain_list = table.get(&format!("{}-target-domains", mx_label)).map(|s| s.split(',').map(str::to_string).collect::<Vec<String>>()).unwrap_or_default();
             if my_dkim_domain_list.len() > 0 && mx_dkim_domain_list.len() > 0 && intersect_vec(&my_dkim_domain_list, &mx_dkim_domain_list).len() == 0 {
-                println!("WARNING: my DKIM checker says different target domain to \"Authentication-Results\" header: my={:?} vs header={:?}", my_dkim_domain_list, mx_dkim_domain_list);
+                warn!("WARNING: my DKIM checker says different target domain to \"Authentication-Results\" header: my={:?} vs header={:?}", my_dkim_domain_list, mx_dkim_domain_list);
             }
             if mx_dkim_status != DKIMStatus::NONE {
                 dkim_result = DKIMResult::new(mx_dkim_status, mx_dkim_domain_list); // overwrite
@@ -126,7 +127,7 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
             if let Some(mx_dmarc_status) = table.get("dmarc") {
                 let mx_dmarc_status = mx_dmarc_status.parse::<DMARCStatus>().unwrap(); // TODO: unknown string may have to be an error, not panic
                 if &mx_dmarc_status != dmarc_result.as_status() {
-                    println!("WARNING: my DMARC checker says different result to \"Authentication-Results\" header: my={} vs header={}", dmarc_result.as_status(), mx_dmarc_status);
+                    warn!("WARNING: my DMARC checker says different result to \"Authentication-Results\" header: my={} vs header={}", dmarc_result.as_status(), mx_dmarc_status);
                 }
                 if mx_dmarc_status != DMARCStatus::NONE {
                     dmarc_result = DMARCResult::new(mx_dmarc_status, dmarc_result.as_policy().clone()); // overwrite

@@ -7,6 +7,7 @@ use anyhow::Result;
 use lazy_static::lazy_static;
 use regex::Regex;
 
+use crate::my_logger::prelude::*;
 use crate::my_str::*;
 
 lazy_static! {
@@ -186,7 +187,7 @@ pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text: &str) -> Option<b
     let regex = match Regex::new(&pattern_string) {
         Ok(v) => v,
         Err(_e) => {
-            println!("ERROR: REGEX for suspicious-from is invalid: {}", pattern_string);
+            error!("ERROR: REGEX for suspicious-from is invalid: {}", pattern_string);
             return None;
         },
     };
