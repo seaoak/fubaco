@@ -219,20 +219,67 @@ lazy_static! {
 }
 
 fn strip_string_quotation(original: &str) -> String {
+    // trace!("original: {:?}", original);
+    assert!(!original.contains("\\\\"));
     let mut result = original.to_string();
-    loop {
-        let prev_len = result.len();
-        if let Some(caps) = REGEX_QUOTED_BY_DOUBLE_QUOTE.captures(&result) {
-            result = caps[1].to_string();
+    for separator in ["\\\"", "\""] {
+        let parts = result.split(separator).collect::<Vec<_>>();
+        assert!(parts.len() % 2 == 1);
+        if parts.len() == 1 {
+            continue;
         }
-        if let Some(caps) = REGEX_QUOTED_BY_ESCAPED_DOUBLE_QUOTE.captures(&result) {
-            result = format!("{}{}{}", caps[1].to_string(), caps[2].to_string(), caps[3].to_string());
-        }
-        if result.len() == prev_len {
-            break;
-        }
+        let (inner_parts, outer_parts): (Vec<_>, Vec<_>) = parts.into_iter().enumerate().partition(|(i, _s)| i % 2 == 1);
+        // trace!("inner_parts: {:?}", inner_parts);
+        // trace!("outer_parts: {:?}", outer_parts);
+        assert!(outer_parts.into_iter().all(|(_i, s)| s == "\"" || s.chars().all(|c| c.is_ascii_whitespace())));
+        let parts = inner_parts.into_iter().map(|(_i, s)| s).collect::<Vec<_>>();
+        result = parts.join("");
     }
     result
+}
+
+#[test]
+fn test_strip_string_quotation() {
+    let ss = r###"aaa"###;
+    assert_eq!(strip_string_quotation(ss), "aaa");
+    let ss = r###"aaa bbb"###;
+
+    // with double-quote
+    assert_eq!(strip_string_quotation(ss), "aaa bbb");
+    let ss = r###""aaa""###;
+    assert_eq!(strip_string_quotation(ss), "aaa");
+    let ss = r###""aaa" "bbb""###;
+    assert_eq!(strip_string_quotation(ss), "aaabbb");
+    let ss = r###""aaa""bbb""###;
+    assert_eq!(strip_string_quotation(ss), "aaabbb");
+    let ss = r###""aaa" "bbb" "ccc""###;
+    assert_eq!(strip_string_quotation(ss), "aaabbbccc");
+    let ss = r###""aaa""bbb""ccc""###;
+    assert_eq!(strip_string_quotation(ss), "aaabbbccc");
+
+    // with escaped double-quote
+    let ss = r###"\"aaa\""###;
+    assert_eq!(strip_string_quotation(ss), "aaa");
+    let ss = r###"\"aaa\" \"bbb\""###;
+    assert_eq!(strip_string_quotation(ss), "aaabbb");
+    let ss = r###"\"aaa\"\"bbb\""###;
+    assert_eq!(strip_string_quotation(ss), "aaabbb");
+    let ss = r###"\"aaa\" \"bbb\" \"ccc\""###;
+    assert_eq!(strip_string_quotation(ss), "aaabbbccc");
+    let ss = r###"\"aaa\"\"bbb\"\"ccc\""###;
+    assert_eq!(strip_string_quotation(ss), "aaabbbccc");
+
+    // with mix of both
+    let ss = r###""\"aaa\"""###;
+    assert_eq!(strip_string_quotation(ss), "aaa");
+    let ss = r###""\"aaa\" \"bbb\"""###;
+    assert_eq!(strip_string_quotation(ss), "aaabbb");
+    let ss = r###""\"aaa\"\"bbb\"""###;
+    assert_eq!(strip_string_quotation(ss), "aaabbb");
+    let ss = r###""\"aaa\" \"bbb\" \"ccc\"""###;
+    assert_eq!(strip_string_quotation(ss), "aaabbbccc");
+    let ss = r###""\"aaa\"\"bbb\"\"ccc\"""###;
+    assert_eq!(strip_string_quotation(ss), "aaabbbccc");
 }
 
 lazy_static! {
