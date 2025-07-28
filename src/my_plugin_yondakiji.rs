@@ -87,11 +87,13 @@ pub fn plugin_yondakiji(table_of_spam_check_result: &mut HashSet<String>, messag
     lazy_static! {
         static ref TABLE_OF_MAIL_ADDRESS_TO_TAGS: HashMap<String, Vec<String>> = {
             let mut table = HashMap::new();
-            if let Ok(mail_address) = env::var("FUBACO_PLUGIN_YONDAKIJI_ADDRESS_FF14") {
-                table.insert(mail_address, vec!["FUBACO".into(), "FF14".into()]);
-            }
-            if let Ok(mail_address) = env::var("FUBACO_PLUGIN_YONDAKIJI_ADDRESS_OTHERS") {
-                table.insert(mail_address, vec!["FUBACO".into(), "OTHERS".into()]);
+            for suffix in ["", "_2ND", "_3RD", "_4TH", "5TH", "6TH", "7TH", "8TH", "9TH"] {
+                if let Ok(mail_address) = env::var(format!("{}{}", "FUBACO_PLUGIN_YONDAKIJI_ADDRESS_FF14", suffix)) {
+                    table.insert(mail_address, vec!["FUBACO".into(), "FF14".into()]);
+                }
+                if let Ok(mail_address) = env::var(format!("{}{}", "FUBACO_PLUGIN_YONDAKIJI_ADDRESS_OTHERS", suffix)) {
+                    table.insert(mail_address, vec!["FUBACO".into(), "OTHERS".into()]);
+                }
             }
             assert_ne!(table.len(), 0);
             table
