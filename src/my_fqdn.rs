@@ -83,6 +83,16 @@ fn get_table_of_valid_domains() -> Result<Vec<(Regex, Vec<String>)>> {
             let last_char = s.chars().nth_back(0).unwrap();
             let prefix = if first_char.is_ascii_alphanumeric() { r"(^|[^a-zA-Z0-9])" } else { "" };
             let postfix = if last_char.is_ascii_alphanumeric() { r"([^a-zA-Z0-9]|$)" } else { "" };
+            if s == "ANA" {
+                println!("DEBUG: ANA: {:?} / {:?} / {:?} / {:?} / {:?}", s, first_char, last_char, prefix, postfix);
+                let r = Regex::new(&format!("{}{}{}", prefix, regex::escape(s), postfix)).unwrap();
+                assert!(r.is_match("ANA"));
+                assert!(r.is_match("ANAマイレージ"));
+                assert!(r.is_match("B-ANA_NA"));
+                assert!(!r.is_match("BANA"));
+                assert!(!r.is_match("ANAN"));
+                assert!(!r.is_match("BANANA"));
+            }
             Regex::new(&format!("{}{}{}", prefix, regex::escape(s), postfix)).unwrap()
         };
         let domains = l[1..].iter().map(|s| normalize_domain_string(s)).collect();
