@@ -179,7 +179,8 @@ pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text: &str) -> Option<b
     let it = TABLE_OF_VALID_DOMAINS.iter().filter(|(keyword, _domains)| text.contains(*keyword));
     let it = it.flat_map(|(_keyword, domains)| domains.into_iter());
     let it = it.map(|s| s.trim_start_matches(['.', '@']).to_owned());
-    let joined_string = it.map(|s| regex::escape(&s)).collect::<Vec<_>>().join("|");
+    let it = it.map(|s| regex::escape(&s));
+    let joined_string = it.collect::<Vec<_>>().join("|");
     if joined_string.len() == 0 {
         return None; // no keyword is detected
     }
