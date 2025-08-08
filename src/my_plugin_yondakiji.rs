@@ -32,6 +32,10 @@ impl MyItem {
             Some(s) => s,
             None => return Err(anyhow!("no subject")),
         };
+        let timestamp_of_mail = match message.date() {
+            Some(dt) => MyTimestamp::from(dt.to_timestamp()),
+            None => return Err(anyhow!("no Date header")),
+        };
 
         let body_text =  match message.body_text(0) {
             Some(v) => v,
@@ -49,7 +53,7 @@ impl MyItem {
             return Err(anyhow!("not a URL: {}", url));
         }
 
-        let timestamp = MyTimestamp::now();
+        let timestamp = timestamp_of_mail;
         let given_url = url.into();
         let given_title = title.into();
         let time_added = timestamp.to_int().to_string();

@@ -6,6 +6,7 @@ pub struct MyTimestamp {
 }
 
 impl MyTimestamp {
+    #[allow(dead_code)]
     pub fn now() -> Self {
         MyTimestamp {
             value: chrono::Local::now(),
