@@ -136,7 +136,7 @@ impl MyDNSResolver {
                 let mut table = HashMap::<String, Vec<String>>::new();
                 for x in v {
                     let name = x["name"].as_str().unwrap().to_string(); // strip double-quotation
-                    let data = convert_record_value_to_plain_text(&x["data"].to_string());
+                    let data = convert_record_value_to_plain_text(x["data"].as_str().unwrap());
                     if table.contains_key(&name) {
                         table.get_mut(&name).unwrap().push(data);
                     } else {
