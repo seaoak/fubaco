@@ -214,11 +214,6 @@ fn get_query_type_number_from_string(s: &str) -> Option<u16> {
     }
 }
 
-lazy_static! {
-    static ref REGEX_QUOTED_BY_DOUBLE_QUOTE: Regex = Regex::new(r#"^["](.*)["]$"#).unwrap();
-    static ref REGEX_QUOTED_BY_ESCAPED_DOUBLE_QUOTE: Regex = Regex::new(r#"^(.*?)[\\]["]([^"]+?)[\\]["](.*)$"#).unwrap();
-}
-
 fn strip_string_quotation(original: &str) -> String {
     // trace!("original: {:?}", original);
     assert!(!original.contains("\\\\"));
@@ -243,9 +238,9 @@ fn strip_string_quotation(original: &str) -> String {
 fn test_strip_string_quotation() {
     let ss = r###"aaa"###;
     assert_eq!(strip_string_quotation(ss), "aaa");
-    let ss = r###"aaa bbb"###;
 
     // with double-quote
+    let ss = r###"aaa bbb"###;
     assert_eq!(strip_string_quotation(ss), "aaa bbb");
     let ss = r###""aaa""###;
     assert_eq!(strip_string_quotation(ss), "aaa");
