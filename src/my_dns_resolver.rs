@@ -253,7 +253,7 @@ fn convert_record_value_to_plain_text(original: &str) -> String {
 
 #[test]
 fn test_convert_record_value_to_plain_text() {
-    // with an orphaned escaped double-quote
+    // with explicitly escaped double-quote
     // NOTE: this example is TXT record of `selector._domainkey.justmyshop.com`
     let ss = "\"\\\"v=DKIM1; k=rsa; \\\\\\\"\\\"\"";
     assert_eq!(convert_record_value_to_plain_text(ss), "v=DKIM1; k=rsa; \"");
