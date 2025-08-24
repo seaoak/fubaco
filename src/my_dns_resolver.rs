@@ -260,7 +260,7 @@ fn test_convert_record_value_to_plain_text() {
 }
 
 fn strip_string_quotation(original: &str) -> String {
-    // trace!("original: {:?}", original);
+    trace!("my_dns_resolver: strip_string_quotation(): original={:?}", original);
     assert!(!original.contains("\\\\"));
     let mut result = original.to_string();
     for separator in ["\\\"", "\""] {
