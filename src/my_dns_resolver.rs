@@ -218,7 +218,7 @@ fn convert_record_value_to_plain_text(original: &str) -> String {
     trace!("my_dns_resolver: convert_record_value_to_plain_text(): original={:?}", original);
 
     lazy_static! {
-        static ref PLACEHOLDER: String = "\0".to_string();
+        static ref PLACEHOLDER: String = "\0explicitly_escaped_char\0".to_string();
         static ref REGEX_FOR_PLACEHOLDER: Regex = Regex::new(&*PLACEHOLDER).unwrap();
         static ref REGEX_FOR_EXPLICITLY_ESCAPED_CHAR: Regex = Regex::new(r"[\\\\][\\\\]([\\\\].|[^\\\\])").unwrap();
     }
@@ -262,9 +262,22 @@ fn test_convert_record_value_to_plain_text() {
 fn strip_string_quotation(original: &str) -> String {
     trace!("my_dns_resolver: strip_string_quotation(): original={:?}", original);
     assert!(!original.contains("\\\\"));
+
+    lazy_static! {
+        static ref PLACEHOLDER: String = "\0orphaned_escaped_double_quote\0".to_string();
+        static ref REGEX_FOR_PLACEHOLDER: Regex = Regex::new(&*PLACEHOLDER).unwrap();
+    }
+    assert_eq!(*PLACEHOLDER, regex::escape(&*PLACEHOLDER));
+    assert!(!original.contains(&*PLACEHOLDER));
+
     let mut result = original.to_string();
     for separator in ["\\\"", "\""] {
         let parts = result.split(separator).collect::<Vec<_>>();
+        if parts.len() == 2 && separator == "\\\"" {
+            // special case: an orphaned escaped double-quote
+            result = parts.join(&*PLACEHOLDER);
+            continue;
+        }
         assert!(parts.len() % 2 == 1);
         if parts.len() == 1 {
             continue;
@@ -276,6 +289,10 @@ fn strip_string_quotation(original: &str) -> String {
         let parts = inner_parts.into_iter().map(|(_i, s)| s).collect::<Vec<_>>();
         result = parts.join("");
     }
+
+    result = REGEX_FOR_PLACEHOLDER.replace(&result, "\"").into(); // replace only once
+    assert!(!result.contains(&*PLACEHOLDER));
+
     result
 }
 
@@ -321,6 +338,11 @@ fn test_strip_string_quotation() {
     assert_eq!(strip_string_quotation(ss), "aaabbbccc");
     let ss = r###""\"aaa\"\"bbb\"\"ccc\"""###;
     assert_eq!(strip_string_quotation(ss), "aaabbbccc");
+
+    // with an orphaned escaped double-quote
+    // NOTE: this example is TXT record of `selector._domainkey.justmyshop.com`
+    let ss = "\"v=DKIM1; k=rsa; \\\"\"";
+    assert_eq!(strip_string_quotation(ss), "v=DKIM1; k=rsa; \"");
 }
 
 lazy_static! {
