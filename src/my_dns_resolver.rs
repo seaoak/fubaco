@@ -49,7 +49,7 @@ impl MyDNSResolver {
             return Ok(Some("*INVALID_SPF_SETTING*".to_string())); // go to "PERMERROR" (see "section 4.5" in RFC7208)
         }
         let spf_record = spf_records[0].clone();
-        trace!("spf_record: {}", spf_record);
+        debug!("spf_record: {}", spf_record);
         Ok(Some(spf_record))
     }
 
@@ -79,7 +79,7 @@ impl MyDNSResolver {
                 });
         let records = query_result?; // may be empty
         for s in &records {
-            trace!("dns_{}_record: {} {}", query_type, fqdn, s);
+            debug!("dns_{}_record: {} {}", query_type, fqdn, s);
         }
         Ok(records)
     }
@@ -91,7 +91,7 @@ impl MyDNSResolver {
         let headers = [
             ("Accept", "application/dns-json"),
         ];
-        trace!("my_dns_resolver: lookup(): fqdn={:?} query_type={:?}", fqdn, query_type);
+        debug!("my_dns_resolver: lookup(): fqdn={:?} query_type={:?}", fqdn, query_type);
         let query_type_number = if let Some(v) = get_query_type_number_from_string(&query_type) {
             v
         } else {
@@ -126,7 +126,7 @@ impl MyDNSResolver {
             }
             s
         };
-        trace!("my_dns_resolver: lookup(): response_text: \"{}\"", response_text);
+        debug!("my_dns_resolver: lookup(): response_text: \"{}\"", response_text);
         let json: serde_json::Value = serde_json::from_str(&response_text)?;
         let results = if let serde_json::Value::Array(v) = &json["Answer"] {
             // resolve canonical name (automatically redirected by DoH server)
@@ -143,7 +143,7 @@ impl MyDNSResolver {
                         table.insert(name, vec![data]);
                     }
                 }
-                trace!("my_dns_resolver: lookup(): fqdn={:?} table={:?}", fqdn, table);
+                debug!("my_dns_resolver: lookup(): fqdn={:?} table={:?}", fqdn, table);
                 let mut key = if !table.contains_key(&fqdn) && fqdn.ends_with(".") { fqdn[..(fqdn.len() - 1)].to_string() } else { fqdn.clone() };
                 assert!(table.contains_key(&key));
                 let v = loop {
@@ -192,9 +192,9 @@ impl MyDNSResolver {
         for (k, v) in headers {
             request = request.header(*k, *v);
         }
-        // trace!("MyDNSResolver: issue request for: {}", url.to_string()[0..50].to_owned());
+        // debug!("MyDNSResolver: issue request for: {}", url.to_string()[0..50].to_owned());
         let response = request.send().await?;
-        // trace!("MyDNSResolver: Response.version(): {:?} for {}", response.version(), url.to_string()[0..50].to_owned());
+        // debug!("MyDNSResolver: Response.version(): {:?} for {}", response.version(), url.to_string()[0..50].to_owned());
         let text = response.text().await?;
         Ok(text)
     }
@@ -215,7 +215,7 @@ fn get_query_type_number_from_string(s: &str) -> Option<u16> {
 }
 
 fn convert_record_value_to_plain_text(original: &str) -> String {
-    trace!("my_dns_resolver: convert_record_value_to_plain_text(): original={:?}", original);
+    debug!("my_dns_resolver: convert_record_value_to_plain_text(): original={:?}", original);
 
     lazy_static! {
         static ref PLACEHOLDER: String = "\0explicitly_escaped_char\0".to_string();
@@ -233,7 +233,7 @@ fn convert_record_value_to_plain_text(original: &str) -> String {
         assert_ne!(sss.len(), 0);
         let c = sss.chars().nth(sss.len() - 1).unwrap();
         table.push(c);
-        trace!("my_dns_resolver: convert_record_value_to_plain_text(): replaced={:?}", c);
+        debug!("my_dns_resolver: convert_record_value_to_plain_text(): replaced={:?}", c);
         PLACEHOLDER.to_string()
     });
     let ss = strip_string_quotation(&ss);
@@ -260,7 +260,7 @@ fn test_convert_record_value_to_plain_text() {
 }
 
 fn strip_string_quotation(original: &str) -> String {
-    trace!("my_dns_resolver: strip_string_quotation(): original={:?}", original);
+    debug!("my_dns_resolver: strip_string_quotation(): original={:?}", original);
     assert!(!original.contains("\\\\"));
 
     lazy_static! {
@@ -283,8 +283,8 @@ fn strip_string_quotation(original: &str) -> String {
             continue;
         }
         let (inner_parts, outer_parts): (Vec<_>, Vec<_>) = parts.into_iter().enumerate().partition(|(i, _s)| i % 2 == 1);
-        // trace!("inner_parts: {:?}", inner_parts);
-        // trace!("outer_parts: {:?}", outer_parts);
+        // debug!("inner_parts: {:?}", inner_parts);
+        // debug!("outer_parts: {:?}", outer_parts);
         assert!(outer_parts.into_iter().all(|(_i, s)| s == "\"" || s.chars().all(|c| c.is_ascii_whitespace())));
         let parts = inner_parts.into_iter().map(|(_i, s)| s).collect::<Vec<_>>();
         result = parts.join("");

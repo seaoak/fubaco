@@ -87,28 +87,28 @@ pub fn fix_incorrect_quoted_printable_text(raw_u8: &[u8]) -> Vec<u8> {
         static ref REGEX_CONTENT_TYPE_FOR_MULTIPART: Regex = Regex::new(r##"^\s*multipart/[^;]+;(\s*\S+\s*;)*\s*boundary=["]?([-_=.,!#$%&^~|+*/?()<>0-9a-zA-Z]+)["]?\s*(;|$)"##).unwrap();
     }
     if let Some(caps) = REGEX_CONTENT_TYPE_FOR_MULTIPART.captures(&content_type) {
-        trace!("MIME multipart: boundary: {}", &caps[2]);
+        debug!("MIME multipart: boundary: {}", &caps[2]);
         let boundary = format!("\r\n--{}\r\n", &caps[2]); // include CRLF of previous line
         let regexp_for_last_part = Regex::new(&format!(r"(\r\n--{}(--)?\r\n(\s*\r\n)*)$", regex::escape(&caps[2]))).unwrap(); // include CRLF of previous line
         let last_part = match regexp_for_last_part.captures(&body_part) {
             Some(caps) => caps[1].to_owned(),
             None => return text.into_bytes(), // malformed mail format can not be processed
         };
-        trace!("MIME multipart: last part (dummy): {:?}", last_part);
+        debug!("MIME multipart: last part (dummy): {:?}", last_part);
         assert_eq!(&body_part[(body_part.len() - last_part.len())..], &last_part);
         let modified_body = format!("\r\n{}", &body_part[..(body_part.len() - last_part.len())]);  // insert CRLF at the first to match the boundary string, and remove last part
         let mut parts = modified_body.split(&boundary).map(|s| format!("{}\r\n", s)).collect::<Vec<_>>(); // compensate CRLF which is removed by str::split() and last_part
         let first_part = parts.remove(0)["\r\n".len()..].to_owned(); // remove previously-inserted CRLF (result may be empty string)
-        trace!("MIME multipart: first part (dummy): {:?}", first_part);
-        trace!("MIME multipart: number of parts: {}", parts.len());
-        parts.iter().enumerate().for_each(|(index, s)| trace!("MIME multipart: part[{}]: {} bytes", index, s.as_bytes().len()));
+        debug!("MIME multipart: first part (dummy): {:?}", first_part);
+        debug!("MIME multipart: number of parts: {}", parts.len());
+        parts.iter().enumerate().for_each(|(index, s)| debug!("MIME multipart: part[{}]: {} bytes", index, s.as_bytes().len()));
         let fixed = parts.into_iter().map(|s| fix_incorrect_quoted_printable_text(s.as_bytes())); // recursive call
         let mut list = Vec::new();
         list.push(header_part.to_owned().into_bytes());
         list.push("\r\n\r\n".to_owned().into_bytes());
         list.push(first_part.into_bytes());
         fixed.enumerate().for_each(|(index, part_u8)| {
-            trace!("MIME multipart fixed part[{}]: {} bytes", index, part_u8.len());
+            debug!("MIME multipart fixed part[{}]: {} bytes", index, part_u8.len());
             list.push(boundary["\r\n".len()..].to_owned().into_bytes());
             list.push(part_u8);
         });

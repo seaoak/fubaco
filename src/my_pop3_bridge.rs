@@ -84,7 +84,7 @@ fn parse_multi_line_response<S>(response_lines: &[u8]) -> Result<Vec<(MessageNum
 
     let body_u8 = &response_lines[status_line.len()..(response_lines.len() - b".\r\n".len())];
     let body_text = String::from_utf8_lossy(body_u8);
-    trace!("{}", body_text);
+    debug!("{}", body_text);
 
     let mut table = HashSet::new();
     let mut list = Vec::new();

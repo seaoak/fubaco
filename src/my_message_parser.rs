@@ -92,7 +92,7 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
             _ => unreachable!(), // unexpected type for "Return-Path" header
         };
         let envelop_from = address.replace(&['<', '>'], "").to_lowercase().trim().to_string();
-        trace!("Envelop.from: \"{}\"", envelop_from);
+        debug!("Envelop.from: \"{}\"", envelop_from);
         if envelop_from.len() == 0 {
             None
         } else {
@@ -105,7 +105,7 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
             if let mail_parser::HeaderValue::Received(received) = header_value {
                 if let Some(mail_parser::Host::Name(s)) = received.by() {
                     if s == "niftygreeting" || s.ends_with(".nifty.com") || s.ends_with(".mailbox.org") || s.ends_with(".gandi.net") || s.ends_with(".mxrouting.net") || s.ends_with(".google.com") {
-                        trace!("DEBUG: received.from(): \"{:?}\"", received.from());
+                        debug!("DEBUG: received.from(): \"{:?}\"", received.from());
                         if let Some(mail_parser::Host::Name(ss)) = received.from() {
                             lazy_static! {
                                 static ref REGEX_NIFTY_MAILSERVER: Regex = Regex::new(r"^concspmx-\d+$").unwrap();
@@ -144,7 +144,7 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
             Some(mail_parser::HeaderValue::Text(s)) => s,
             _ => return None,
         };
-        trace!("Authenticatino-Results: {}", header_value);
+        debug!("Authenticatino-Results: {}", header_value);
         lazy_static! {
             static ref REGEX_CONTINUATION_LINE_PATTERN: Regex = Regex::new(r"\r\n([ \t])").unwrap();
         }

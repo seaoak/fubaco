@@ -18,7 +18,7 @@ pub fn spam_checker_envelop_from(table: &mut HashSet<String>, message: &Message)
     }
     let envelop_from = header_value.unwrap().to_string();
     let envelop_from = envelop_from.trim().trim_start_matches('<').trim_end_matches('>').trim(); // may be empty string
-    trace!("Envelop.from: \"{}\"", envelop_from);
+    debug!("Envelop.from: \"{}\"", envelop_from);
     if let Some(fqdn) = my_fqdn::extract_fqdn_in_mail_address_with_validation(&envelop_from) {
         if my_fqdn::is_blacklist_tld(&fqdn) {
             info!("blacklist-tld in envelop from address: \"{}\"", envelop_from);
@@ -123,17 +123,17 @@ pub fn spam_checker_header_from(table: &mut HashSet<String>, message: &Message) 
         return;
     }
     let (name_raw, address_raw) = header_from.unwrap();
-    trace!("From.name_raw: \"{}\"", name_raw);
+    debug!("From.name_raw: \"{}\"", name_raw);
     let name = normalize_string(&name_raw);
-    trace!("From.name: \"{}\"", name);
+    debug!("From.name: \"{}\"", name);
     let address = normalize_string(&address_raw);
-    trace!("From.address: \"{}\"", address);
+    debug!("From.address: \"{}\"", address);
     let subject_raw = message.subject().unwrap_or_default();
-    trace!("Subject_raw: \"{}\"", subject_raw);
+    debug!("Subject_raw: \"{}\"", subject_raw);
     let subject = normalize_string(subject_raw);
-    trace!("Subject: \"{}\"", subject);
+    debug!("Subject: \"{}\"", subject);
     let list_of_header_to = parse_address_of_mail_parser(message.to());
-    trace!("To.address: \"{:?}\"", list_of_header_to);
+    debug!("To.address: \"{:?}\"", list_of_header_to);
     let table_of_address_of_header_to = list_of_header_to.into_iter().filter_map(|(_name, address)| address).collect::<HashSet<_>>();
 
     let fqdn = my_fqdn::extract_fqdn_in_mail_address_with_validation(&address).unwrap_or_default();
@@ -320,7 +320,7 @@ pub fn spam_checker_suspicious_delivery_report(table: &mut HashSet<String>, mess
         }
         match (&report_domain, &destination_domain) {
             (Some(domain1), Some(domain2)) => {
-                trace!("delivery_report: report_domain={} destination_domain={}", domain1, domain2);
+                debug!("delivery_report: report_domain={} destination_domain={}", domain1, domain2);
                 if domain1 != domain2 {
                     // report_domain may be an "open relay" mail server
                     table.insert("suspicious-delivery-report".into());

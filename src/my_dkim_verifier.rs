@@ -85,7 +85,7 @@ fn get_dkim_signature_header(message: &Message) -> Option<String> {
         Some(mail_parser::HeaderValue::Text(s)) => s, // there is no CRLF at the end
         _ => return None,
     };
-    trace!("DKIM-Signature: {}", header_value);
+    debug!("DKIM-Signature: {}", header_value);
     Some(header_value.to_string())
 }
 
@@ -471,10 +471,10 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
         };
         assert!(header_canonicalized.ends_with("\r\n"));
         header_canonicalized.truncate(header_canonicalized.len() - "\r\n".len()); // remove CRLF at the end of DKIM-Signature header
-        trace!("----------\n{}\n----------", header_canonicalized);
+        debug!("----------\n{}\n----------", header_canonicalized);
         let header_u8 = header_canonicalized.as_bytes();
         header_hash_value = my_calc_hash(dkim_signature_hash_algo, header_u8);
-        trace!("DEBUG: header_hash: {}", BASE64_STANDARD.encode(&header_hash_value));
+        debug!("DEBUG: header_hash: {}", BASE64_STANDARD.encode(&header_hash_value));
     }
 
     // refer DNS record
