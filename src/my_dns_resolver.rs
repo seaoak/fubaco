@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
-use regex::Regex;
+use regex::{self, Captures, Regex};
 use reqwest;
 use serde_json;
 
@@ -136,7 +136,7 @@ impl MyDNSResolver {
                 let mut table = HashMap::<String, Vec<String>>::new();
                 for x in v {
                     let name = x["name"].as_str().unwrap().to_string(); // strip double-quotation
-                    let data = strip_string_quotation(&x["data"].to_string());
+                    let data = convert_record_value_to_plain_text(&x["data"].to_string());
                     if table.contains_key(&name) {
                         table.get_mut(&name).unwrap().push(data);
                     } else {
@@ -212,6 +212,51 @@ fn get_query_type_number_from_string(s: &str) -> Option<u16> {
         "SPF"       => Some(99),
         _           => None,
     }
+}
+
+fn convert_record_value_to_plain_text(original: &str) -> String {
+    trace!("my_dns_resolver: convert_record_value_to_plain_text(): original={:?}", original);
+
+    lazy_static! {
+        static ref PLACEHOLDER: String = "\0".to_string();
+        static ref REGEX_FOR_PLACEHOLDER: Regex = Regex::new(&*PLACEHOLDER).unwrap();
+        static ref REGEX_FOR_EXPLICITLY_ESCAPED_CHAR: Regex = Regex::new(r"[\\\\][\\\\]([\\\\].|[^\\\\])").unwrap();
+    }
+    assert_eq!(*PLACEHOLDER, regex::escape(&*PLACEHOLDER));
+    assert!(!original.contains(&*PLACEHOLDER));
+
+    let mut table = Vec::<char>::new();
+
+    let ss = original;
+    let ss = REGEX_FOR_EXPLICITLY_ESCAPED_CHAR.replace_all(ss, |caps: &Captures| {
+        let sss = &caps[1];
+        assert_ne!(sss.len(), 0);
+        let c = sss.chars().nth(sss.len() - 1).unwrap();
+        table.push(c);
+        trace!("my_dns_resolver: convert_record_value_to_plain_text(): replaced={:?}", c);
+        PLACEHOLDER.to_string()
+    });
+    let ss = strip_string_quotation(&ss);
+    let ss = if table.len() == 0 {
+        ss
+    } else {
+        // restore
+        table.reverse();
+        let ss = REGEX_FOR_PLACEHOLDER.replace_all(&ss, |_caps: &Captures| {
+            table.pop().unwrap().to_string()
+        });
+        assert_eq!(table.len(), 0);
+        ss.into()
+    };
+    ss
+}
+
+#[test]
+fn test_convert_record_value_to_plain_text() {
+    // with an orphaned escaped double-quote
+    // NOTE: this example is TXT record of `selector._domainkey.justmyshop.com`
+    let ss = "\"\\\"v=DKIM1; k=rsa; \\\\\\\"\\\"\"";
+    assert_eq!(convert_record_value_to_plain_text(ss), "v=DKIM1; k=rsa; \"");
 }
 
 fn strip_string_quotation(original: &str) -> String {
