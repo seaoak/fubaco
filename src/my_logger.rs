@@ -34,7 +34,7 @@ pub fn init() {
         .compact()
         .with_filter(filter_for_stdout);
 
-    let filter_for_logfile = LevelFilter::TRACE;
+    let filter_for_logfile = LevelFilter::DEBUG;
     let logfile_logger = (|| -> std::io::Result<_> {
         let file = File::options().append(true).create(true).open(FILEPATH_TO_LOG_FILE.as_str())?;
         let logger = tracing_subscriber::fmt::layer()
