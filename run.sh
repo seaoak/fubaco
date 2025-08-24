@@ -14,4 +14,8 @@ export RUST_BACKTRACE=1
 rustup -V
 rustup show -v
 
+if test "X$1" == "Xtest"; then
+    exec cargo $@
+fi
+
 exec cargo run
