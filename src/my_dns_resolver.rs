@@ -91,6 +91,7 @@ impl MyDNSResolver {
         let headers = [
             ("Accept", "application/dns-json"),
         ];
+        trace!("my_dns_resolver: lookup(): fqdn={:?} query_type={:?}", fqdn, query_type);
         let query_type_number = if let Some(v) = get_query_type_number_from_string(&query_type) {
             v
         } else {
@@ -125,7 +126,7 @@ impl MyDNSResolver {
             }
             s
         };
-        // trace!("response_text: \"{}\"", response_text);
+        trace!("my_dns_resolver: lookup(): response_text: \"{}\"", response_text);
         let json: serde_json::Value = serde_json::from_str(&response_text)?;
         let results = if let serde_json::Value::Array(v) = &json["Answer"] {
             // resolve canonical name (automatically redirected by DoH server)
@@ -142,7 +143,7 @@ impl MyDNSResolver {
                         table.insert(name, vec![data]);
                     }
                 }
-                // trace!("DEBUG: fqdn={:?} table={:?}", fqdn, table);
+                trace!("my_dns_resolver: lookup(): fqdn={:?} table={:?}", fqdn, table);
                 let mut key = if !table.contains_key(&fqdn) && fqdn.ends_with(".") { fqdn[..(fqdn.len() - 1)].to_string() } else { fqdn.clone() };
                 assert!(table.contains_key(&key));
                 let v = loop {
