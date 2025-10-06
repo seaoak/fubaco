@@ -3,6 +3,12 @@ name = "fubaco"
 version = "0.1.0"
 edition = "2021"
 
+[profile.dev]
+debug = true # enable debug symbols
+
+[profile.release]
+debug = true # enable debug symbols
+
 [dependencies]
 anyhow = "1.0.86"
 base64 = "0.22.1"

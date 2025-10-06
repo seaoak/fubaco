@@ -15,7 +15,25 @@ rustup -V
 rustup show -v
 
 if test "X$1" == "Xtest"; then
-    time cargo $@
+    time cargo "$@"
+    exit $?
+fi
+
+if test "X$1" == "Xsamply"; then
+    # https://hazm.at/mox/lang/rust/recipes/devenv/profiler/index.html
+    which samply > /dev/null || exit 2
+    shift
+    exec samply "$@"
+fi
+
+if test "X$1" == "X--release"; then
+    time cargo run "$@"
+    exit $?
+fi
+
+if test $# -ge 1; then
+    time cargo "$@"
+    exit $?
 fi
 
 time cargo run
