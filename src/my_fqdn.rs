@@ -172,12 +172,19 @@ pub fn is_prohibited_word_included(text: &str) -> bool {
 
 pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text_raw: &str) -> Option<bool> {
     let fqdn = normalize_domain_string(fqdn); // just to make sure
+    let sparse_text = generate_sparse_text_for_matching_with_word_boundary(text_raw);
     lazy_static! {
-        static ref TABLE_OF_VALID_DOMAINS: Vec<(String, Vec<String>)> = get_table_of_valid_domains().unwrap_or_default();
+        static ref TABLE_OF_VALID_DOMAINS: Vec<(Regex, Vec<String>)> = {
+            let table: Vec<(String, Vec<String>)> = get_table_of_valid_domains().unwrap_or_default();
+            table.into_iter().map(|(keyword, domains)| {
+                let re = generate_regexp_for_mathcing_with_word_boundary(&keyword);
+                (re, domains)
+            }).collect()
+        };
     }
     let it = TABLE_OF_VALID_DOMAINS.iter();
-    let it = it.filter(|(keyword, _domains)| is_keyword_matched_with_word_boundary(keyword, text_raw));
-    let it = it.flat_map(|(_keyword, domains)| domains.into_iter());
+    let it = it.filter(|(re, _domains)| re.is_match(&sparse_text));
+    let it = it.flat_map(|(_re, domains)| domains.into_iter());
     let it = it.map(|s| s.trim_start_matches(['.', '@']).to_owned());
     let it = it.map(|s| regex::escape(&s));
     let joined_string = it.collect::<Vec<_>>().join("|");

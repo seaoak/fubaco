@@ -60,7 +60,35 @@ fn test_normalize_string() {
 }
 
 //================================================================================
-pub fn is_keyword_matched_with_word_boundary(keyword: &str, text: &str) -> bool {
+pub fn generate_regexp_for_mathcing_with_word_boundary(keyword: &str) -> Regex {
+    let keyword = normalize_string(keyword);
+
+    let s = &keyword;
+    assert!(s.len() > 0);
+
+    let first_char = s.chars().nth(0).unwrap();
+    let last_char = s.chars().nth_back(0).unwrap();
+    let prefix = if first_char.is_ascii_alphanumeric() { r"(^|[^a-zA-Z0-9])" } else { "" };
+    let postfix = if last_char.is_ascii_alphanumeric() { r"([^a-zA-Z0-9]|$)" } else { "" };
+
+    let escaped_elements = s.chars().map(|c| regex::escape(&c.to_string())).collect::<Vec<_>>();
+    let pattern_with_any_extra_whitespace = escaped_elements.join(r"\s*");
+
+    Regex::new(&format!("{}{}{}", prefix, pattern_with_any_extra_whitespace, postfix)).unwrap()
+}
+
+pub fn generate_sparse_text_for_matching_with_word_boundary(text_raw: &str) -> String {
+    let text = text_raw.nfc(); // not NFKC which is used in `normalize_string()`
+    let text = text.to_string();
+    let it = text.chars();
+    let it = it.map(|c| normalize_string(&c.to_string()));
+    let it = it.map(|s| if s.len() > 0 { s } else { " ".to_string() }); // replace empty element with a whitespace
+    let converted_text: String = it.collect();
+    converted_text
+}
+
+#[cfg(test)]
+fn is_keyword_matched_with_word_boundary(keyword: &str, text_raw: &str) -> bool {
     // First, the keyword `ANA` should not match a string `BANANA`.
     // So we should consider WORD BOUNDARY.
     // Second, when the keyword is `Apple`, a string `Apple ID` should be matched.
@@ -69,30 +97,9 @@ pub fn is_keyword_matched_with_word_boundary(keyword: &str, text: &str) -> bool 
     // This leads us to give up using the helper function `normalize_string()` directly.
     // Third, we should consider extra whitespaces at any position in the middle of a word (with evil intentions).
 
-    let keyword = normalize_string(keyword);
-    let re = {
-        let s = &keyword;
-        assert!(s.len() > 0);
-
-        let first_char = s.chars().nth(0).unwrap();
-        let last_char = s.chars().nth_back(0).unwrap();
-        let prefix = if first_char.is_ascii_alphanumeric() { r"(^|[^a-zA-Z0-9])" } else { "" };
-        let postfix = if last_char.is_ascii_alphanumeric() { r"([^a-zA-Z0-9]|$)" } else { "" };
-
-        let escaped_elements = s.chars().map(|c| regex::escape(&c.to_string())).collect::<Vec<_>>();
-        let pattern_with_any_extra_whitespace = escaped_elements.join(r"\s*");
-
-        Regex::new(&format!("{}{}{}", prefix, pattern_with_any_extra_whitespace, postfix)).unwrap()
-    };
-
-    let text = text.nfc(); // not NFKC which is used in `normalize_string()`
-    let text = text.to_string();
-    let it = text.chars();
-    let it = it.map(|c| normalize_string(&c.to_string()));
-    let it = it.map(|s| if s.len() > 0 { s } else { " ".to_string() }); // replace empty element with a whitespace
-    let converted_text: String = it.collect();
-
-    re.is_match(&converted_text)
+    let re = generate_regexp_for_mathcing_with_word_boundary(keyword);
+    let text = generate_sparse_text_for_matching_with_word_boundary(text_raw);
+    re.is_match(&text)
 }
 
 #[test]
