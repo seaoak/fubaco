@@ -144,10 +144,10 @@ pub fn spam_checker_header_from(table: &mut HashSet<String>, message: &Message) 
         info!("skip trusted domain: {}", address);
         return;
     }
-    if let Some(false) = my_fqdn::is_valid_domain_by_guessing_from_text(&fqdn, &name) {
+    if let Some(false) = my_fqdn::is_valid_domain_by_guessing_from_text(&fqdn, &name_raw) {
         table.insert("suspicious-from".into());
     }
-    if let Some(false) = my_fqdn::is_valid_domain_by_guessing_from_text(&fqdn, &subject) {
+    if let Some(false) = my_fqdn::is_valid_domain_by_guessing_from_text(&fqdn, &subject_raw) {
         table.insert("suspicious-from".into());
     }
     if table_of_address_of_header_to.contains(&address) { // header.from is camoflaged with destination address

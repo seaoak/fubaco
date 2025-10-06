@@ -70,33 +70,13 @@ fn get_prohibited_words() -> Result<Vec<String>> {
     Ok(list)
 }
 
-fn get_table_of_valid_domains() -> Result<Vec<(Regex, Vec<String>)>> {
+fn get_table_of_valid_domains() -> Result<Vec<(String, Vec<String>)>> {
     let lines = load_tsv_file(&*SUSPICIOUS_LIST_FILENAME)?;
     let it = lines.iter().filter(|l| l[0] != "@" && l[0] != "!" && l.len() > 1);
     let it = it.map(|l| {
         let keyword = normalize_string(&l[0]);
-        let re = {
-            // complement WORD BOUNDARY for ASCII ALPHABET/DIGIT (to support the keyword "ANA" for validation of FROM/SUBJECT header)
-            let s = &keyword;
-            assert!(s.len() > 0);
-            let first_char = s.chars().nth(0).unwrap();
-            let last_char = s.chars().nth_back(0).unwrap();
-            let prefix = if first_char.is_ascii_alphanumeric() { r"(^|[^a-zA-Z0-9])" } else { "" };
-            let postfix = if last_char.is_ascii_alphanumeric() { r"([^a-zA-Z0-9]|$)" } else { "" };
-            if s == "ANA" {
-                println!("DEBUG: ANA: {:?} / {:?} / {:?} / {:?} / {:?}", s, first_char, last_char, prefix, postfix);
-                let r = Regex::new(&format!("{}{}{}", prefix, regex::escape(s), postfix)).unwrap();
-                assert!(r.is_match("ANA"));
-                assert!(r.is_match("ANAマイレージ"));
-                assert!(r.is_match("B-ANA_NA"));
-                assert!(!r.is_match("BANA"));
-                assert!(!r.is_match("ANAN"));
-                assert!(!r.is_match("BANANA"));
-            }
-            Regex::new(&format!("{}{}{}", prefix, regex::escape(s), postfix)).unwrap()
-        };
         let domains = l[1..].iter().map(|s| normalize_domain_string(s)).collect();
-        (re, domains)
+        (keyword, domains)
     });
     let table = it.collect::<Vec<(_, _)>>();
     Ok(table)
@@ -190,14 +170,14 @@ pub fn is_prohibited_word_included(text: &str) -> bool {
     PROHIBITED_WORDS.iter().any(|word| text.contains(word))
 }
 
-pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text: &str) -> Option<bool> {
+pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text_raw: &str) -> Option<bool> {
     let fqdn = normalize_domain_string(fqdn); // just to make sure
     lazy_static! {
-        static ref TABLE_OF_VALID_DOMAINS: Vec<(Regex, Vec<String>)> = get_table_of_valid_domains().unwrap_or_default();
+        static ref TABLE_OF_VALID_DOMAINS: Vec<(String, Vec<String>)> = get_table_of_valid_domains().unwrap_or_default();
     }
     let it = TABLE_OF_VALID_DOMAINS.iter();
-    let it = it.filter(|(re, _domains)| re.is_match(text));
-    let it = it.flat_map(|(_re, domains)| domains.into_iter());
+    let it = it.filter(|(keyword, _domains)| is_keyword_matched_with_word_boundary(keyword, text_raw));
+    let it = it.flat_map(|(_keyword, domains)| domains.into_iter());
     let it = it.map(|s| s.trim_start_matches(['.', '@']).to_owned());
     let it = it.map(|s| regex::escape(&s));
     let joined_string = it.collect::<Vec<_>>().join("|");
