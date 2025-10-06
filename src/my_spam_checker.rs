@@ -172,6 +172,10 @@ pub fn spam_checker_header_from(table: &mut HashSet<String>, message: &Message) 
     if table_of_address_of_header_to.contains(&address) { // header.from is camoflaged with destination address
         table.insert("suspicious-from".into());
     }
+    if is_seemed_to_mail_address(&name_raw) {
+        info!("suspicious-name-in-from: {}", name_raw);
+        table.insert("suspicious-name-in-from".into());
+    }
 }
 
 fn check_hyperlink(table: &mut HashSet<String>, url: &str, text: Option<String>) {

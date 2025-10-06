@@ -189,6 +189,14 @@ pub fn is_unicode_control_codepoint_included(text: &str) -> bool {
 }
 
 //================================================================================
+pub fn is_seemed_to_mail_address(text: &str) -> bool {
+    lazy_static! {
+        static ref REGEX_MAIL_ADDRESS_RELAXED: Regex = Regex::new(r"^\s*([-=_~^+.a-zA-Z0-9]+)[@][-a-zA-Z0-9]+([.][-a-zA-Z0-9]+)+\s*$").unwrap(); // not strict
+    }
+    REGEX_MAIL_ADDRESS_RELAXED.is_match(text)
+}
+
+//================================================================================
 fn get_header_value(text: &str, name: &str) -> Option<String> {
     let lines = text.lines();
     let mut headers = Vec::<String>::new();
