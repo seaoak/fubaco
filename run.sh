@@ -15,7 +15,7 @@ rustup -V
 rustup show -v
 
 if test "X$1" == "Xtest"; then
-    exec cargo $@
+    time cargo $@
 fi
 
-exec cargo run
+time cargo run

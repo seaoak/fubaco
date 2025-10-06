@@ -2,6 +2,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufReader, ErrorKind, Read, Write};
 use std::net::TcpStream;
+use std::time;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -240,6 +241,7 @@ fn test_rustls_simple_client() -> Result<()> {
 }
 
 fn test_spam_checker_with_local_files() -> Result<()> {
+    let start_time = time::Instant::now();
     let path_to_dir = std::path::Path::new("./mail-sample");
     for entry in path_to_dir.read_dir()? {
         let entry = entry?;
@@ -265,6 +267,7 @@ fn test_spam_checker_with_local_files() -> Result<()> {
         assert_eq!(!is_error, REGEX_FILENAME_AS_SUCCESSFUL.is_match(&filename));
     }
     MY_DNS_RESOLVER.save_cache()?;
+    info!("Elapsed time: {:.3} sec", start_time.elapsed().as_secs_f32());
     Ok(())
 }
 
