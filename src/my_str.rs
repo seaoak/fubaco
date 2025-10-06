@@ -60,6 +60,97 @@ fn test_normalize_string() {
 }
 
 //================================================================================
+pub fn is_keyword_matched_with_word_boundary(keyword: &str, text: &str) -> bool {
+    // First, the keyword `ANA` should not match a string `BANANA`.
+    // So we should consider WORD BOUNDARY.
+    // Second, when the keyword is `Apple`, a string `Apple ID` should be matched.
+    // But if we use the helper function `normalize_string()`, `Apple ID` is converted to `APPLEID`.
+    // So we can not use the RegExp pattern `\b`.
+    // This leads us to give up using the helper function `normalize_string()` directly.
+    // Third, we should consider extra whitespaces at any position in the middle of a word (with evil intentions).
+
+    let keyword = normalize_string(keyword);
+    let re = {
+        let s = &keyword;
+        assert!(s.len() > 0);
+
+        let first_char = s.chars().nth(0).unwrap();
+        let last_char = s.chars().nth_back(0).unwrap();
+        let prefix = if first_char.is_ascii_alphanumeric() { r"(^|[^a-zA-Z0-9])" } else { "" };
+        let postfix = if last_char.is_ascii_alphanumeric() { r"([^a-zA-Z0-9]|$)" } else { "" };
+
+        let escaped_elements = s.chars().map(|c| regex::escape(&c.to_string())).collect::<Vec<_>>();
+        let pattern_with_any_extra_whitespace = escaped_elements.join(r"\s*");
+
+        Regex::new(&format!("{}{}{}", prefix, pattern_with_any_extra_whitespace, postfix)).unwrap()
+    };
+
+    let text = text.nfc(); // not NFKC which is used in `normalize_string()`
+    let text = text.to_string();
+    let it = text.chars();
+    let it = it.map(|c| normalize_string(&c.to_string()));
+    let it = it.map(|s| if s.len() > 0 { s } else { " ".to_string() }); // replace empty element with a whitespace
+    let converted_text: String = it.collect();
+
+    re.is_match(&converted_text)
+}
+
+#[test]
+fn test_is_keyword_matched() {
+    assert!(is_keyword_matched_with_word_boundary("ANA", "ANA"));
+    assert!(is_keyword_matched_with_word_boundary("ANA", " ANA")); // whitespace before keyword
+    assert!(is_keyword_matched_with_word_boundary("ANA", "ANA ")); // whitespace after keyword
+    assert!(is_keyword_matched_with_word_boundary("ANA", " ANA ")); // whitespaces around keyword
+    assert!(is_keyword_matched_with_word_boundary("ANA", "全日空ANA全日空")); // Japanese letters around keyword
+    assert!(is_keyword_matched_with_word_boundary("ANA", "■ANA■")); // Japanese letters around keyword
+    assert!(is_keyword_matched_with_word_boundary("ANA", "B\0ANA\0NA")); // control codepoint around keyword
+    assert!(is_keyword_matched_with_word_boundary("ANA", "B\nANA\nNA")); // control codepoint around keyword
+    assert!(is_keyword_matched_with_word_boundary("ANA", "B_ANA_NA")); // symbols around keyword
+
+    assert!(!is_keyword_matched_with_word_boundary("ANA", "BANANA"));
+    assert!(!is_keyword_matched_with_word_boundary("ANA", "ANANA"));
+    assert!(!is_keyword_matched_with_word_boundary("ANA", "BANA"));
+    assert!(!is_keyword_matched_with_word_boundary("ANA", "B_ANANA"));
+    assert!(!is_keyword_matched_with_word_boundary("ANA", "BANA_NA"));
+
+    assert!(is_keyword_matched_with_word_boundary("ANA", "A N A")); // extra whitespaces in the middle of a word
+    assert!(is_keyword_matched_with_word_boundary("ANA", "A　N　A")); // zenkaku-space in the middle of a word
+    assert!(is_keyword_matched_with_word_boundary("ANA", "A\0N\0A")); // extra whitespaces in the middle of a word
+    assert!(is_keyword_matched_with_word_boundary("ANA", "A\nN\nA")); // extra whitespaces in the middle of a word
+    assert!(is_keyword_matched_with_word_boundary("ANA", "■A　N　A■")); // zenkaku-space in the middle of a word
+    assert!(is_keyword_matched_with_word_boundary("ANA", "空A\0N\0A空")); // extra whitespaces in the middle of a word
+    assert!(is_keyword_matched_with_word_boundary("ANA", "空A\nN\nA空")); // extra whitespaces in the middle of a word
+    assert!(is_keyword_matched_with_word_boundary("ANA", "B A N A N A")); // extra whitespaces in the middle of and around a word
+    assert!(!is_keyword_matched_with_word_boundary("ANA", "BA NA"));
+    assert!(!is_keyword_matched_with_word_boundary("ANA", "AN AN"));
+    assert!(!is_keyword_matched_with_word_boundary("ANA", "BA NA NA"));
+
+    assert!(is_keyword_matched_with_word_boundary("Apple", "Apple ID"));
+    assert!(is_keyword_matched_with_word_boundary("Apple", "the Apple"));
+    assert!(!is_keyword_matched_with_word_boundary("Apple", "Apples"));
+    assert!(!is_keyword_matched_with_word_boundary("Apple", "zapple"));
+
+    assert!(is_keyword_matched_with_word_boundary("全", "全日空"));
+    assert!(is_keyword_matched_with_word_boundary("日", "全日空"));
+    assert!(is_keyword_matched_with_word_boundary("空", "全日空"));
+    assert!(is_keyword_matched_with_word_boundary("全日空", "全全全日空空空"));
+    assert!(is_keyword_matched_with_word_boundary("全日空", " 全日空 "));
+    assert!(is_keyword_matched_with_word_boundary("全日空", " 全 日 空 "));
+    assert!(is_keyword_matched_with_word_boundary("全日空", "　全日空　")); // zenkaku-space
+    assert!(is_keyword_matched_with_word_boundary("全日空", "全　日　空")); // zenkaku-space
+    assert!(is_keyword_matched_with_word_boundary("全日空", "　全　日　空　")); // zenkaku-space
+    assert!(is_keyword_matched_with_word_boundary("全日空", "■全日空■"));
+    assert!(is_keyword_matched_with_word_boundary("全日空", "\0全日空\0"));
+    assert!(is_keyword_matched_with_word_boundary("全日空", "全\0日\0空"));
+    assert!(is_keyword_matched_with_word_boundary("全日空", "\0全\0日\0空\0"));
+    assert!(is_keyword_matched_with_word_boundary("全日空", "\n全日空\n"));
+    assert!(is_keyword_matched_with_word_boundary("全日空", "全\n日\n空"));
+    assert!(is_keyword_matched_with_word_boundary("全日空", "\n全\n日\n空\n"));
+
+    assert!(is_keyword_matched_with_word_boundary("あい...お", "あい…お")); // SPECIAL CASE: a "three-dot leader" will be converted to three "period" by NFKC normalization
+}
+
+//================================================================================
 pub fn is_non_english_alphabet_included(text: &str) -> bool {
     lazy_static! {
         static ref REGEX_NON_ENGLISH_ALPHABET: Regex = Regex::new(r"([\p{Alphabetic}&&[^\p{ASCII}\p{Hiragana}\p{Katakana}\p{Han}\p{Punct}ーａ-ｚＡ-Ｚ]])").unwrap();
