@@ -119,6 +119,13 @@ fn check_and_extract_address_list(table: &mut HashSet<String>, label: &str, list
         } else {
             table.insert(format!("invalid-header-{}", label));
         }
+        if let Some(localpart) = address.split_once('@').map(|t| t.0) {
+            if localpart.chars().any(|c| c.is_ascii_uppercase()) {
+                // NOTE: In the local part of mail address, ASCII uppercase alphabet is allowed by RFC, but it is not usual and is good hint about SPAM.
+                info!("suspicious-format-address-in-header-{}: {}", label, address);
+                table.insert(format!("suspicious-format-address-in-header-{}", label));
+            }
+        }
     });
     let (name, address) = first;
     if address.is_none() {
