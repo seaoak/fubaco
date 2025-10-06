@@ -22,6 +22,44 @@ pub fn normalize_string<P: AsRef<str>>(s: P) -> String {
     s
 }
 
+#[test]
+fn test_normalize_string() {
+    assert_eq!("012", normalize_string("012"));
+    assert_eq!("012", normalize_string("０１２")); // zenkaku digit
+
+    assert_eq!("ABC", normalize_string("ABC"));
+    assert_eq!("ABC", normalize_string("abc"));
+    assert_eq!("ABC", normalize_string("ＡＢＣ")); // zenkaku alphabet
+    assert_eq!("ABC", normalize_string(" A B C "));
+    assert_eq!("ABC", normalize_string("\nA\tB\0C\r")); // control codepoint
+    assert_eq!("ABC", normalize_string("A　B　C")); // zenkaku-space
+
+    assert_eq!("ABC", normalize_string("(ABC)"));
+    assert_eq!("ABC", normalize_string("[ABC]"));
+    assert_eq!("ABC", normalize_string("{ABC}"));
+    assert_eq!("ABC", normalize_string("<ABC>"));
+
+    assert_eq!("ABC", normalize_string("A(B)C"));
+    assert_eq!("ABC", normalize_string("A[B]C"));
+    assert_eq!("ABC", normalize_string("A{B}C"));
+    assert_eq!("ABC", normalize_string("A<B>C"));
+
+    assert_eq!("ABC", normalize_string("A!B!C"));
+    assert_eq!("ABC", normalize_string("A\"B\"C"));
+    assert_eq!("ABC", normalize_string("A#B#C"));
+    assert_eq!("ABC", normalize_string("A$B$C"));
+    assert_eq!("ABC", normalize_string("A%B%C"));
+    assert_eq!("ABC", normalize_string("A&B&C"));
+    assert_eq!("ABC", normalize_string("A'B'C"));
+    assert_eq!("ABC", normalize_string("A=B=C"));
+
+    assert_eq!("A@B@C", normalize_string("A@B@C"));
+    assert_eq!("A.B.C", normalize_string("A.B.C"));
+    assert_eq!("A-B-C", normalize_string("A-B-C"));
+    assert_eq!("A_B_C", normalize_string("A_B_C"));
+}
+
+//================================================================================
 pub fn is_non_english_alphabet_included(text: &str) -> bool {
     lazy_static! {
         static ref REGEX_NON_ENGLISH_ALPHABET: Regex = Regex::new(r"([\p{Alphabetic}&&[^\p{ASCII}\p{Hiragana}\p{Katakana}\p{Han}\p{Punct}ーａ-ｚＡ-Ｚ]])").unwrap();
