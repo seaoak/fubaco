@@ -9,6 +9,25 @@ use crate::my_fqdn;
 use crate::my_logger::prelude::*;
 use crate::my_str::*;
 
+pub fn spam_checker_lack_of_mandatory_header(table: &mut HashSet<String>, message: &Message) {
+    let mandatory_header_names = [
+        "Return-Path",
+        "From",
+        "To",
+        "Subject",
+        "Date",
+        "Content-Type",
+        // "Message-ID", // NOTE: Mailer Daemon message may not contain `Message-ID` header
+    ];
+    let lacked_header_names = mandatory_header_names.into_iter().filter(|name| {
+        message.header(*name).is_none()
+    }).collect::<Vec<_>>();
+    if lacked_header_names.len() > 0 {
+        info!("lack-of-mandatory-header: {:?}", lacked_header_names);
+        table.insert("lack-of-mandatory-header".into());
+    }
+}
+
 pub fn spam_checker_envelop_from(table: &mut HashSet<String>, message: &Message) {
     let header_value = message.return_path().as_text();
     if header_value.is_none() {
