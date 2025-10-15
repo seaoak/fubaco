@@ -117,7 +117,8 @@ fn check_and_extract_address_list(table: &mut HashSet<String>, label: &str, list
                 table.insert(format!("blacklist-tld-in-header-{}", label));
             }
         } else {
-            table.insert(format!("invalid-header-{}", label));
+            info!("invalid-format-address-in-header-{}: {}", label, address);
+            table.insert(format!("invalid-format-address-in-header-{}", label));
             return (table, None);
         }
         if let Some(localpart) = address.split_once('@').map(|t| t.0) {
