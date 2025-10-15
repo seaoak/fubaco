@@ -94,7 +94,7 @@ fn extract_fqdn_with_regex(target: &str, re: &Regex) -> Option<String> {
     if target.len() > 1024 {
         return None; // too long string (avoid DoS)
     }
-    let url = target.trim().to_ascii_lowercase();
+    let url = target.trim();
     let fqdn;
     if let Some(caps) = re.captures(&url) {
         fqdn = caps[1].to_string();

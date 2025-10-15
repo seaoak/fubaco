@@ -93,9 +93,9 @@ fn check_and_extract_address_list(table: &mut HashSet<String>, label: &str, list
         table.insert(format!("lack-of-header-{}", label));
         return None;
     }
-    let first = list[0].clone();
-    list.into_iter().for_each(|(name, address)| {
-        if let Some(text) = name {
+    let filtered = list.into_iter().map(|(name, address)| {
+        let mut table: HashSet<String> = HashSet::new(); // shadowing
+        if let Some(text) = &name {
             if my_fqdn::is_prohibited_word_included(&text) {
                 table.insert(format!("prohibited-word-in-{}", label));
             }
@@ -108,7 +108,7 @@ fn check_and_extract_address_list(table: &mut HashSet<String>, label: &str, list
         }
         if address.is_none() {
             table.insert(format!("malformed-header-{}", label));
-            return;
+            return (table, None);
         }
         let address = address.clone().unwrap();
         if let Some(fqdn) = my_fqdn::extract_fqdn_in_mail_address_with_validation(&address) {
@@ -118,6 +118,7 @@ fn check_and_extract_address_list(table: &mut HashSet<String>, label: &str, list
             }
         } else {
             table.insert(format!("invalid-header-{}", label));
+            return (table, None);
         }
         if let Some(localpart) = address.split_once('@').map(|t| t.0) {
             if localpart.chars().any(|c| c.is_ascii_uppercase()) {
@@ -125,13 +126,21 @@ fn check_and_extract_address_list(table: &mut HashSet<String>, label: &str, list
                 info!("suspicious-format-address-in-header-{}: {}", label, address);
                 table.insert(format!("suspicious-format-address-in-header-{}", label));
             }
+        } else {
+            unreachable!();
         }
+        if !table.is_empty() {
+            return (table, None);
+        }
+        (table, Some((name.unwrap_or_default(), address)))
+    }).collect::<Vec<_>>();
+
+    filtered.iter().for_each(|(table_for_current_item, item)| {
+        assert_ne!(table_for_current_item.is_empty(), item.is_none());
+        table.extend(table_for_current_item.iter().map(|s| s.clone()));
     });
-    let (name, address) = first;
-    if address.is_none() {
-        return None;
-    }
-    Some((name.unwrap_or_default(), address.unwrap()))
+
+    filtered[0].1.clone()
 }
 
 pub fn spam_checker_header_to(table: &mut HashSet<String>, message: &Message) {
@@ -162,10 +171,7 @@ pub fn spam_checker_header_from(table: &mut HashSet<String>, message: &Message) 
     debug!("To.address: \"{:?}\"", list_of_header_to);
     let table_of_address_of_header_to = list_of_header_to.into_iter().filter_map(|(_name, address)| address).collect::<HashSet<_>>();
 
-    let fqdn = my_fqdn::extract_fqdn_in_mail_address_with_validation(&address).unwrap_or_default();
-    if fqdn.is_empty() {
-        return;
-    }
+    let fqdn = my_fqdn::extract_fqdn_in_mail_address_with_validation(&address_raw).unwrap(); // assured by `check_and_extract_address_list()` above
     if my_fqdn::is_trusted_domain(&fqdn) {
         info!("skip trusted domain: {}", address);
         return;
