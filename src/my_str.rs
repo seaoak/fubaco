@@ -218,7 +218,13 @@ fn get_header_value(text: &str, name: &str) -> Option<String> {
 }
 
 pub fn fix_incorrect_quoted_printable_text(raw_u8: &[u8]) -> Vec<u8> {
-    let text = String::from_utf8(Vec::from(raw_u8)).unwrap();
+    let text = match String::from_utf8(Vec::from(raw_u8)) {
+        Ok(text) => text,
+        Err(e) => {
+            warn!("WARNING: detect unexpected byte (invalid UTF-8 data): {:?}", e);
+            return Vec::from(raw_u8);
+        },
+    };
     let (header_part, body_part) = text.split_once("\r\n\r\n").unwrap();
     let content_type = if let Some(s) = get_header_value(&text, "Content-Type: ") {
         s
