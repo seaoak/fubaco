@@ -24,10 +24,13 @@
 @	.group
 @	.local
 @	.sbs
+@	.sites.google.com
 @	.translate.goog
 @	translate.google.com
 @	translate.google.jp
 @	tinyurl.com
+@	.pages.dev
+@	.workers.dev
 
 ##----------------------------------------------------------------------------
 ## trusted domains
