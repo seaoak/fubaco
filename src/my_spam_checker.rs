@@ -111,6 +111,11 @@ fn check_and_extract_address_list(table: &mut HashSet<String>, label: &str, list
             return (table, None);
         }
         let address = address.clone().unwrap();
+
+        // accept and convert to lowercase if all alphabets are uppercase (no lowercase)
+        let is_all_uppercase = address.chars().any(|c| c.is_ascii_uppercase()) && !address.chars().any(|c| c.is_ascii_lowercase());
+        let address = if is_all_uppercase { address.to_ascii_lowercase() } else { address };
+
         if let Some(fqdn) = my_fqdn::extract_fqdn_in_mail_address_with_validation(&address) {
             if my_fqdn::is_blacklist_tld(&fqdn) {
                 info!("blacklist-tld in {} header address: \"{}\"", label, address);
