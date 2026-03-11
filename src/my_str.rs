@@ -1,3 +1,4 @@
+use encoding_rs::Encoding;
 use lazy_static::lazy_static;
 use kana::wide2ascii;
 use regex::Regex;
@@ -178,6 +179,13 @@ pub fn is_non_english_alphabet_included(text: &str) -> bool {
         return true;
     }
     false
+}
+
+pub fn is_non_sjis_alphabet_included(text: &str) -> bool {
+    // If a text can be converted to SJIS (Shift-JIS), it will be a Japanese/English text (not Chinese).
+    // https://qiita.com/ry_2718/items/47c21792d7bbd3fe33b9
+    let (_, _, had_errors) = Encoding::for_label(b"sjis").unwrap().encode(text);
+    had_errors
 }
 
 pub fn is_unicode_control_codepoint_included(text: &str) -> bool {

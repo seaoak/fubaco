@@ -74,6 +74,9 @@ pub fn spam_checker_header_subject(table: &mut HashSet<String>, message: &Messag
     if is_non_english_alphabet_included(&text_raw) {
         table.insert("suspicious-alphabet-in-subject".into());
     }
+    if is_non_sjis_alphabet_included(&text_raw) {
+        table.insert("non-sjis-alphabet-in-subject".into());
+    }
     if is_unicode_control_codepoint_included(&text_raw) {
         table.insert("suspicious-control-codepoint-in-subject".into());
     }
@@ -117,6 +120,9 @@ fn check_and_extract_address_list(table: &mut HashSet<String>, label: &str, list
             }
             if is_non_english_alphabet_included(&text) {
                 table.insert(format!("suspicious-alphabet-in-{}", label));
+            }
+            if is_non_sjis_alphabet_included(&text) {
+                table.insert(format!("non-sjis-alphabet-in-{}", label));
             }
             if is_unicode_control_codepoint_included(&text) {
                 table.insert(format!("suspicious-control-codepoint-in-{}", label));
