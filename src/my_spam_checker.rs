@@ -48,6 +48,19 @@ pub fn spam_checker_envelop_from(table: &mut HashSet<String>, message: &Message)
     }
 }
 
+pub fn spam_checker_message_id(table: &mut HashSet<String>, message: &Message) {
+    let header_value = message.header_raw("Message-ID");
+    if header_value.is_none() {
+        table.insert("lack-of-message-id".into());
+        return;
+    }
+    let header_value = header_value.unwrap();
+    if header_value.contains(" (added by ") {
+        table.insert("auto-completed-message-id".into());
+        return;
+    }
+}
+
 pub fn spam_checker_header_subject(table: &mut HashSet<String>, message: &Message) {
     let header_value = message.subject();
     if header_value.is_none() {
