@@ -77,6 +77,9 @@ pub fn spam_checker_header_subject(table: &mut HashSet<String>, message: &Messag
     if is_unicode_control_codepoint_included(&text_raw) {
         table.insert("suspicious-control-codepoint-in-subject".into());
     }
+    if text_raw.chars().take(1).any(|c| c.is_whitespace() || "_-=!#$&^~\\|@`;+:*,.?/".contains(c)) {
+        table.insert("suspicious-first-letter-in-subject".into());
+    }
 }
 
 fn parse_address_of_mail_parser(address: Option<&mail_parser::Address>) -> Vec<(Option<String>, Option<String>)> {
