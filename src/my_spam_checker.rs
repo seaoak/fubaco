@@ -7,6 +7,7 @@ use scraper;
 
 use crate::my_fqdn;
 use crate::my_logger::prelude::*;
+use crate::my_message_parser::MyMessageParser;
 use crate::my_str::*;
 
 pub fn spam_checker_lack_of_mandatory_header(table: &mut HashSet<String>, message: &Message) {
@@ -45,6 +46,17 @@ pub fn spam_checker_envelop_from(table: &mut HashSet<String>, message: &Message)
         }
     } else {
         table.insert("invalid-envelop-from".into()); // include the case of empty string
+    }
+}
+
+pub fn spam_checker_header_received(table: &mut HashSet<String>, message: &Message) {
+    lazy_static! {
+        static ref REGEX_AUTHENTICATED_SENDER: Regex = Regex::new(r"(?i)[(]Authenticated sender: ").unwrap();
+    }
+    let header_values = message.get_list_of_raw_headers("Received");
+    let is_suspicious = header_values.iter().any(|ss| REGEX_AUTHENTICATED_SENDER.is_match(ss));
+    if is_suspicious {
+        table.insert("suspicious-authenticated-sender-in-header-received".into());
     }
 }
 
