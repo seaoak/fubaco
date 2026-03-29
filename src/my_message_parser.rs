@@ -8,6 +8,7 @@ use regex::Regex;
 use crate::my_logger::prelude::*;
 
 pub trait MyMessageParser<'a> {
+    fn get_list_of_raw_headers<'b>(&'a self, header_name: &'b str) -> Vec<String>;
     fn get_domain_of_header_from(&'a self) -> Option<String>;
     fn get_envelop_from(&'a self) -> Option<String>;
     fn get_received_header_of_gateway(&'a self) -> Option<Box<mail_parser::Received<'a>>>;
@@ -15,7 +16,21 @@ pub trait MyMessageParser<'a> {
     fn get_authentication_results(&'a self) -> Option<HashMap<String, String>>;
 }
 
+lazy_static! {
+    static ref REGEX_HEADER_NAME: Regex = Regex::new(r"^[A-Z](-*[a-zA-Z0-9])*$").unwrap();
+}
+
 impl<'a> MyMessageParser<'a> for Message<'a> {
+    fn get_list_of_raw_headers<'b>(&'a self, header_name: &'b str) -> Vec<String> {
+        assert!(REGEX_HEADER_NAME.is_match(header_name)); // `impl Into<HeaderName<'x>>` is not used here because non-defined header name can be accepted
+        let header_name_upper = header_name.to_ascii_uppercase();
+        let pairs = self.headers_raw();
+        let pairs = pairs.filter(|(name, _)| name.to_ascii_uppercase() == header_name_upper);
+        let values = pairs.map(|(_, lines)| lines);
+        let joined = values.map(join_continuation_lines);
+        joined.collect()
+    }
+
     fn get_domain_of_header_from(&'a self) -> Option<String> {
         // see "Section 6.6.1" in RFC7489 (DMARC)
         let mut headers = self.header_values("From");
@@ -140,15 +155,14 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
     }
 
     fn get_authentication_results(&'a self) -> Option<HashMap<String, String>> {
-        let header_value = match self.header("Authentication-Results") {
-            Some(mail_parser::HeaderValue::Text(s)) => s,
-            _ => return None,
-        };
-        debug!("Authenticatino-Results: {}", header_value);
-        lazy_static! {
-            static ref REGEX_CONTINUATION_LINE_PATTERN: Regex = Regex::new(r"\r\n([ \t])").unwrap();
+        let header_values = self.get_list_of_raw_headers("Authentication-Results");
+        match header_values.len() {
+            0 => return None,
+            1 => (),
+            _ => warn!("ignore multiple `Authentication-Results` headers (only first one is used)"),
         }
-        let header_value = REGEX_CONTINUATION_LINE_PATTERN.replace_all(&header_value, " ");
+        let header_value = &header_values[0];
+        debug!("Authenticatino-Results: {}", header_value);
         let mut table = HashMap::<String, String>::new();
         let records = header_value.split(";").map(str::trim);
         for record in records {
@@ -263,4 +277,19 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
         }
         Some(table)
     }
+}
+
+//================================================================================
+fn join_continuation_lines(lines: &str) -> String {
+    // `lines` may not contain any line terminators.
+    lazy_static! {
+        static ref REGEX_CONTINUATION_LINE_PATTERN: Regex = Regex::new(r"\r\n([ \t])").unwrap();
+        static ref REGEX_CRLF_AT_THE_END: Regex = Regex::new(r"\r\n$").unwrap();
+    }
+    let ss = lines;
+    let ss = REGEX_CONTINUATION_LINE_PATTERN.replace_all(&ss, " "); // convert to a space (not remove completely)
+    let ss = REGEX_CRLF_AT_THE_END.replace(&ss, "");
+    assert!(!ss.contains("\r"));
+    assert!(!ss.contains("\n"));
+    ss.to_string()
 }
