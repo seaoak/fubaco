@@ -91,7 +91,9 @@ fn get_table_of_valid_domains() -> Result<Vec<(String, Vec<String>)>> {
 
 //================================================================================
 fn extract_fqdn_with_regex(target: &str, re: &Regex) -> Option<String> {
-    if target.len() > 1024 {
+    if target.len() > 8000 {
+        // https://qiita.com/_matuzaki/items/70fb639f7ed7463f9943
+        // Refer to RFC 7230
         return None; // too long string (avoid DoS)
     }
     let url = target.trim();
