@@ -204,35 +204,12 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
                         None
                     }
                 },
-                "dkim" => {
+                "dkim" | "dkim-adsp" | "dmarc" | "sender-id" => {
                     lazy_static! {
-                        static ref REGEX_HEADER_I: Regex = Regex::new(r"(^|\s)header\.i=(\S+)(\s|$)").unwrap();
-                        static ref REGEX_HEADER_D: Regex = Regex::new(r"(^|\s)header\.d=(\S+)(\s|$)").unwrap();
+                        static ref REGEX_HEADER_DOMAIN: Regex = Regex::new(r"(?i)(^|\s)header\.(i|d|from)=(\S+)(\s|$)").unwrap();
                     }
-                    if let Some(caps) = REGEX_HEADER_I.captures(rest) {
-                        Some(caps[2].to_string())
-                    } else if let Some(caps) = REGEX_HEADER_D.captures(rest) {
-                        Some(caps[2].to_string())
-                    } else {
-                        None
-                    }
-                },
-                "dmarc" | "dkim-adsp" => {
-                    lazy_static! {
-                        static ref REGEX_HEADER_FROM: Regex = Regex::new(r"(^|\s)header\.from=(\S+)(\s|$)").unwrap();
-                    }
-                    if let Some(caps) = REGEX_HEADER_FROM.captures(rest) {
-                        Some(caps[2].to_string())
-                    } else {
-                        None
-                    }
-                },
-                "sender-id" => {
-                    lazy_static! {
-                        static ref REGEX_HEADER_FROM: Regex = Regex::new(r"(^|\s)header\.From=(\S+)(\s|$)").unwrap();
-                    }
-                    if let Some(caps) = REGEX_HEADER_FROM.captures(rest) {
-                        Some(caps[2].to_string())
+                    if let Some(caps) = REGEX_HEADER_DOMAIN.captures(rest) {
+                        Some(caps[3].to_string())
                     } else {
                         None
                     }
