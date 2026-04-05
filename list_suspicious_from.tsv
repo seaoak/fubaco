@@ -37,8 +37,6 @@
 ## trusted domains
 
 !	icloud.com
-!	povo.jp
-!	viewsnet.jp
 !	starbucks.co.jp
 
 ##----------------------------------------------------------------------------
@@ -48,18 +46,18 @@
 マイナポイント			myna.go.jp		soumu.go.jp
 
 nifty					nifty.com		nifty.co.jp		%BIMI
-ニフティ				nifty.com		nifty.co.jp
+ニフティ				nifty.com		nifty.co.jp		%BIMI
 
-Amazon					amazon.co.jp	amazon.com		amazonmusic.com
-アマゾン				amazon.co.jp	amazon.com		amazonmusic.com
+Amazon					amazon.co.jp	amazon.com		amazonmusic.com		%BIMI
+アマゾン				amazon.co.jp	amazon.com		amazonmusic.com		%BIMI
 
-メルカリ				mercari.com		mercari.jp
-mercari					mercari.com		mercari.jp
+メルカリ				mercari.com		mercari.jp		%BIMI
+mercari					mercari.com		mercari.jp		%BIMI
 
 LINE					line.me
 
-JCB						jcb.co.jp		dnp-cdms.jp
-MyJCB					jcb.co.jp		dnp-cdms.jp
+JCB						jcb.co.jp		dnp-cdms.jp		%BIMI
+MyJCB					jcb.co.jp		dnp-cdms.jp		%BIMI
 
 三井住友銀行			smbc.co.jp
 SMBC					smbc.co.jp
@@ -74,9 +72,9 @@ SUMITOMOMITSUI			smbc.co.jp	smbc-card.com	vpass.ne.jp		smbcgroup-point.jp	otp-au
 日本郵便				japanpost.jp
 ゆうびんID				japanpost.jp
 
-VIEWCARD				viewsnet.jp		jreast.co.jp
-ビューカード			viewsnet.jp		jreast.co.jp
-VIEW'S NET				viewsnet.jp		jreast.co.jp
+VIEWCARD				viewsnet.jp		jreast.co.jp	%BIMI
+ビューカード			viewsnet.jp		jreast.co.jp	%BIMI
+VIEW'S NET				viewsnet.jp		jreast.co.jp	%BIMI
 
 東京電力				tepco.co.jp						hikkoshi-line.jp
 TEPCO					tepco.co.jp						hikkoshi-line.jp
@@ -88,8 +86,8 @@ myTOKYOGAS				tokyo-gas.co.jp
 ENEOS					tscubic.com		lexus-fs.jp		eneos.co.jp		eneos-power.co.jp
 TS CUBIC				tscubic.com		lexus-fs.jp
 
-三菱UFJ					mufg.jp
-MUFG					mufg.jp
+三菱UFJ					mufg.jp			%BIMI
+MUFG					mufg.jp			%BIMI
 
 NICOS					nicos.co.jp
 三菱UFJニコス			nicos.co.jp
@@ -103,6 +101,8 @@ JAL						jal.co.jp		jal.com		jalcard.co.jp
 NHK						nhk.or.jp		nhk.jp
 日本放送協会			nhk.or.jp		nhk.jp
 
+povo					povo.jp			%BIMI
+
 docomo					docomo.ne.jp					mydocomo.com
 ドコモ					docomo.ne.jp					mydocomo.com
 
@@ -111,8 +111,8 @@ PayPal					paypal.com
 ファミペイ				famidigi.jp		family.co.jp
 FamiPay					famidigi.jp		family.co.jp
 
-Apple					apple.com
-iCloud					apple.com
+Apple					apple.com		%BIMI
+iCloud					apple.com		%BIMI
 
 PayPay					paypay.ne.jp	paypay-corp.co.jp	paypay-bank.co.jp
 
