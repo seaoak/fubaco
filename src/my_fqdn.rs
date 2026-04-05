@@ -70,15 +70,20 @@ fn get_prohibited_words() -> Result<Vec<String>> {
     Ok(list)
 }
 
-fn get_table_of_valid_domains() -> Result<Vec<(String, Vec<String>)>> {
+fn get_table_of_valid_domains() -> Result<Vec<(String, Vec<String>, Vec<String>)>> {
     let lines = load_tsv_file(&*SUSPICIOUS_LIST_FILENAME)?;
     let it = lines.iter().filter(|l| l[0] != "@" && l[0] != "!" && l.len() > 1);
     let it = it.map(|l| {
         let keyword = normalize_string(&l[0]);
-        let domains = l[1..].iter().map(|s| normalize_domain_string(s)).collect();
-        (keyword, domains)
+        let special_chars = ['%'];
+        let predicate = |s: &str| s.starts_with(special_chars);
+        let domains: Vec<_> = l[1..].iter().filter(|s| !predicate(s)).map(|s| normalize_domain_string(s)).collect();
+        let annotates: Vec<_> = l[1..].iter().filter(|s| predicate(s)).map(|s| s.to_ascii_uppercase()).collect(); // special char '%' is not removed
+        assert!(!domains.is_empty(), "{:?}", l);
+        assert!(domains.iter().all(|s| s.chars().all(|c| c.is_ascii() && (c.is_ascii_alphanumeric() || c == '.' || c == '-'))), "{:?}", l);
+        (keyword, domains, annotates)
     });
-    let table = it.collect::<Vec<(_, _)>>();
+    let table = it.collect();
     Ok(table)
 }
 
@@ -173,21 +178,39 @@ pub fn is_prohibited_word_included(text: &str) -> bool {
 }
 
 //================================================================================
-fn is_valid_domain_for(fqdn: &str, text_raw: Option<&str>) -> Option<bool> {
+fn is_valid_domain_for(fqdn: &str, text_raw: Option<&str>, annotate: Option<&str>) -> Option<bool> {
     let fqdn = normalize_domain_string(fqdn); // just to make sure
-    let sparse_text = text_raw.map(generate_sparse_text_for_matching_with_word_boundary).unwrap_or_default();
+    let sparse_text = text_raw.map(generate_sparse_text_for_matching_with_word_boundary);
+    let predicate = |t: &(Regex, Vec<String>, Vec<String>)| {
+        let (re, _domains, annotates) = t;
+        if let Some(sparse_text) = &sparse_text {
+            // `text_raw` may be an empty string
+            if !re.is_match(sparse_text) {
+                return false;
+            }
+        }
+        if let Some(annotate) = annotate {
+            let annotate = annotate.to_ascii_uppercase();
+            assert!(annotate.len() > 1);
+            assert!(annotate.starts_with('%'));
+            if !annotates.iter().any(|s| *s == annotate) {
+                return false;
+            }
+        }
+        true
+    };
     lazy_static! {
-        static ref TABLE_OF_VALID_DOMAINS: Vec<(Regex, Vec<String>)> = {
-            let table: Vec<(String, Vec<String>)> = get_table_of_valid_domains().unwrap_or_default();
-            table.into_iter().map(|(keyword, domains)| {
+        static ref TABLE_OF_VALID_DOMAINS: Vec<(Regex, Vec<String>, Vec<String>)> = {
+            let table = get_table_of_valid_domains().unwrap_or_default();
+            table.into_iter().map(|(keyword, domains, annotates)| {
                 let re = generate_regexp_for_mathcing_with_word_boundary(&keyword);
-                (re, domains)
+                (re, domains, annotates)
             }).collect()
         };
     }
     let it = TABLE_OF_VALID_DOMAINS.iter();
-    let it = it.filter(|(re, _domains)| text_raw.is_none() || re.is_match(&sparse_text)); // match for all items if text_raw is `None`
-    let it = it.flat_map(|(_re, domains)| domains.into_iter());
+    let it = it.filter(|t| predicate(t));
+    let it = it.flat_map(|(_re, domains, _annotates)| domains.into_iter());
     let it = it.map(|s| s.trim_start_matches(['.', '@']).to_owned());
     let it = it.map(|s| regex::escape(&s));
     let joined_string = it.collect::<Vec<_>>().join("|");
@@ -206,9 +229,13 @@ fn is_valid_domain_for(fqdn: &str, text_raw: Option<&str>) -> Option<bool> {
 }
 
 pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text_raw: &str) -> Option<bool> {
-    is_valid_domain_for(fqdn, Some(text_raw))
+    is_valid_domain_for(fqdn, Some(text_raw), None)
 }
 
 pub fn is_listed_as_a_valid_domain(fqdn: &str) -> bool {
-    is_valid_domain_for(fqdn, None).unwrap_or(false)
+    is_valid_domain_for(fqdn, None, None).unwrap_or(false)
+}
+
+pub fn is_listed_as_bimi_required(fqdn: &str) -> bool {
+    is_valid_domain_for(fqdn, None, Some("%BIMI")).unwrap_or(false)
 }

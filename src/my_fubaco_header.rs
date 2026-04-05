@@ -145,6 +145,10 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
         if let Some(table) = table_of_authentication_results_header {
             if let Some(domains) = table.get("dmarc-target-domains") {
                 for domain in domains.split(',') {
+                    if my_fqdn::is_listed_as_bimi_required(domain) && !table.get("bimi").is_some_and(|s| s == "pass") {
+                        info!("BIMI is required but `bimi=pass` is not found in `Authentication-Results`: {}", domain);
+                        continue;
+                    }
                     if my_fqdn::is_trusted_domain(domain) || my_fqdn::is_listed_as_a_valid_domain(domain) {
                         let spam_factors = Vec::from_iter(spam_judgement_table.drain());
                         let ss = spam_factors.join(" ");

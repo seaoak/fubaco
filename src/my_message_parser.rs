@@ -204,7 +204,7 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
                         None
                     }
                 },
-                "dkim" | "dkim-adsp" | "dmarc" | "sender-id" => {
+                "bimi" | "dkim" | "dkim-adsp" | "dmarc" | "sender-id" => {
                     lazy_static! {
                         static ref REGEX_HEADER_DOMAIN: Regex = Regex::new(r"(?i)(^|\s)header\.(i|d|from)=(\S+)(\s|$)").unwrap();
                     }
