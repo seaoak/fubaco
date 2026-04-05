@@ -115,13 +115,35 @@ impl std::str::FromStr for DMARCStatus {
 pub struct DMARCResult {
     status: DMARCStatus,
     policy: Option<DMARCPolicy>,
+    domain: Option<String>,
 }
 
 impl DMARCResult {
-    pub fn new(status: DMARCStatus, policy: Option<DMARCPolicy>) -> Self {
+    pub fn new(status: DMARCStatus, policy: Option<DMARCPolicy>, domain: Option<String>) -> Self {
+        let is_policy_required = match status {
+            DMARCStatus::NONE => false,
+            DMARCStatus::PASS => true,
+            DMARCStatus::FAIL => true,
+            DMARCStatus::TEMPERROR => false,
+            DMARCStatus::PERMERROR => false,
+        };
+        let is_domain_required = match status {
+            DMARCStatus::NONE => true,
+            DMARCStatus::PASS => true,
+            DMARCStatus::FAIL => true,
+            DMARCStatus::TEMPERROR => false,
+            DMARCStatus::PERMERROR => false,
+        };
+        assert!(!is_policy_required || policy.is_some());
+        assert!(!is_domain_required || domain.is_some());
+        if let Some(ss) = &domain {
+            assert!(ss.len() > 3, "{:?}", domain);
+            assert!(!ss.contains(','), "{:?}", domain); // must be single domain
+        }
         Self {
             status,
             policy,
+            domain,
         }
     }
 
@@ -132,6 +154,10 @@ impl DMARCResult {
     pub fn as_policy(&self) -> &Option<DMARCPolicy> {
         &self.policy
     }
+
+    pub fn as_domain(&self) -> &Option<String> {
+        &self.domain
+    }
 }
 
 //====================================================================
@@ -139,7 +165,7 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
     let target_domain = if let Some(s) = message.get_domain_of_header_from() {
         s
     } else {
-        return DMARCResult::new(DMARCStatus::PERMERROR, None);
+        return DMARCResult::new(DMARCStatus::PERMERROR, None, None);
     };
 
     // DNS lookup for DMARC record
@@ -155,12 +181,12 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
                 1 => v[0].clone(),
                 _ => {
                     info!("multiple DMARC records are found by DNS lookup ({}): {:?}", target_domain, v);
-                    return DMARCResult::new(DMARCStatus::PERMERROR, None);
+                    return DMARCResult::new(DMARCStatus::PERMERROR, None, Some(target_domain));
                 },
             },
             Err(e) => {
                 info!("DNS lookup failed for DMARC record ({}): {:?}", fqdn, e);
-                return DMARCResult::new(DMARCStatus::NONE, None);
+                return DMARCResult::new(DMARCStatus::NONE, None, Some(target_domain));
             }
         };
         let mut table = HashMap::<String, String>::new();
@@ -168,12 +194,12 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
             if let Some((left, right)) = field.split_once('=') {
                 if table.contains_key(left) {
                     info!("invalid DMARC record: key \"{}\" is existed multple times", left);
-                    return DMARCResult::new(DMARCStatus::PERMERROR, None);
+                    return DMARCResult::new(DMARCStatus::PERMERROR, None, Some(target_domain));
                 }
                 if table.is_empty() {
                     if left != "v" {
                         info!("invalid DMARC record: the first tag must be \"v\", but: {}", left);
-                        return DMARCResult::new(DMARCStatus::PERMERROR, None);
+                        return DMARCResult::new(DMARCStatus::PERMERROR, None, Some(target_domain));
                     }
                 }
                 table.insert(left.to_string(), right.to_string());
@@ -182,7 +208,7 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
 
         // validate and complement DMARC record (see "Section 6.3" in RFC7489)
         {
-            fn validate<F>(table: &mut HashMap<String, String>, label: &str, default_value: Option<&str>, is_valid: F) -> Option<DMARCResult>
+            fn validate<F>(table: &mut HashMap<String, String>, label: &str, default_value: Option<&str>, is_valid: F) -> Option<DMARCStatus>
                 where F: Fn(&str) -> bool
             {
                 // NOTE: if "default_value" is None, the field is "required" (mandatory).
@@ -192,7 +218,7 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
                         // OK
                     } else {
                         info!("detect invalid \"{}\" field in DMARC record: \"{}\"", label, s);
-                        return Some(DMARCResult::new(DMARCStatus::PERMERROR, None));
+                        return Some(DMARCStatus::PERMERROR);
                     }
                 } else {
                     if let Some(s) = default_value { // may be empty string (for OPTIONAL field with string argument)
@@ -201,7 +227,7 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
                         }
                     } else {
                         info!("detet lack of required field \"{}\" in DMARC record", label);
-                        return Some(DMARCResult::new(DMARCStatus::PERMERROR, None));
+                        return Some(DMARCStatus::PERMERROR);
                     }
                 }
                 None
@@ -214,37 +240,37 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
             }
 
             if let Some(r) = validate(&mut table, "adkim", Some("r"), |s| s == "r" || s == "s") {
-                return r;
+                return DMARCResult::new(r, None, Some(target_domain));
             }
             if let Some(r) = validate(&mut table, "aspf", Some("r"), |s| s == "r" || s == "s") {
-                return r;
+                return DMARCResult::new(r, None, Some(target_domain));
             }
             if let Some(r) = validate(&mut table, "fo", Some("0"), |s| s == "0" || s == "1" || s == "d" || s == "s") {
-                return r;
+                return DMARCResult::new(r, None, Some(target_domain));
             }
             if let Some(r) = validate(&mut table, "p", None, |s| s == "none" || s == "quarantine" || s == "reject") {
-                return r;
+                return DMARCResult::new(r, None, Some(target_domain));
             }
             if let Some(r) = validate(&mut table, "pct", Some("100"), |s| REGEX_INTEGER_FROM_0_to_100.is_match(s)) {
-                return r;
+                return DMARCResult::new(r, None, Some(target_domain));
             }
             if let Some(r) = validate(&mut table, "rf", Some("afrf"), |_| true) {
-                return r;
+                return DMARCResult::new(r, None, Some(target_domain));
             }
             if let Some(r) = validate(&mut table, "ri", Some("86400"), |s| REGEX_INTEGER_GREATER_THAN_0.is_match(s)) {
-                return r;
+                return DMARCResult::new(r, None, Some(target_domain));
             }
             if let Some(r) = validate(&mut table, "rua", Some(""), |s| REGEX_MAIL_ADDRESS_LIST.is_match(s)) {
-                return r;
+                return DMARCResult::new(r, None, Some(target_domain));
             }
             if let Some(r) = validate(&mut table, "ruf", Some(""), |s| REGEX_MAIL_ADDRESS_LIST.is_match(s)) {
-                return r;
+                return DMARCResult::new(r, None, Some(target_domain));
             }
             if let Some(r) = validate(&mut table, "sp", Some(""), |s| s == "none" || s == "quarantine" || s == "reject") {
-                return r;
+                return DMARCResult::new(r, None, Some(target_domain));
             }
             if let Some(r) = validate(&mut table, "v", None, |s| s == "DMARC1") {
-                return r;
+                return DMARCResult::new(r, None, Some(target_domain));
             }
         }
 
@@ -272,9 +298,9 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
             || spf_target_list.iter().any(|prev_target| is_aligned(dns_fields.get("aspf"), prev_target, &target_domain))
             || dkim_target_list.iter().any(|prev_target| is_aligned(dns_fields.get("adkim"), prev_target, &target_domain));
         if is_alignment_ok {
-            return DMARCResult::new(DMARCStatus::PASS, Some(policy));
+            return DMARCResult::new(DMARCStatus::PASS, Some(policy), Some(target_domain));
         } else {
-            return DMARCResult::new(DMARCStatus::FAIL, Some(policy));
+            return DMARCResult::new(DMARCStatus::FAIL, Some(policy), Some(target_domain));
         }
     };
 }

@@ -134,7 +134,32 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
                     warn!("WARNING: my DMARC checker says different result to \"Authentication-Results\" header: my={} vs header={}", dmarc_result.as_status(), mx_dmarc_status);
                 }
                 if mx_dmarc_status != DMARCStatus::NONE {
-                    dmarc_result = DMARCResult::new(mx_dmarc_status, dmarc_result.as_policy().clone()); // overwrite
+                    let mx_target_domain = table.get("dmarc-target-domains").and_then(|domains| {
+                        let domains: Vec<_> = domains.split(",").collect();
+                        if domains.len() > 1 {
+                            warn!("WARNING: target domain of DMARC in `Authentication-Results` must be only one, but {}: {:?}", domains.len(), domains);
+                        }
+                        if domains[0].is_empty() {
+                            warn!("WARNING: target domain of DMARC in `Authentication-Results` is an empty string");
+                            None
+                        } else {
+                            Some(domains[0].to_owned())
+                        }
+                    });
+                    let new_target_domain = {
+                        match (dmarc_result.as_domain(), &mx_target_domain) {
+                            (None, None) => None,
+                            (Some(d1), None) => Some(d1.to_owned()),
+                            (None, Some(d2)) => Some(d2.to_owned()),
+                            (Some(d1), Some(d2)) => {
+                                if d1 != d2 {
+                                    warn!("WARNING: target domain of DMARC is not matched: my={} vs header={}", d1, d2);
+                                }
+                                Some(d2.to_owned()) // prefer info of `Authentication-Results`
+                            },
+                        }
+                    };
+                    dmarc_result = DMARCResult::new(mx_dmarc_status, dmarc_result.as_policy().clone(), new_target_domain); // overwrite
                 }
             }
         }
@@ -159,17 +184,11 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
 
     // ignore all SPAM factors if the mail is `dmarc=pass` and the verified domain is listed as a trusted domain and BIMI is OK
     if !spam_judgement_table.is_empty() && dmarc_result.as_status() == &DMARCStatus::PASS && !is_lack_of_bimi {
-        if let Some(table) = table_of_authentication_results_header {
-            if let Some(domains) = table.get("dmarc-target-domains") {
-                for domain in domains.split(',') {
-                    if my_fqdn::is_trusted_domain(domain) || my_fqdn::is_listed_as_a_valid_domain(domain) {
-                        let spam_factors = Vec::from_iter(spam_judgement_table.drain());
-                        let ss = spam_factors.join(" ");
-                        info!("Because the verified domain of DMARC is a registered domain, ignore all SPAM factors: {}", ss);
-                        break;
-                    }
-                }
-            }
+        let domain = &dmarc_result.as_domain().to_owned().unwrap(); // `dmarc=pass` なら必ず存在するので unwrap できる
+        if my_fqdn::is_trusted_domain(domain) || my_fqdn::is_listed_as_a_valid_domain(domain) {
+            let spam_factors = Vec::from_iter(spam_judgement_table.drain()); // clear table
+            let ss = spam_factors.join(" ");
+            info!("Because the verified domain of DMARC is a registered domain, ignore all SPAM factors: {}", ss);
         }
     }
 
