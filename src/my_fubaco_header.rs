@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use crate::my_dkim_verifier::{self, DKIMResult, DKIMStatus};
 use crate::my_dmarc_verifier::{self, DMARCResult, DMARCStatus};
 use crate::my_dns_resolver::MyDNSResolver;
+use crate::my_fqdn;
 use crate::my_logger::prelude::*;
 use crate::my_message_parser::MyMessageParser;
 use crate::my_plugin_yondakiji;
@@ -134,6 +135,22 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
                 }
                 if mx_dmarc_status != DMARCStatus::NONE {
                     dmarc_result = DMARCResult::new(mx_dmarc_status, dmarc_result.as_policy().clone()); // overwrite
+                }
+            }
+        }
+    }
+
+    // ignore all SPAM factors if the mail is `dmarc=pass` and the verified domain is listed as a trusted domain
+    if !spam_judgement_table.is_empty() && dmarc_result.as_status() == &DMARCStatus::PASS {
+        if let Some(table) = table_of_authentication_results_header {
+            if let Some(domains) = table.get("dmarc-target-domains") {
+                for domain in domains.split(',') {
+                    if my_fqdn::is_trusted_domain(domain) {
+                        let spam_factors = Vec::from_iter(spam_judgement_table.drain());
+                        let ss = spam_factors.join(" ");
+                        info!("Because the verified domain of DMARC is listed as a trusted domain, ignore all SPAM factors: {}", ss);
+                        break;
+                    }
                 }
             }
         }
