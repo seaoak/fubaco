@@ -140,15 +140,28 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
         }
     }
 
-    // ignore all SPAM factors if the mail is `dmarc=pass` and the verified domain is listed as a trusted domain
-    if !spam_judgement_table.is_empty() && dmarc_result.as_status() == &DMARCStatus::PASS {
-        if let Some(table) = table_of_authentication_results_header {
+    let is_lack_of_bimi = (|| {
+        if let Some(table) = &table_of_authentication_results_header {
             if let Some(domains) = table.get("dmarc-target-domains") {
                 for domain in domains.split(',') {
                     if my_fqdn::is_listed_as_bimi_required(domain) && !table.get("bimi").is_some_and(|s| s == "pass") {
                         info!("BIMI is required but `bimi=pass` is not found in `Authentication-Results`: {}", domain);
-                        continue;
+                        return true;
                     }
+                }
+            }
+        }
+        false
+    })();
+    if is_lack_of_bimi {
+        spam_judgement_table.insert("lack-of-bimi".into());
+    }
+
+    // ignore all SPAM factors if the mail is `dmarc=pass` and the verified domain is listed as a trusted domain and BIMI is OK
+    if !spam_judgement_table.is_empty() && dmarc_result.as_status() == &DMARCStatus::PASS && !is_lack_of_bimi {
+        if let Some(table) = table_of_authentication_results_header {
+            if let Some(domains) = table.get("dmarc-target-domains") {
+                for domain in domains.split(',') {
                     if my_fqdn::is_trusted_domain(domain) || my_fqdn::is_listed_as_a_valid_domain(domain) {
                         let spam_factors = Vec::from_iter(spam_judgement_table.drain());
                         let ss = spam_factors.join(" ");
