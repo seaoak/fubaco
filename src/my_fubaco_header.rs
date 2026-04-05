@@ -145,10 +145,10 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
         if let Some(table) = table_of_authentication_results_header {
             if let Some(domains) = table.get("dmarc-target-domains") {
                 for domain in domains.split(',') {
-                    if my_fqdn::is_trusted_domain(domain) {
+                    if my_fqdn::is_trusted_domain(domain) || my_fqdn::is_listed_as_a_valid_domain(domain) {
                         let spam_factors = Vec::from_iter(spam_judgement_table.drain());
                         let ss = spam_factors.join(" ");
-                        info!("Because the verified domain of DMARC is listed as a trusted domain, ignore all SPAM factors: {}", ss);
+                        info!("Because the verified domain of DMARC is a registered domain, ignore all SPAM factors: {}", ss);
                         break;
                     }
                 }

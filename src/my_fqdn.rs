@@ -172,9 +172,10 @@ pub fn is_prohibited_word_included(text: &str) -> bool {
     PROHIBITED_WORDS.iter().any(|word| text.contains(word))
 }
 
-pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text_raw: &str) -> Option<bool> {
+//================================================================================
+fn is_valid_domain_for(fqdn: &str, text_raw: Option<&str>) -> Option<bool> {
     let fqdn = normalize_domain_string(fqdn); // just to make sure
-    let sparse_text = generate_sparse_text_for_matching_with_word_boundary(text_raw);
+    let sparse_text = text_raw.map(generate_sparse_text_for_matching_with_word_boundary).unwrap_or_default();
     lazy_static! {
         static ref TABLE_OF_VALID_DOMAINS: Vec<(Regex, Vec<String>)> = {
             let table: Vec<(String, Vec<String>)> = get_table_of_valid_domains().unwrap_or_default();
@@ -185,7 +186,7 @@ pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text_raw: &str) -> Opti
         };
     }
     let it = TABLE_OF_VALID_DOMAINS.iter();
-    let it = it.filter(|(re, _domains)| re.is_match(&sparse_text));
+    let it = it.filter(|(re, _domains)| text_raw.is_none() || re.is_match(&sparse_text)); // match for all items if text_raw is `None`
     let it = it.flat_map(|(_re, domains)| domains.into_iter());
     let it = it.map(|s| s.trim_start_matches(['.', '@']).to_owned());
     let it = it.map(|s| regex::escape(&s));
@@ -202,4 +203,12 @@ pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text_raw: &str) -> Opti
         },
     };
     Some(regex.is_match(&fqdn))
+}
+
+pub fn is_valid_domain_by_guessing_from_text(fqdn: &str, text_raw: &str) -> Option<bool> {
+    is_valid_domain_for(fqdn, Some(text_raw))
+}
+
+pub fn is_listed_as_a_valid_domain(fqdn: &str) -> bool {
+    is_valid_domain_for(fqdn, None).unwrap_or(false)
 }
