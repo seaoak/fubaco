@@ -355,7 +355,7 @@ pub fn spf_verify(message: &Message, resolver: &MyDNSResolver) -> SPFResult {
     } else {
         return SPFResult::new(SPFStatus::NONE, vec![domain]);
     };
-    debug!("source_ip: {}", source_ip);
+    info!("spf_verify: source_ip: {}", source_ip);
 
     spf_check_recursively(&domain, &source_ip, &envelop_from, resolver)
 }

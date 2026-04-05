@@ -266,7 +266,7 @@ pub fn fix_incorrect_quoted_printable_text(raw_u8: &[u8]) -> Vec<u8> {
         list.push("\r\n\r\n".to_owned().into_bytes());
         list.push(first_part.into_bytes());
         fixed.enumerate().for_each(|(index, part_u8)| {
-            debug!("MIME multipart fixed part[{}]: {} bytes", index, part_u8.len());
+            debug!("MIME multipart: fixed part[{}]: {} bytes", index, part_u8.len());
             list.push(boundary["\r\n".len()..].to_owned().into_bytes());
             list.push(part_u8);
         });

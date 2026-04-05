@@ -120,7 +120,7 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
             if let mail_parser::HeaderValue::Received(received) = header_value {
                 if let Some(mail_parser::Host::Name(s)) = received.by() {
                     if s == "niftygreeting" || s.ends_with(".nifty.com") || s.ends_with(".mailbox.org") || s.ends_with(".gandi.net") || s.ends_with(".mxrouting.net") || s.ends_with(".google.com") {
-                        debug!("DEBUG: received.from(): \"{:?}\"", received.from());
+                        info!("received.from(): \"{:?}\"", received.from());
                         if let Some(mail_parser::Host::Name(ss)) = received.from() {
                             lazy_static! {
                                 static ref REGEX_NIFTY_MAILSERVER: Regex = Regex::new(r"^concspmx-\d+$").unwrap();
@@ -159,7 +159,7 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
         match header_values.len() {
             0 => return None,
             1 => (),
-            _ => warn!("ignore multiple `Authentication-Results` headers (only first one is used)"),
+            _ => warn!("WARNING: ignore multiple `Authentication-Results` headers (only first one is used)"),
         }
         let header_value = &header_values[0];
         debug!("Authenticatino-Results: {}", header_value);

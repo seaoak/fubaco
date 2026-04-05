@@ -431,7 +431,7 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
         let base64_value = BASE64_STANDARD.encode(&body_hash_value);
         let bh_value = &dkim_signature_fields["bh"];
         if base64_value == *bh_value {
-            debug!("DKIM-Signature Body Hash is OK");
+            info!("DKIM-Signature Body Hash is OK");
         } else {
             info!("DKIM-Signature Body Hash is not matched: {} vs {}", base64_value, bh_value);
             if bh_value.starts_with("CPi+57OhV6n9mvBpGp+jzS4TnhyGa+oGe2/1BpLR") { // mail-sample.AMAZON_3.eml
@@ -474,7 +474,7 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
         debug!("----------\n{}\n----------", header_canonicalized);
         let header_u8 = header_canonicalized.as_bytes();
         header_hash_value = my_calc_hash(dkim_signature_hash_algo, header_u8);
-        debug!("DEBUG: header_hash: {}", BASE64_STANDARD.encode(&header_hash_value));
+        debug!("header_hash: {}", BASE64_STANDARD.encode(&header_hash_value));
     }
 
     // refer DNS record
@@ -610,7 +610,7 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
             },
         };
         if signature_u8.len() != expected_pubkey_bit_length / 8 {
-            info!("DEBUG: invalid signature length: {}", signature_u8.len());
+            info!("invalid DKIM signature length: {}", signature_u8.len());
             return DKIMResult::new(DKIMStatus::PERMERROR, vec![target_domain]);
         }
         match my_verify_sign(dkim_signature_pubkey_algo, pubkey_u8.as_slice(), dkim_signature_hash_algo, header_hash_value.as_slice(), signature_u8.as_slice()) {

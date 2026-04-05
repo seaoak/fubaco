@@ -396,7 +396,7 @@ pub fn spam_checker_suspicious_delivery_report(table: &mut HashSet<String>, mess
         }
         match (&report_domain, &destination_domain) {
             (Some(domain1), Some(domain2)) => {
-                debug!("delivery_report: report_domain={} destination_domain={}", domain1, domain2);
+                info!("delivery_report: report_domain={} destination_domain={}", domain1, domain2);
                 if domain1 != domain2 {
                     // report_domain may be an "open relay" mail server
                     table.insert("suspicious-delivery-report".into());

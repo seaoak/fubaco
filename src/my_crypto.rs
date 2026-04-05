@@ -116,7 +116,7 @@ fn my_verify_rsa_sign(pubkey_u8_encoded: &[u8], hash_algo: MyHashAlgo, hash_valu
     match result {
         Ok(()) => return Ok(true),
         Err(e) => {
-            debug!("RSA signature verification is failed: {}", e);
+            info!("RSA signature verification is failed: {}", e);
             return Ok(false);
         },
     }
