@@ -15,14 +15,15 @@ use crate::my_logger::prelude::*;
 use crate::my_message_parser::MyMessageParser;
 
 //====================================================================
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum DKIMStatus {
+    // priority is based on the "top-to-bottom" order (the last item is highest)
     NONE,
     NEUTRAL,
-    PASS,
     FAIL,
     PERMERROR,
     TEMPERROR,
+    PASS,
 }
 
 impl std::fmt::Display for DKIMStatus {
@@ -77,18 +78,17 @@ impl DKIMResult {
     pub fn as_domains(&self) -> &Vec<String> {
         &self.domains
     }
+
+    pub fn merge(&self, other: &Self) -> Self {
+        if self.status <= other.status {
+            other.clone()
+        } else {
+            self.clone()
+        }
+    }
 }
 
 //====================================================================
-fn get_dkim_signature_header(message: &Message) -> Option<String> {
-    let header_value = match message.header("DKIM-Signature") {
-        Some(mail_parser::HeaderValue::Text(s)) => s, // there is no CRLF at the end
-        _ => return None,
-    };
-    debug!("DKIM-Signature: {}", header_value);
-    Some(header_value.to_string())
-}
-
 fn parse_dkim_signature(header_value: &str) -> Result<HashMap<String, String>> {
     lazy_static! {
         static ref REGEX_LINE_BREAK: Regex = Regex::new(r"\r\n[ \t]+").unwrap();
@@ -220,11 +220,7 @@ fn dkim_canonicalization_for_headers(mode: &str, headers: &[String]) -> Result<S
 }
 
 //====================================================================
-pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
-    let dkim_signature_header_value = match get_dkim_signature_header(message) {
-        Some(s) => s,
-        None => return DKIMResult::new(DKIMStatus::NONE, Vec::new()),
-    };
+fn verify_signature(dkim_signature_header_value: &str, message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
     let dkim_signature_fields = match parse_dkim_signature(&dkim_signature_header_value) {
         Ok(v) => v,
         Err(e) => {
@@ -629,4 +625,19 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
     }
 
     DKIMResult::new(DKIMStatus::PASS, vec![target_domain])
+}
+
+//====================================================================
+pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
+    let mut final_result = DKIMResult::new(DKIMStatus::NONE, Vec::new());
+    for header_value in message.get_list_of_raw_headers("DKIM-Signature") {
+        debug!("DKIM-Signature: {}", header_value);
+        let result = verify_signature(&header_value, message, resolver);
+        final_result = final_result.merge(&result);
+        if final_result.as_status() == &DKIMStatus::PASS {
+            break;
+        }
+    }
+    info!("DKIM final result: {:?}", final_result);
+    final_result
 }
