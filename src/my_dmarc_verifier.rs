@@ -9,6 +9,7 @@ use regex::Regex;
 use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_message_parser::MyMessageParser;
 use crate::my_logger::prelude::*;
+use crate::my_str::is_seemed_to_mail_address;
 
 lazy_static! {
     static ref DUMMY_DMARC_RECORD_FOR_ENFORCEMENT: String = "v=DMARC1;p=quarantine".to_string();
@@ -161,6 +162,41 @@ impl DMARCResult {
 }
 
 //====================================================================
+fn is_list_of_dmarc_uri(text: &str) -> bool {
+    // `dmarc-uri` is a string which consists of `mailto:`, a mail address, an optional size limit (`!` + an integer + an optional unit (`kmgt`)).
+    // see RFC 7489
+    // https://datatracker.ietf.org/doc/html/rfc7489
+    let text = text.trim();
+    if text.is_empty() {
+        return false;
+    }
+    for item in text.split(',').map(str::trim) {
+        if item.is_empty() {
+            return false; // empty item is not allowed
+        }
+        let (uri, size_limit) = item.split_once('!').unwrap_or((item, ""));
+        if !size_limit.is_empty() {
+            lazy_static!{
+                static ref REGEX_SIZE_LIMIT: Regex = Regex::new("^([1-9][0-9]*)([kmgt]?)$").unwrap();
+            }
+            let ss = REGEX_SIZE_LIMIT.captures(size_limit).map(|caps| caps[1].to_owned()).unwrap_or_default(); // may be an empty string
+            let x = u64::from_str(&ss).unwrap_or(0); // RFC7489 says `the numeric portion MUST fit within an unsigned 64-bit integer`
+            if x == 0 {
+                return false;
+            }
+        }
+        let (scheme, mail_address) = uri.split_once(':').unwrap_or_default();
+        if scheme != "mailto" {
+            return false;
+        }
+        if !is_seemed_to_mail_address(mail_address) {
+            return false;
+        }
+    }
+    true
+}
+
+//====================================================================
 pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_target_list: &Vec<String>, resolver: &MyDNSResolver) -> DMARCResult {
     let target_domain = if let Some(s) = message.get_domain_of_header_from() {
         s
@@ -260,10 +296,10 @@ pub fn dmarc_verify(message: &Message, spf_target_list: &Vec<String>, dkim_targe
             if let Some(r) = validate(&mut table, "ri", Some("86400"), |s| REGEX_INTEGER_GREATER_THAN_0.is_match(s)) {
                 return DMARCResult::new(r, None, Some(target_domain));
             }
-            if let Some(r) = validate(&mut table, "rua", Some(""), |s| REGEX_MAIL_ADDRESS_LIST.is_match(s)) {
+            if let Some(r) = validate(&mut table, "rua", Some(""), is_list_of_dmarc_uri) {
                 return DMARCResult::new(r, None, Some(target_domain));
             }
-            if let Some(r) = validate(&mut table, "ruf", Some(""), |s| REGEX_MAIL_ADDRESS_LIST.is_match(s)) {
+            if let Some(r) = validate(&mut table, "ruf", Some(""), is_list_of_dmarc_uri) {
                 return DMARCResult::new(r, None, Some(target_domain));
             }
             if let Some(r) = validate(&mut table, "sp", Some(""), |s| s == "none" || s == "quarantine" || s == "reject") {
