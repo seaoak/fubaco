@@ -4,7 +4,7 @@ use mail_parser::MessageParser;
 use std::collections::HashSet;
 
 use crate::my_dkim_verifier::{self, DKIMResult, DKIMStatus};
-use crate::my_dmarc_verifier::{self, DMARCResult, DMARCStatus};
+use crate::my_dmarc_verifier::{self, DMARCPolicy, DMARCResult, DMARCStatus};
 use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_fqdn;
 use crate::my_logger::prelude::*;
@@ -159,7 +159,8 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
                             },
                         }
                     };
-                    dmarc_result = DMARCResult::new(mx_dmarc_status, dmarc_result.as_policy().clone(), new_target_domain); // overwrite
+                    let new_policy = dmarc_result.as_policy().clone().unwrap_or(DMARCPolicy::ENFORCED); // use `ENFORCED` as default
+                    dmarc_result = DMARCResult::new(mx_dmarc_status, Some(new_policy), new_target_domain); // overwrite
                 }
             }
         }
