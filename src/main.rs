@@ -35,7 +35,6 @@ mod pop3_upstream;
 use my_crypto::*;
 use my_dns_resolver::MyDNSResolver;
 use my_logger::prelude::*;
-use my_text_line_stream::MyTextLineStream;
 use pop3_upstream::*;
 
 //====================================================================
@@ -191,7 +190,7 @@ fn test_rustls_my_client() -> Result<()> {
             Err(e) => return Err(anyhow!(e)),
         };
         plaintext.extend(&local_buf[0..nbytes]);
-        if MyTextLineStream::<TcpStream>::ends_with_u8(&plaintext, b"</html>\n") { // allow empty line
+        if my_text_line_stream::ends_with_u8(&plaintext, b"</html>\n") { // allow empty line
             eprintln!("detect last LF");
             break;
         }

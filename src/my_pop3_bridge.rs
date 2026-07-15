@@ -15,7 +15,7 @@ use crate::my_disconnect::MyDisconnect;
 use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_fubaco_header::{self, FUBACO_HEADER_TOTAL_SIZE};
 use crate::my_logger::prelude::*;
-use crate::my_text_line_stream::MyTextLineStream;
+use crate::my_text_line_stream::{self, MyTextLineStream};
 
 lazy_static! {
     static ref REGEX_POP3_COMMAND_LINE_GENERAL: Regex = Regex::new(r"^([A-Z]+)(?: +(\S+)(?: +(\S+))?)? *\r\n$").unwrap();
@@ -54,7 +54,7 @@ fn read_one_response_completely<S>(upstream_stream: &mut MyTextLineStream<S>, is
     loop { // receive lines until the end of a response
         upstream_stream.read_some_lines(&mut response_lines)?;
         if is_first_response {
-            status_line = MyTextLineStream::<S>::take_first_line(&response_lines)?;
+            status_line = my_text_line_stream::take_first_line(&response_lines)?;
         }
         if status_line.starts_with("-ERR") {
             info!("ERR response is received: {}", status_line.trim());
@@ -65,7 +65,7 @@ fn read_one_response_completely<S>(upstream_stream: &mut MyTextLineStream<S>, is
             info!("single-line response is received: {}", status_line.trim());
             break;
         }
-        if MyTextLineStream::<S>::ends_with_u8(&response_lines, b"\r\n.\r\n") {
+        if my_text_line_stream::ends_with_u8(&response_lines, b"\r\n.\r\n") {
             info!("multl-line response ({} byte body) is received: {}", response_lines.len() - status_line.len() - b".\r\n".len(), status_line.trim());
             break;
         }
@@ -75,12 +75,10 @@ fn read_one_response_completely<S>(upstream_stream: &mut MyTextLineStream<S>, is
     Ok((status_line, response_lines))
 }
 
-fn parse_multi_line_response<S>(response_lines: &[u8]) -> Result<Vec<(MessageNumber, String)>>
-    where S: Read + Write + MyDisconnect
-{
-    let status_line = MyTextLineStream::<S>::take_first_line(response_lines)?;
+fn parse_multi_line_response(response_lines: &[u8]) -> Result<Vec<(MessageNumber, String)>> {
+    let status_line = my_text_line_stream::take_first_line(response_lines)?;
     assert!(status_line.starts_with("+OK"));
-    assert!(MyTextLineStream::<S>::ends_with_u8(response_lines, b"\r\n.\r\n"));
+    assert!(my_text_line_stream::ends_with_u8(response_lines, b"\r\n.\r\n"));
 
     let body_u8 = &response_lines[status_line.len()..(response_lines.len() - b".\r\n".len())];
     let body_text = String::from_utf8_lossy(body_u8);
@@ -110,17 +108,13 @@ fn parse_multi_line_response<S>(response_lines: &[u8]) -> Result<Vec<(MessageNum
     Ok(list)
 }
 
-fn parse_response_for_uidl_command<S>(response_lines: &[u8]) -> Result<Vec<(MessageNumber, UniqueID)>>
-    where S: Read + Write + MyDisconnect
-{
-    let list = parse_multi_line_response::<S>(response_lines)?;
+fn parse_response_for_uidl_command(response_lines: &[u8]) -> Result<Vec<(MessageNumber, UniqueID)>> {
+    let list = parse_multi_line_response(response_lines)?;
     let list = list.into_iter().map(|(n, s)| (n, UniqueID(s))).collect();
     Ok(list)
 }
 
-fn parse_response_for_list_command<S>(response_lines: &[u8]) -> Result<Vec<(MessageNumber, usize)>>
-    where S: Read + Write + MyDisconnect
-{
+fn parse_response_for_list_command(response_lines: &[u8]) -> Result<Vec<(MessageNumber, usize)>> {
     fn convert_an_entry(tupple: (MessageNumber, String)) -> Option<(MessageNumber, usize)> {
         let (n, s) = tupple;
         if let Ok(i) = usize::from_str_radix(&s, 10) {
@@ -130,7 +124,7 @@ fn parse_response_for_list_command<S>(response_lines: &[u8]) -> Result<Vec<(Mess
         }
     }
 
-    let list = parse_multi_line_response::<S>(response_lines)?;
+    let list = parse_multi_line_response(response_lines)?;
     let num_of_entries = list.len();
     let list: Vec<(MessageNumber, usize)> = list.into_iter().filter_map(|t| convert_an_entry(t)).collect();
     if list.len() != num_of_entries {
@@ -164,7 +158,7 @@ fn process_pop3_transaction<S, T>(
         }
         assert!(status_line.starts_with("+OK"));
         info!("parse response body of UIDL command");
-        let list = parse_response_for_uidl_command::<S>(&response_lines)?;
+        let list = parse_response_for_uidl_command(&response_lines)?;
         message_number_to_unique_id = list.into_iter().collect::<HashMap<MessageNumber, UniqueID>>();
         info!("Done");
     }
@@ -183,7 +177,7 @@ fn process_pop3_transaction<S, T>(
         }
         assert!(status_line.starts_with("+OK"));
         info!("parse response body of LIST command");
-        let list = parse_response_for_list_command::<S>(&response_lines)?;
+        let list = parse_response_for_list_command(&response_lines)?;
         message_number_to_nbytes = list.into_iter().collect::<HashMap<MessageNumber, usize>>();
         info!("Done");
     }
@@ -292,7 +286,7 @@ fn process_pop3_transaction<S, T>(
             }
             if command_name == "LIST" && command_arg1.is_none() {
                 info!("modify multi-line response for LIST command");
-                let original_list = parse_response_for_list_command::<S>(&response_lines)?;
+                let original_list = parse_response_for_list_command(&response_lines)?;
                 let modified_list = original_list.into_iter().map(|(message_number, nbytes)| {
                     assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
                     let unique_id = &message_number_to_unique_id[&message_number];
