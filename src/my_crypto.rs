@@ -23,14 +23,14 @@ impl std::fmt::Display for MyHashAlgo {
     }
 }
 
-impl TryFrom<&str> for MyHashAlgo {
-    type Error = anyhow::Error;
+impl std::str::FromStr for MyHashAlgo {
+    type Err = anyhow::Error;
 
-    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
-        match value {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
             "sha1" => Ok(Self::Sha1),
             "sha256" => Ok(Self::Sha256),
-            _ => Err(anyhow!("MyHashAlgo: invalid value: \"{}\"", value)),
+            _ => Err(anyhow!("MyHashAlgo: invalid value: \"{}\"", s)),
         }
     }
 }
@@ -79,14 +79,14 @@ impl std::fmt::Display for MyAsymmetricAlgo {
     }
 }
 
-impl TryFrom<&str> for MyAsymmetricAlgo {
-    type Error = anyhow::Error;
+impl std::str::FromStr for MyAsymmetricAlgo {
+    type Err = anyhow::Error;
 
-    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
-        match value {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
             "rsa" => Ok(Self::Rsa),
             "ed25519" => Ok(Self::Ed25519),
-            _ => Err(anyhow!("MyAsymmetricAlgo: unknown value: \"{}\"", value)),
+            _ => Err(anyhow!("MyAsymmetricAlgo: unknown value: \"{}\"", s)),
         }
     }
 }

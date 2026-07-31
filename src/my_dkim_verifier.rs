@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::str::FromStr;
 use std::time::SystemTime;
 
 use anyhow::{anyhow, Result};
@@ -237,14 +238,14 @@ fn verify_signature(dkim_signature_header_value: &str, message: &Message, resolv
             return DKIMResult::new(DKIMStatus::PERMERROR, Vec::new());
         }
     };
-    let dkim_signature_pubkey_algo = match MyAsymmetricAlgo::try_from(dkim_signature_pubkey_algo.as_str()) {
+    let dkim_signature_pubkey_algo = match MyAsymmetricAlgo::from_str(dkim_signature_pubkey_algo.as_str()) {
         Ok(v) => v,
         Err(e) => {
             info!("DKIM-Signature signature algorithm is invalid: {}", e);
             return DKIMResult::new(DKIMStatus::PERMERROR, Vec::new());
         },
     };
-    let dkim_signature_hash_algo = match MyHashAlgo::try_from(dkim_signature_hash_algo.as_str()) {
+    let dkim_signature_hash_algo = match MyHashAlgo::from_str(dkim_signature_hash_algo.as_str()) {
         Ok(v) => v,
         Err(e) => {
             info!("DKIM-Signature hash algorithm is invalid: {}", e);
