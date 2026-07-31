@@ -5,6 +5,7 @@ use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use native_tls::{TlsConnector, TlsStream};
 use regex::Regex;
+use strum::Display;
 
 use crate::my_disconnect::MyDisconnect;
 use crate::my_text_line_stream::MyTextLineStream;
@@ -19,7 +20,7 @@ lazy_static! {
 }
 
 //====================================================================
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Display)]
 #[allow(non_camel_case_types)]
 enum POP3State {
     GREETING,
@@ -27,12 +28,6 @@ enum POP3State {
     AUTHORIZATION_1,
     TRANSACTION,
     UPDATE,
-}
-
-impl std::fmt::Display for POP3State {
-    fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(dest, "{:?}", self)
-    }
 }
 
 //====================================================================

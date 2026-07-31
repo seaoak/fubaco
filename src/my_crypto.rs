@@ -1,38 +1,18 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use ed25519_dalek::Verifier;
 use rsa::{RsaPublicKey, pkcs1::DecodeRsaPublicKey, pkcs1v15::Pkcs1v15Sign, pkcs8::DecodePublicKey};
 use sha1::{Digest, Sha1};
 use sha2::Sha256;
+use strum::{Display, EnumString};
 
 use crate::my_logger::prelude::*;
 
 //====================================================================
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Display, EnumString)]
+#[strum(serialize_all = "lowercase")]
 pub enum MyHashAlgo {
     Sha1,
     Sha256,
-}
-
-impl std::fmt::Display for MyHashAlgo {
-    fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let s = match self {
-            Self::Sha1   => "sha1",
-            Self::Sha256 => "sha256",
-        };
-        write!(dest, "{}", s)
-    }
-}
-
-impl std::str::FromStr for MyHashAlgo {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "sha1" => Ok(Self::Sha1),
-            "sha256" => Ok(Self::Sha256),
-            _ => Err(anyhow!("MyHashAlgo: invalid value: \"{}\"", s)),
-        }
-    }
 }
 
 //====================================================================
@@ -63,32 +43,11 @@ fn my_calc_sha256(input: &[u8]) -> Vec<u8> {
 }
 
 //====================================================================
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Display, EnumString)]
+#[strum(serialize_all = "lowercase")]
 pub enum MyAsymmetricAlgo {
     Rsa,
     Ed25519,
-}
-
-impl std::fmt::Display for MyAsymmetricAlgo {
-    fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let s = match self {
-            Self::Rsa     => "rsa",
-            Self::Ed25519 => "ed25519",
-        };
-        write!(dest, "{}", s)
-    }
-}
-
-impl std::str::FromStr for MyAsymmetricAlgo {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "rsa" => Ok(Self::Rsa),
-            "ed25519" => Ok(Self::Ed25519),
-            _ => Err(anyhow!("MyAsymmetricAlgo: unknown value: \"{}\"", s)),
-        }
-    }
 }
 
 //====================================================================

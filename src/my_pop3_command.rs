@@ -1,10 +1,10 @@
-use std::fmt;
 use std::str::FromStr;
 
 use anyhow::anyhow;
+use strum::{Display, EnumString};
 
 //====================================================================
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Display, EnumString)]
 pub enum MyPop3CommandName {
     // https://datatracker.ietf.org/doc/html/rfc1939
     APOP,
@@ -19,49 +19,6 @@ pub enum MyPop3CommandName {
     TOP,
     UIDL,
     USER,
-}
-
-impl std::str::FromStr for MyPop3CommandName {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // NOTE: `to_ascii_uppercase()` seems too much.
-        match s {
-            "APOP" => Ok(Self::APOP),
-            "DELE" => Ok(Self::DELE),
-            "LIST" => Ok(Self::LIST),
-            "NOOP" => Ok(Self::NOOP),
-            "PASS" => Ok(Self::PASS),
-            "QUIT" => Ok(Self::QUIT),
-            "RETR" => Ok(Self::RETR),
-            "RSET" => Ok(Self::RSET),
-            "STAT" => Ok(Self::STAT),
-            "TOP"  => Ok(Self::TOP),
-            "UIDL" => Ok(Self::UIDL),
-            "USER" => Ok(Self::USER),
-            _      => Err(anyhow!("invalid argument: {:?}", s)),
-        }
-    }
-}
-
-impl fmt::Display for MyPop3CommandName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let ss = match self {
-            Self::APOP => "APOP",
-            Self::DELE => "DELE",
-            Self::LIST => "LIST",
-            Self::NOOP => "NOOP",
-            Self::PASS => "PASS",
-            Self::QUIT => "QUIT",
-            Self::RETR => "RETR",
-            Self::RSET => "RSET",
-            Self::STAT => "STAT",
-            Self::TOP  => "TOP",
-            Self::UIDL => "UIDL",
-            Self::USER => "USER",
-        };
-        write!(f, "{ss}")
-    }
 }
 
 impl MyPop3CommandName {

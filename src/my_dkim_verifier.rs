@@ -9,6 +9,7 @@ use base64::prelude::*;
 use lazy_static::lazy_static;
 use mail_parser::Message;
 use regex::Regex;
+use strum::{Display, EnumString};
 
 use crate::my_crypto::*;
 use crate::my_dns_resolver::MyDNSResolver;
@@ -16,7 +17,8 @@ use crate::my_logger::prelude::*;
 use crate::my_message_parser::MyMessageParser;
 
 //====================================================================
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Display, EnumString)]
+#[strum(serialize_all = "lowercase")]
 pub enum DKIMStatus {
     // priority is based on the "top-to-bottom" order (the last item is highest)
     NONE,
@@ -25,36 +27,6 @@ pub enum DKIMStatus {
     PERMERROR,
     TEMPERROR,
     PASS,
-}
-
-impl std::fmt::Display for DKIMStatus {
-    fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let s = match self {
-            Self::NONE      => "none",
-            Self::NEUTRAL   => "neutral",
-            Self::PASS      => "pass",
-            Self::FAIL      => "fail",
-            Self::PERMERROR => "permerror",
-            Self::TEMPERROR => "temperror",
-        };
-        write!(dest, "{}", s)
-    }
-}
-
-impl std::str::FromStr for DKIMStatus {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "none"         => Ok(Self::NONE),
-            "neutral"      => Ok(Self::NEUTRAL),
-            "pass"         => Ok(Self::PASS),
-            "fail"         => Ok(Self::FAIL),
-            "permerror"    => Ok(Self::PERMERROR),
-            "temperror"    => Ok(Self::TEMPERROR),
-            _              => Err(anyhow!("invalid string for DKIMStatus")),
-        }
-    }
 }
 
 //====================================================================

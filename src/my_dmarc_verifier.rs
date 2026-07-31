@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use anyhow::anyhow;
 use lazy_static::lazy_static;
 use mail_parser::Message;
 use regex::Regex;
+use strum::{Display, EnumString};
 
 use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_message_parser::MyMessageParser;
@@ -54,62 +54,25 @@ impl IdentifierAlignmentStatus {
 
 //====================================================================
 #[allow(unused)]
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, EnumString)]
+#[strum(serialize_all = "lowercase")]
 pub enum DMARCPolicy {
     NONE,
     QUARANTINE,
     REJECT,
+
+    #[strum(disabled)]
     ENFORCED, // Fubaco original (when no DNS record is existed)
 }
 
-impl std::str::FromStr for DMARCPolicy {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "none"         => Ok(Self::NONE),
-            "quarantine"   => Ok(Self::QUARANTINE),
-            "reject"       => Ok(Self::REJECT),
-            _              => Err(anyhow!("invalid string for DMARCPolicy")),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Display, EnumString)]
+#[strum(serialize_all = "lowercase")]
 pub enum DMARCStatus {
     NONE,
     PASS,
     FAIL,
     TEMPERROR,
     PERMERROR,
-}
-
-impl std::fmt::Display for DMARCStatus {
-    fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let s = match self {
-            Self::NONE       => "none",
-            Self::PASS       => "pass",
-            Self::FAIL       => "fail",
-            Self::TEMPERROR  => "temperror",
-            Self::PERMERROR  => "permerror",
-        };
-        write!(dest, "{}", s)
-    }
-}
-
-impl std::str::FromStr for DMARCStatus {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "none"         => Ok(Self::NONE),
-            "pass"         => Ok(Self::PASS),
-            "fail"         => Ok(Self::FAIL),
-            "temperror"    => Ok(Self::TEMPERROR),
-            "permerror"    => Ok(Self::PERMERROR),
-            _              => Err(anyhow!("invalid string for DMARCStatus")),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

@@ -1,17 +1,18 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
-use anyhow::anyhow;
 use lazy_static::lazy_static;
 use mail_parser::Message;
 use regex::Regex;
+use strum::{Display, EnumString};
 
 use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_logger::prelude::*;
 use crate::my_message_parser::MyMessageParser;
 
 //====================================================================
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Display, EnumString)]
+#[strum(serialize_all = "lowercase")]
 pub enum SPFStatus {
     NONE,
     NEUTRAL,
@@ -21,40 +22,6 @@ pub enum SPFStatus {
     HARDFAIL,
     PERMERROR,
     TEMPERROR,
-}
-
-impl std::fmt::Display for SPFStatus {
-    fn fmt(&self, dest: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let s = match self {
-            Self::NONE      => "none",
-            Self::NEUTRAL   => "neutral",
-            Self::PASS      => "pass",
-            Self::FAIL      => "fail",
-            Self::SOFTFAIL  => "softfail",
-            Self::HARDFAIL  => "hardfail",
-            Self::PERMERROR => "permerror",
-            Self::TEMPERROR => "temperror",
-        };
-        write!(dest, "{}", s)
-    }
-}
-
-impl std::str::FromStr for SPFStatus {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "none"         => Ok(Self::NONE),
-            "neutral"      => Ok(Self::NEUTRAL),
-            "pass"         => Ok(Self::PASS),
-            "fail"         => Ok(Self::FAIL),
-            "softfail"     => Ok(Self::SOFTFAIL),
-            "hardfail"     => Ok(Self::HARDFAIL),
-            "permerror"    => Ok(Self::PERMERROR),
-            "temperror"    => Ok(Self::TEMPERROR),
-            _              => Err(anyhow!("invalid string for SPFStatus")),
-        }
-    }
 }
 
 //====================================================================
