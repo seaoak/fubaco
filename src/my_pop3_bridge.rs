@@ -15,13 +15,13 @@ use crate::my_disconnect::MyDisconnect;
 use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_fubaco_header::{self, FUBACO_HEADER_TOTAL_SIZE};
 use crate::my_logger::prelude::*;
-use crate::my_pop3_command::{MyPop3Command, MyPop3CommandName};
+use crate::my_pop3_command::{MyPop3Command, MyPop3CommandName, MyPop3Response};
 use crate::my_text_line_stream::{self, MyTextLineStream};
 
 lazy_static! {
-    static ref REGEX_POP3_COMMAND_LINE_GENERAL: Regex = Regex::new(r"^([A-Z]+)(?: +(\S+)(?: +(\S+))?)? *\r\n$").unwrap();
-    static ref REGEX_POP3_COMMAND_LINE_FOR_USER: Regex = Regex::new(r"^USER +(\S+) *\r\n$").unwrap();
-    static ref REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND: Regex = Regex::new(r"^\+OK +(\S+) +(\S+) *\r\n$").unwrap();
+    static ref REGEX_POP3_COMMAND_LINE_GENERAL: Regex = Regex::new(r"^([A-Z]+)(?: +(\S+)(?: +(\S+))?)? *(\r\n)?$").unwrap();
+    static ref REGEX_POP3_COMMAND_LINE_FOR_USER: Regex = Regex::new(r"^USER +(\S+) *(\r\n)?$").unwrap();
+    static ref REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND: Regex = Regex::new(r"^\+OK +(\S+) +(\S+) *(\r\n)?$").unwrap();
     static ref REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND: Regex = Regex::new(r"^ *(\S+) +(\S+) *$").unwrap(); // "\r\n" is stripped
     static ref REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS: Regex = Regex::new(r"\b([1-9][0-9]*) octets\b").unwrap();
     static ref DATABASE_FILENAME: String = "./db.json".to_string();
@@ -47,45 +47,41 @@ struct MessageInfo {
 }
 
 //====================================================================
-fn read_one_response_completely<S>(upstream_stream: &mut MyTextLineStream<S>, is_multi_line_response_expected: bool) -> Result<(String, Vec<u8>)>
+fn read_one_response_completely<S>(upstream_stream: &mut MyTextLineStream<S>, is_multi_line_response_expected: bool) -> Result<MyPop3Response>
     where S: Read + Write + MyDisconnect
 {
     let mut response_lines = Vec::<u8>::new();
-    let mut is_first_response = true;
-    let mut status_line = "".to_string(); // dummy initialization (must be set to a string before use)
-    loop { // receive lines until the end of a response
-        upstream_stream.read_some_lines(&mut response_lines)?;
-        if is_first_response {
-            status_line = my_text_line_stream::take_first_line(&response_lines)?;
+    upstream_stream.read_some_lines(&mut response_lines)?;
+    assert_ne!(response_lines.len(), 0);
+
+    let status_line = my_text_line_stream::take_first_line(&response_lines)?;
+    let is_ok = status_line == "+OK\r\n" || status_line.starts_with("+OK ");
+    let is_err = status_line == "-ERR\r\n" || status_line.starts_with("-ERR ");
+
+    if is_ok && is_multi_line_response_expected {
+        while !response_lines.ends_with(b"\r\n.\r\n") {
+            upstream_stream.read_some_lines(&mut response_lines)?;
         }
-        if status_line.starts_with("-ERR") {
-            info!("ERR response is received: {}", status_line.trim());
-            break;
-        }
-        assert!(status_line.starts_with("+OK"));
-        if !is_multi_line_response_expected {
-            info!("single-line response is received: {}", status_line.trim());
-            break;
-        }
-        if my_text_line_stream::ends_with_u8(&response_lines, b"\r\n.\r\n") {
-            info!("multl-line response ({} byte body) is received: {}", response_lines.len() - status_line.len() - b".\r\n".len(), status_line.trim());
-            break;
-        }
-        is_first_response = false;
     }
 
-    Ok((status_line, response_lines))
+    if is_ok {
+        if is_multi_line_response_expected {
+            info!("multi-line response ({} byte body) is received: {}", response_lines.len() - status_line.len() - b".\r\n".len(), status_line.trim_end_matches("\r\n"));
+        } else {
+            info!("single-line response is received: {}", status_line.trim_end_matches("\r\n"));
+        }
+    }
+    if is_err {
+        info!("ERR response is received: {}", status_line.trim_end_matches("\r\n"));
+    }
+
+    return MyPop3Response::try_from(response_lines.as_ref());
 }
 
 //====================================================================
-fn parse_multi_line_response<T, F>(response_lines: &[u8], converter: F) -> Result<Vec<(MessageNumber, T)>>
+fn parse_multi_line_response<T, F>(body_u8: &[u8], converter: F) -> Result<Vec<(MessageNumber, T)>>
     where F: Fn(&str) -> Option<T>,
 {
-    let status_line = my_text_line_stream::take_first_line(response_lines)?;
-    assert!(status_line.starts_with("+OK"));
-    assert!(my_text_line_stream::ends_with_u8(response_lines, b"\r\n.\r\n"));
-
-    let body_u8 = &response_lines[status_line.len()..(response_lines.len() - b".\r\n".len())];
     let body_text = String::from_utf8_lossy(body_u8);
     debug!("{}", body_text);
 
@@ -116,28 +112,25 @@ fn parse_multi_line_response<T, F>(response_lines: &[u8], converter: F) -> Resul
     Ok(list)
 }
 
-fn parse_response_for_uidl_command(response_lines: &[u8]) -> Result<Vec<(MessageNumber, UniqueID)>> {
-    parse_multi_line_response(response_lines, |s| Some(UniqueID(s.to_string())))
+fn parse_response_for_uidl_command(body_u8: &[u8]) -> Result<Vec<(MessageNumber, UniqueID)>> {
+    parse_multi_line_response(body_u8, |s| Some(UniqueID(s.to_string())))
 }
 
-fn parse_response_for_list_command(response_lines: &[u8]) -> Result<Vec<(MessageNumber, usize)>> {
-    parse_multi_line_response(response_lines, |s| usize::from_str_radix(s, 10).ok())
+fn parse_response_for_list_command(body_u8: &[u8]) -> Result<Vec<(MessageNumber, usize)>> {
+    parse_multi_line_response(body_u8, |s| usize::from_str_radix(s, 10).ok())
 }
 
 //====================================================================
 fn issue_pop3_command_general<S>(
     upstream_stream: &mut MyTextLineStream<S>,
     command: &MyPop3Command,
-) -> Result<(String, Vec<u8>)>
+) -> Result<MyPop3Response>
     where S: Read + Write + MyDisconnect,
 {
     info!("issue {} command", command.name());
     upstream_stream.write_all_and_flush(&command.to_bytes())?;
     info!("wait the response for {} command", command.name());
-    let (status_line, response_lines) = read_one_response_completely(upstream_stream, command.is_multi_line_response_expected())?;
-    info!("the response for {} command is received: {}", command.name(), status_line.trim());
-    assert!(status_line.starts_with("-ERR") || status_line.starts_with("+OK"));
-    Ok((status_line, response_lines))
+    read_one_response_completely(upstream_stream, command.is_multi_line_response_expected())
 }
 
 fn issue_pop3_command_with_multi_line_response<S, T, F>(
@@ -149,13 +142,12 @@ fn issue_pop3_command_with_multi_line_response<S, T, F>(
           F: FnOnce(&[u8]) -> Result<T>,
 {
     assert!(command.is_multi_line_response_expected());
-    let (status_line, response_lines) = issue_pop3_command_general(upstream_stream, &command)?;
-    if status_line.starts_with("-ERR") {
+    let response = issue_pop3_command_general(upstream_stream, &command)?;
+    if response.is_err() {
         return Err(anyhow!("FATAL: ERR response is received for {} command", command.name()));
     }
-    assert!(status_line.starts_with("+OK"));
     info!("parse response body of {} command", command.name());
-    parser(&response_lines)
+    parser(response.as_body_u8().unwrap())
 }
 
 //====================================================================
@@ -256,8 +248,9 @@ fn process_pop3_transaction<S, T>(
             };
         }
 
-        let (status_line, mut response_lines) = read_one_response_completely(upstream_stream, is_multi_line_response_expected)?;
-        if status_line.starts_with("+OK") {
+        let response = read_one_response_completely(upstream_stream, is_multi_line_response_expected)?;
+        let mut response_lines = response.to_bytes();
+        if response.is_ok() {
             // modify response
             if command_name == "LIST" && command_arg1.is_some() {
                 info!("modify single-line response for LIST command");
@@ -270,11 +263,11 @@ fn process_pop3_transaction<S, T>(
                 }
                 let message_number;
                 let nbytes;
-                if let Some(caps) = REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&status_line) {
+                if let Some(caps) = REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&response.status_line()) {
                     message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().as_str(), 10).unwrap());
                     nbytes = usize::from_str_radix(caps.get(2).unwrap().as_str(), 10).unwrap();
                 } else {
-                    return Err(anyhow!("invalid response: {}", status_line.trim()));
+                    return Err(anyhow!("invalid response: {}", response.status_line()));
                 }
                 assert_eq!(message_number, arg_message_number);
                 assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
@@ -290,7 +283,7 @@ fn process_pop3_transaction<S, T>(
             }
             if command_name == "LIST" && command_arg1.is_none() {
                 info!("modify multi-line response for LIST command");
-                let original_list = parse_response_for_list_command(&response_lines)?;
+                let original_list = parse_response_for_list_command(response.as_body_u8().unwrap())?;
                 let modified_list = original_list.into_iter().map(|(message_number, nbytes)| {
                     assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
                     let unique_id = &message_number_to_unique_id[&message_number];
@@ -307,15 +300,15 @@ fn process_pop3_transaction<S, T>(
                 });
 
                 let new_status_line;
-                if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&status_line) {
+                if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&response.status_line()) {
                     let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
                     assert_eq!(nbytes, total_nbytes_of_original_maildrop);
                     assert!(nbytes <= total_nbytes_of_modified_maildrop);
                     assert_eq!(0, (total_nbytes_of_modified_maildrop - nbytes) % *FUBACO_HEADER_TOTAL_SIZE);
                     let new_field = format!("{} octets", total_nbytes_of_modified_maildrop);
-                    new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&status_line, new_field).to_string();
+                    new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&response.status_line(), new_field).to_string();
                 } else {
-                    new_status_line = status_line.clone();
+                    new_status_line = response.status_line();
                 }
 
                 response_lines.clear();
@@ -333,7 +326,8 @@ fn process_pop3_transaction<S, T>(
                 } else {
                     return Err(anyhow!("unknown message number is specified: {}", arg_message_number.0));
                 }
-                let body_u8 = &response_lines[status_line.len()..(response_lines.len() - b".\r\n".len())];
+                assert!(response.is_multi_line_response());
+                let body_u8 = response.as_body_u8().unwrap();
 
                 let fubaco_headers;
                 if let Some(info) = unique_id_to_message_info.get(unique_id) {
@@ -362,15 +356,15 @@ fn process_pop3_transaction<S, T>(
                 buf.extend(body_u8.iter());
 
                 let new_status_line;
-                if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&status_line) {
+                if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&response.status_line()) {
                     let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
                     if nbytes != body_u8.len() {
                         print!("WARNING: message size is different from the \"{} octets\" in staus line: {}", nbytes, body_u8.len());
                     }
                     let new_nbytes = nbytes + fubaco_headers.len();
-                    new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&status_line, format!("{} octets", new_nbytes)).to_string();
+                    new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&response.status_line(), format!("{} octets", new_nbytes)).to_string();
                 } else {
-                    new_status_line = status_line.clone();
+                    new_status_line = response.status_line();
                 }
 
                 response_lines.clear();
@@ -383,11 +377,11 @@ fn process_pop3_transaction<S, T>(
                 info!("modify single-line response for STAT command");
                 let num_of_messages;
                 let nbytes;
-                if let Some(caps) = REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&status_line) {
+                if let Some(caps) = REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&response.status_line()) {
                     num_of_messages = usize::from_str_radix(&caps[1], 10).unwrap();
                     nbytes = usize::from_str_radix(&caps[2], 10).unwrap();
                 } else {
-                    return Err(anyhow!("invalid response: {}", status_line.trim()));
+                    return Err(anyhow!("invalid response: {}", response.status_line()));
                 }
                 assert_eq!(num_of_messages, message_number_to_nbytes.len());
                 assert_eq!(nbytes, total_nbytes_of_original_maildrop);
@@ -396,7 +390,7 @@ fn process_pop3_transaction<S, T>(
                 info!("Done");
             }
         }
-        info!("relay the response: {}", status_line.trim());
+        info!("relay the response: {}", response.status_line());
         downstream_stream.write_all_and_flush(&response_lines)?;
         info!("Done");
         if command_name == "QUIT" {
@@ -520,13 +514,11 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
 
                 // wait for POP3 greeting message from server
                 {
-                    let (status_line, response_lines) = read_one_response_completely(&mut upstream_stream, false)?;
-                    assert_eq!(status_line.len(), response_lines.len());
-                    info!("greeting message is received: {}", status_line.trim());
-                    if status_line.starts_with("-ERR") {
-                        return Err(anyhow!("FATAL: invalid greeting message is received: {}", status_line.trim()));
+                    let response = read_one_response_completely(&mut upstream_stream, false)?;
+                    info!("greeting message is received: {}", response.status_line());
+                    if response.is_err() {
+                        return Err(anyhow!("FATAL: invalid greeting message is received: {}", response.status_line()));
                     }
-                    assert!(status_line.starts_with("+OK"));
                 }
 
                 // issue delayed "USER" command
@@ -535,15 +527,13 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                     let command_line = format!("USER {}\r\n", username.0).into_bytes();
                     upstream_stream.write_all_and_flush(&command_line)?;
                     info!("wait the response for USER command");
-                    let (status_line, response_lines) = read_one_response_completely(&mut upstream_stream, false)?;
-                    assert_eq!(status_line.len(), response_lines.len());
-                    info!("relay the response: {}", status_line.trim());
-                    downstream_stream.write_all_and_flush(&response_lines)?;
+                    let response = read_one_response_completely(&mut upstream_stream, false)?;
+                    info!("relay the response: {}", response.status_line());
+                    downstream_stream.write_all_and_flush(&response.to_bytes())?;
                     info!("Done");
-                    if status_line.starts_with("-ERR") {
+                    if response.is_err() {
                         return Err(anyhow!("FATAL: ERR response is received for USER command"));
                     }
-                    assert!(status_line.starts_with("+OK"));
                 }
 
                 // relay "PASS" command
@@ -556,15 +546,13 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                         return Err(anyhow!("2nd command should be \"PASS\" command, but: {}", command_str.trim()));
                     }
                     upstream_stream.write_all_and_flush(&command_line)?;
-                    let (status_line, response_lines) = read_one_response_completely(&mut upstream_stream, false)?;
-                    assert_eq!(status_line.len(), response_lines.len());
-                    info!("relay the response: {}", status_line.trim());
-                    downstream_stream.write_all_and_flush(&response_lines)?;
+                    let response = read_one_response_completely(&mut upstream_stream, false)?;
+                    info!("relay the response: {}", response.status_line());
+                    downstream_stream.write_all_and_flush(&response.to_bytes())?;
                     info!("Done");
-                    if status_line.starts_with("-ERR") {
+                    if response.is_err() {
                         return Err(anyhow!("FATAL: ERR response is received for PASS command"));
                     }
-                    assert!(status_line.starts_with("+OK"));
                 }
 
                 process_pop3_transaction(&mut upstream_stream, &mut downstream_stream, database.get_mut(&username).unwrap(), resolver)?;

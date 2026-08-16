@@ -1,7 +1,9 @@
 use std::str::FromStr;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Result};
 use strum::{Display, EnumString};
+
+use crate::my_text_line_stream::take_first_line;
 
 //====================================================================
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Display, EnumString)]
@@ -57,6 +59,9 @@ impl std::str::FromStr for MyPop3Command {
         } else {
             s
         };
+        if s.is_empty() {
+            return Err(anyhow!("invalid command line: should not be empty"));
+        }
         if !s.chars().all(|c| c.is_ascii() && !c.is_ascii_control()) {
             return Err(anyhow!("invalid codepoint in POP3 command line: {:?}", s));
         }
@@ -68,6 +73,18 @@ impl std::str::FromStr for MyPop3Command {
             return Err(anyhow!("too few/many arguments: {:?} / {:?} / {:?}", s, name, args));
         }
         Ok(Self { name, args })
+    }
+}
+
+impl TryFrom<&[u8]> for MyPop3Command {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &[u8]) -> std::result::Result<Self, Self::Error> {
+        let raw_u8 = value;
+        match String::from_utf8(Vec::from(raw_u8)) {
+            Ok(ss) => Self::from_str(&ss), // delegate
+            Err(_) => Err(anyhow!("invalid byte sequence (not UTF-8) in command line: {:?}", raw_u8)),
+        }
     }
 }
 
@@ -113,4 +130,182 @@ impl MyPop3Command {
         bin.extend_from_slice(b"\r\n");
         bin
     }
+}
+
+//====================================================================
+#[derive(Debug, PartialEq, Eq)]
+pub enum MyPop3Response {
+    OkSingleLine {
+        status_line: String, // not include CRLF at the end
+    },
+    OkMultiLine {
+        status_line: String, // not include CRLF at the end
+        body_u8: Vec<u8>, // not include ".\r\n" at the end, but include CRLF of last line
+    },
+    Err {
+        status_line: String, // not include CRLF at the end
+    },
+}
+
+impl TryFrom<&[u8]> for MyPop3Response {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &[u8]) -> std::result::Result<Self, Self::Error> {
+        let raw_u8 = Vec::from(value);
+        if raw_u8.is_empty() {
+            return Err(anyhow!("invalid POP3 response: should not be empty"));
+        }
+        if !raw_u8.ends_with(b"\r\n") {
+            return Err(anyhow!("invalid POP3 response: should be ended with CRLF: {:?}", raw_u8));
+        }
+        let status_line = take_first_line(&raw_u8)?.strip_suffix("\r\n").unwrap().to_owned(); // remove CRLF at the end
+        if status_line.is_empty() {
+            return Err(anyhow!("invalid POP3 response line: should not be empty"));
+        }
+        if !status_line.chars().all(|c| c.is_ascii() && !c.is_ascii_control()) {
+            return Err(anyhow!("invalid codepoint in POP3 response line: {:?}", status_line));
+        }
+        let is_ok = status_line == "+OK" || status_line.starts_with("+OK ");
+        let is_err = status_line == "-ERR" || status_line.starts_with("-ERR ");
+        if !(is_ok || is_err) {
+            return Err(anyhow!("invalid POP3 response (neither OK nor ERR): {:?}", raw_u8));
+        }
+        let is_multi_line_response = status_line.len() + "\r\n".len() < raw_u8.len();
+        match (is_ok, is_multi_line_response) {
+            (false, false) => Ok(Self::Err { status_line }),
+            (false, true) => Err(anyhow!("invalid POP3 response (ERR response should be single-line response): {:?}", raw_u8)),
+            (true, false) => Ok(Self::OkSingleLine { status_line }),
+            (true, true) => {
+                let body_u8 = extract_body_u8(&raw_u8, &status_line)?;
+                Ok(Self::OkMultiLine { status_line, body_u8 })
+            },
+        }
+    }
+}
+
+impl MyPop3Response {
+    pub fn is_ok(&self) -> bool {
+        match self {
+            Self::OkSingleLine { .. } => true,
+            Self::OkMultiLine { .. } => true,
+            Self::Err { .. } => false,
+        }
+    }
+
+    pub fn is_err(&self) -> bool {
+        !self.is_ok()
+    }
+
+    pub fn is_multi_line_response(&self) -> bool {
+        match self {
+            Self::OkSingleLine { .. } => false,
+            Self::OkMultiLine { .. } => true,
+            Self::Err { .. } => false,
+        }
+    }
+
+    pub fn status_line(&self) -> String {
+        let ss = match self {
+            Self::OkSingleLine { status_line, .. } => status_line,
+            Self::OkMultiLine { status_line, .. } => status_line,
+            Self::Err { status_line, .. } => status_line,
+        };
+        assert!(!ss.ends_with("\r\n")); // not include CRLF at the end
+        ss.clone()
+    }
+
+    pub fn as_body_u8(&self) -> Option<&[u8]> {
+        match self {
+            Self::OkSingleLine { .. } => None,
+            Self::OkMultiLine { body_u8, .. } => Some(body_u8),
+            Self::Err { .. } => None,
+        }
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bin = self.status_line().into_bytes();
+        assert!(!bin.ends_with(b"\r\n"));
+        bin.extend_from_slice(b"\r\n");
+        if let Some(body_u8) = self.as_body_u8() {
+            assert!(body_u8.is_empty() || body_u8.ends_with(b"\r\n"));
+            bin.extend_from_slice(body_u8);
+            bin.extend_from_slice(b".\r\n");
+        }
+        bin
+    }
+}
+
+fn extract_body_u8(raw_u8: &[u8], status_line: &str) -> Result<Vec<u8>> {
+    let status_line = status_line.trim_end_matches("\r\n"); // remove CRLF if exists
+
+    assert!(status_line.len() + "\r\n".len() < raw_u8.len());
+    assert!(raw_u8.starts_with(format!("{}\r\n", status_line).as_bytes()));
+
+    let expected_tail = b"\r\n.\r\n";
+    let bin = &raw_u8[status_line.len()..];
+    let actual_tail = &bin[bin.len().saturating_sub(expected_tail.len())..];
+    if actual_tail != expected_tail {
+        return Err(anyhow!("invalid POP3 response (multi-line response should be ends with {:?}), but {:?}", expected_tail, actual_tail));
+    }
+    let body_u8 = Vec::from(&raw_u8[(status_line.len() + "\r\n".len())..(raw_u8.len() - b".\r\n".len())]); // may be emtpty
+    Ok(body_u8)
+}
+
+#[test]
+fn test_001_extract_body_u8() {
+    assert_eq!(b"", extract_body_u8(b"+OK\r\n.\r\n", "+OK").unwrap().as_array().unwrap());
+    assert_eq!(b"", extract_body_u8(b"+OK\r\n.\r\n", "+OK\r\n").unwrap().as_array().unwrap());
+    assert_eq!(b"\r\n", extract_body_u8(b"+OK\r\n\r\n.\r\n", "+OK").unwrap().as_array().unwrap());
+    assert_eq!(b"a\r\n", extract_body_u8(b"+OK\r\na\r\n.\r\n", "+OK").unwrap().as_array().unwrap());
+    assert_eq!(b"a b c\r\n", extract_body_u8(b"+OK\r\na b c\r\n.\r\n", "+OK").unwrap().as_array().unwrap());
+    assert_eq!(b"a b c\r\n\r\nd e f\r\n\r\n", extract_body_u8(b"+OK\r\na b c\r\n\r\nd e f\r\n\r\n.\r\n", "+OK").unwrap().as_array().unwrap());
+
+    assert!(extract_body_u8(b"+OK\r\n\r\n", "+OK").is_err());
+}
+
+#[test]
+#[allow(non_snake_case)]
+fn test_001_MyPop3Response_try_from() {
+    let status_line = "+OK".to_string();
+    let raw_u8 = format!("{}\r\n", status_line);
+    assert_eq!(MyPop3Response::OkSingleLine { status_line }, MyPop3Response::try_from(raw_u8.as_bytes()).unwrap());
+
+    let status_line = "+OK ".to_string();
+    let raw_u8 = format!("{}\r\n", status_line);
+    assert_eq!(MyPop3Response::OkSingleLine { status_line }, MyPop3Response::try_from(raw_u8.as_bytes()).unwrap());
+
+    let status_line = "+OK 123".to_string();
+    let raw_u8 = format!("{}\r\n", status_line);
+    assert_eq!(MyPop3Response::OkSingleLine { status_line }, MyPop3Response::try_from(raw_u8.as_bytes()).unwrap());
+
+    let status_line = "-ERR".to_string();
+    let raw_u8 = format!("{}\r\n", status_line);
+    assert_eq!(MyPop3Response::Err { status_line }, MyPop3Response::try_from(raw_u8.as_bytes()).unwrap());
+
+    let status_line = "-ERR foo bar".to_string();
+    let raw_u8 = format!("{}\r\n", status_line);
+    assert_eq!(MyPop3Response::Err { status_line }, MyPop3Response::try_from(raw_u8.as_bytes()).unwrap());
+
+    // multi-line response with empty body
+    let status_line = "+OK".to_string();
+    let body_u8 = "".to_owned().into_bytes();
+    let raw_u8 = format!("{}\r\n{}.\r\n", status_line, String::from_utf8_lossy(&body_u8)).into_bytes();
+    assert_eq!(MyPop3Response::OkMultiLine { status_line, body_u8 }, MyPop3Response::try_from(raw_u8.as_ref()).unwrap());
+
+    // multi-line response with a body of one line
+    let status_line = "+OK".to_string();
+    let body_u8 = "foo bar\r\n".to_owned().into_bytes();
+    let raw_u8 = format!("{}\r\n{}.\r\n", status_line, String::from_utf8_lossy(&body_u8)).into_bytes();
+    assert_eq!(MyPop3Response::OkMultiLine { status_line, body_u8 }, MyPop3Response::try_from(raw_u8.as_ref()).unwrap());
+
+    // multi-line response with a body of three lines
+    let status_line = "+OK".to_string();
+    let body_u8 = "foo bar\r\n\r\nbuz\r\n".to_owned().into_bytes();
+    let raw_u8 = format!("{}\r\n{}.\r\n", status_line, String::from_utf8_lossy(&body_u8)).into_bytes();
+    assert_eq!(MyPop3Response::OkMultiLine { status_line, body_u8 }, MyPop3Response::try_from(raw_u8.as_ref()).unwrap());
+
+    // ERR response can not have a body
+    let status_line = "-ERR".to_string();
+    let raw_u8 = format!("{}\r\n.\r\n", status_line);
+    assert!(MyPop3Response::try_from(raw_u8.as_bytes()).is_err());
 }
