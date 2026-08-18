@@ -167,8 +167,25 @@ impl MyPop3Command {
             (MyPop3CommandName::UIDL, 0) => true,
             (MyPop3CommandName::UIDL, 1) => false,
             (MyPop3CommandName::USER, 1) => false,
-            _ => unreachable!("{:?}", self),
+
+            (MyPop3CommandName::STAT, _) => unreachable!("{:?}", self),
+            (MyPop3CommandName::LIST, _) => unreachable!("{:?}", self),
+            (MyPop3CommandName::APOP, _) => unreachable!("{:?}", self),
+            (MyPop3CommandName::DELE, _) => unreachable!("{:?}", self),
+            (MyPop3CommandName::NOOP, _) => unreachable!("{:?}", self),
+            (MyPop3CommandName::PASS, _) => unreachable!("{:?}", self),
+            (MyPop3CommandName::QUIT, _) => unreachable!("{:?}", self),
+            (MyPop3CommandName::RETR, _) => unreachable!("{:?}", self),
+            (MyPop3CommandName::RSET, _) => unreachable!("{:?}", self),
+            (MyPop3CommandName::TOP,  _) => unreachable!("{:?}", self),
+            (MyPop3CommandName::UIDL, _) => unreachable!("{:?}", self),
+            (MyPop3CommandName::USER, _) => unreachable!("{:?}", self),
         }
+    }
+
+    pub fn as_nth_arg(&self, index: usize) -> Option<String> {
+        assert!(self.name.range_of_number_of_arguments().contains(&(1+index)));
+        self.args.get(index).map(String::to_owned)
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {

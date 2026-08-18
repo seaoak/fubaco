@@ -212,49 +212,25 @@ fn process_pop3_transaction<S, T>(
 
     // relay POP3 commands/responses
     loop {
-        let command_name;
-        let command_arg1;
-        let is_multi_line_response_expected;
-        { // relay a POP3 command
+        let command = {
+            // relay a POP3 command
             let mut command_line = Vec::<u8>::new();
             downstream_stream.read_some_lines(&mut command_line)?;
-            let command_str = String::from_utf8_lossy(&command_line);
-            info!("relay POP3 command: {}", command_str.trim());
+            info!("relay POP3 command: {}", String::from_utf8_lossy(&command_line).trim_end_matches("\r\n"));
             upstream_stream.write_all_and_flush(&command_line)?;
             info!("Done");
 
-            if let Some(caps) = REGEX_POP3_COMMAND_LINE_GENERAL.captures(&command_str) {
-                command_name = caps[1].to_string();
-                command_arg1 = caps.get(2).map(|v| v.as_str().to_owned());
-            } else {
-                return Err(anyhow!("invalid command line: {}", command_str.trim()));
-            }
+            MyPop3Command::try_from(command_line.as_ref())? // abort if unexpected command line
+        };
 
-            is_multi_line_response_expected = match command_name.as_str() {
-                "STAT"                           => false,
-                "LIST" if command_arg1.is_none() => true,
-                "LIST" if command_arg1.is_some() => false,
-                "RETR"                           => true,
-                "DELE"                           => false,
-                "NOOP"                           => false,
-                "RSET"                           => false,
-                "QUIT"                           => false,
-                "TOP"                            => true,
-                "UIDL" if command_arg1.is_none() => true,
-                "UIDL" if command_arg1.is_some() => false,
-                "USER"                           => false,
-                "PASS"                           => false,
-                _ => return Err(anyhow!("unknown command: {}", command_str.trim())),
-            };
-        }
-
-        let response = read_one_response_completely(upstream_stream, is_multi_line_response_expected)?;
+        let response = read_one_response_completely(upstream_stream, command.is_multi_line_response_expected())?;
         let mut response_lines = response.to_bytes();
         if response.is_ok() {
             // modify response
-            if command_name == "LIST" && command_arg1.is_some() {
+            if command.name() == MyPop3CommandName::LIST && !command.is_multi_line_response_expected() {
                 info!("modify single-line response for LIST command");
-                let arg_message_number = MessageNumber(u32::from_str_radix(&command_arg1.clone().unwrap(), 10).unwrap());
+                let arg_str = command.as_nth_arg(0).unwrap();
+                let arg_message_number = MessageNumber(u32::from_str_radix(&arg_str, 10).map_err(|_| anyhow!("argument of LIST command shoud be integer: {}", arg_str))?);
                 let unique_id;
                 if let Some(v) = message_number_to_unique_id.get(&arg_message_number) {
                     unique_id = v;
@@ -281,7 +257,7 @@ fn process_pop3_transaction<S, T>(
                 response_lines.extend(format!("+OK {} {}\r\n", message_number.0, new_nbytes).into_bytes());
                 info!("Done");
             }
-            if command_name == "LIST" && command_arg1.is_none() {
+            if command.name() == MyPop3CommandName::LIST && command.is_multi_line_response_expected() {
                 info!("modify multi-line response for LIST command");
                 let original_list = parse_response_for_list_command(response.as_body_u8().unwrap())?;
                 let modified_list = original_list.into_iter().map(|(message_number, nbytes)| {
@@ -317,9 +293,10 @@ fn process_pop3_transaction<S, T>(
                 response_lines.extend(".\r\n".as_bytes());
                 info!("Done");
             }
-            if command_name == "RETR" || command_name == "TOP" {
+            if command.name() == MyPop3CommandName::RETR || command.name() == MyPop3CommandName::TOP {
                 info!("modify response body for RETR/TOP command");
-                let arg_message_number = MessageNumber(u32::from_str_radix(&command_arg1.clone().unwrap(), 10).unwrap());
+                let arg_str = command.as_nth_arg(0).unwrap();
+                let arg_message_number = MessageNumber(u32::from_str_radix(&arg_str, 10).map_err(|_| anyhow!("argument of RETR/TOP command shoud be integer: {}", arg_str))?);
                 let unique_id;
                 if let Some(v) = message_number_to_unique_id.get(&arg_message_number) {
                     unique_id = v;
@@ -331,7 +308,7 @@ fn process_pop3_transaction<S, T>(
 
                 let fubaco_headers;
                 if let Some(info) = unique_id_to_message_info.get(unique_id) {
-                    if command_name == "RETR" {
+                    if command.name() == MyPop3CommandName::RETR {
                         if body_u8.len() != message_number_to_nbytes[&arg_message_number] {
                             warn!("WARNING: message size is different from the response of LIST comand: {} vs {}", body_u8.len(), message_number_to_nbytes[&arg_message_number]);
                         }
@@ -373,7 +350,7 @@ fn process_pop3_transaction<S, T>(
                 response_lines.extend(".\r\n".as_bytes());
                 info!("Done");
             }
-            if command_name == "STAT" {
+            if command.name() == MyPop3CommandName::STAT {
                 info!("modify single-line response for STAT command");
                 let num_of_messages;
                 let nbytes;
@@ -393,7 +370,7 @@ fn process_pop3_transaction<S, T>(
         info!("relay the response: {}", response.status_line());
         downstream_stream.write_all_and_flush(&response_lines)?;
         info!("Done");
-        if command_name == "QUIT" {
+        if command.name() == MyPop3CommandName::QUIT {
             info!("close POP3 stream");
             upstream_stream.disconnect()?;
             downstream_stream.disconnect()?;
