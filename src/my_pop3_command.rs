@@ -41,6 +41,53 @@ impl MyPop3CommandName {
             Self::USER => 1..=1,
         }
     }
+
+    pub fn is_well_formed_arguments(&self, args: &[String]) -> bool {
+        fn validator_for_any(ss: &str) -> bool {
+            ss.chars().all(|c| c.is_ascii() && !c.is_ascii_whitespace() && !c.is_ascii_control())
+        }
+
+        fn validator_for_digest(ss: &str) -> bool {
+            // "MD5 digest string" in RFC1939
+            ss.chars().all(|c| c.is_ascii_hexdigit())
+        }
+
+        fn validator_for_message_number(ss: &str) -> bool {
+            // an integer of base-10 (i.e. decimal), starting with `1`
+            // NOTE: to avoid DoS, assume `u32`.
+            match u32::from_str_radix(ss, 10) {
+                Err(_) => false,
+                Ok(0) => false,
+                Ok(_) => true,
+            }
+        }
+
+        fn validator_for_non_negative_integer(ss: &str) -> bool {
+            // "a non-negative number of lines" in RFC1939
+            // NOTE: to avoid DoS, assume `u32`.
+            u32::from_str_radix(ss, 10).is_ok()
+        }
+
+        let validators: &[_] = match self {
+            Self::APOP => &[validator_for_any, validator_for_digest],
+            Self::DELE => &[validator_for_message_number],
+            Self::LIST => &[validator_for_message_number],
+            Self::NOOP => &[],
+            Self::PASS => &[validator_for_any],
+            Self::QUIT => &[],
+            Self::RETR => &[validator_for_message_number],
+            Self::RSET => &[],
+            Self::STAT => &[],
+            Self::TOP  => &[validator_for_message_number, validator_for_non_negative_integer],
+            Self::UIDL => &[validator_for_message_number],
+            Self::USER => &[validator_for_any],
+        };
+        assert_eq!(&validators.len(), self.range_of_number_of_arguments().end());
+
+        assert!(args.iter().all(|arg| !arg.is_empty()));
+        assert!(self.range_of_number_of_arguments().contains(&args.len()));
+        validators.into_iter().zip(args).all(|(pred, ss)| pred(ss))
+    }
 }
 
 //====================================================================
@@ -71,6 +118,9 @@ impl std::str::FromStr for MyPop3Command {
         let args = it.map(String::from).collect::<Vec<_>>();
         if !name.range_of_number_of_arguments().contains(&args.len()) {
             return Err(anyhow!("too few/many arguments: {:?} / {:?} / {:?}", s, name, args));
+        }
+        if !name.is_well_formed_arguments(args.as_ref()) {
+            return Err(anyhow!("{} command is not well-formed: {:?} / {:?}", name, args, s));
         }
         Ok(Self { name, args })
     }
