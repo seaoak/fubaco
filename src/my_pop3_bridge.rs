@@ -66,7 +66,7 @@ fn read_one_response_completely<S>(upstream_stream: &mut MyTextLineStream<S>, is
 
     if is_ok {
         if is_multi_line_response_expected {
-            info!("multi-line response ({} byte body) is received: {}", response_lines.len() - status_line.len() - b".\r\n".len(), status_line.trim_end_matches("\r\n"));
+            info!("multi-line response ({} byte contents) is received: {}", response_lines.len() - status_line.len() - b".\r\n".len(), status_line.trim_end_matches("\r\n"));
         } else {
             info!("single-line response is received: {}", status_line.trim_end_matches("\r\n"));
         }
@@ -79,15 +79,15 @@ fn read_one_response_completely<S>(upstream_stream: &mut MyTextLineStream<S>, is
 }
 
 //====================================================================
-fn parse_multi_line_response<T, F>(body_u8: &[u8], converter: F) -> Result<Vec<(MessageNumber, T)>>
+fn parse_multi_line_response<T, F>(contents_u8: &[u8], converter: F) -> Result<Vec<(MessageNumber, T)>>
     where F: Fn(&str) -> Option<T>,
 {
-    let body_text = String::from_utf8_lossy(body_u8);
-    debug!("{}", body_text);
+    let contents_text = String::from_utf8_lossy(contents_u8);
+    debug!("{}", contents_text);
 
     let mut table = HashSet::new();
     let mut list = Vec::new();
-    for line in body_text.split_terminator("\r\n") {
+    for line in contents_text.split_terminator("\r\n") {
         let line = line.trim();
         let (index, value) = if let Some(t) = line.split_once(' ') {
             t
@@ -112,12 +112,12 @@ fn parse_multi_line_response<T, F>(body_u8: &[u8], converter: F) -> Result<Vec<(
     Ok(list)
 }
 
-fn parse_response_for_uidl_command(body_u8: &[u8]) -> Result<Vec<(MessageNumber, UniqueID)>> {
-    parse_multi_line_response(body_u8, |s| Some(UniqueID(s.to_string())))
+fn parse_response_for_uidl_command(contents_u8: &[u8]) -> Result<Vec<(MessageNumber, UniqueID)>> {
+    parse_multi_line_response(contents_u8, |s| Some(UniqueID(s.to_string())))
 }
 
-fn parse_response_for_list_command(body_u8: &[u8]) -> Result<Vec<(MessageNumber, usize)>> {
-    parse_multi_line_response(body_u8, |s| usize::from_str_radix(s, 10).ok())
+fn parse_response_for_list_command(contents_u8: &[u8]) -> Result<Vec<(MessageNumber, usize)>> {
+    parse_multi_line_response(contents_u8, |s| usize::from_str_radix(s, 10).ok())
 }
 
 //====================================================================
@@ -146,8 +146,8 @@ fn issue_pop3_command_with_multi_line_response<S, T, F>(
     if response.is_err() {
         return Err(anyhow!("FATAL: ERR response is received for {} command", command.name()));
     }
-    info!("parse response body of {} command", command.name());
-    parser(response.as_body_u8().unwrap())
+    info!("parse response contents of {} command", command.name());
+    parser(response.as_contents_u8().unwrap())
 }
 
 //====================================================================
@@ -250,14 +250,14 @@ fn filter_for_response_of_list_all(
     assert!(command.is_multi_line_response_expected());
 
     info!("modify multi-line response for LIST command");
-    let original_list = parse_response_for_list_command(response.as_body_u8().unwrap())?;
+    let original_list = parse_response_for_list_command(response.as_contents_u8().unwrap())?;
     let modified_list = original_list.into_iter().map(|(message_number, nbytes)| {
         assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
         let unique_id = &message_number_to_unique_id[&message_number];
         let new_nbytes = calculate_modified_nbytes_of_message(nbytes, unique_id_to_message_info.get(unique_id));
         (message_number, new_nbytes)
     });
-    let modified_body_u8 = modified_list.flat_map(|(message_number, nbytes)| {
+    let modified_contents_u8 = modified_list.flat_map(|(message_number, nbytes)| {
         format!("{} {}\r\n", message_number.0, nbytes).into_bytes()
     });
 
@@ -276,7 +276,7 @@ fn filter_for_response_of_list_all(
     let bin = [].into_iter()
         .chain(new_status_line.trim_end_matches("\r\n").bytes())
         .chain("\r\n".bytes())
-        .chain(modified_body_u8)
+        .chain(modified_contents_u8)
         .chain(".\r\n".bytes())
         .collect::<Vec<_>>();
     let modified_response = Some(MyPop3Response::try_from(bin.as_ref()).unwrap());
@@ -298,7 +298,7 @@ fn filter_for_response_of_retr(
     assert_eq!(command.name(), MyPop3CommandName::RETR);
     assert!(command.is_multi_line_response_expected());
 
-    info!("modify response body for RETR/TOP command");
+    info!("modify response contents for RETR/TOP command");
     let arg_str = command.as_nth_arg(0).unwrap();
     let arg_message_number = MessageNumber(u32::from_str_radix(&arg_str, 10).map_err(|_| anyhow!("argument of RETR/TOP command shoud be integer: {}", arg_str))?);
     let unique_id;
@@ -308,21 +308,21 @@ fn filter_for_response_of_retr(
         return Err(anyhow!("unknown message number is specified: {}", arg_message_number.0));
     }
     assert!(response.is_multi_line_response());
-    let body_u8 = response.as_body_u8().unwrap();
+    let contents_u8 = response.as_contents_u8().unwrap();
 
     let fubaco_headers;
     let new_info;
     if let Some(info) = unique_id_to_message_info.get(unique_id) {
         if command.name() == MyPop3CommandName::RETR {
-            if body_u8.len() != message_number_to_nbytes[&arg_message_number] {
-                warn!("WARNING: message size is different from the response of LIST comand: {} vs {}", body_u8.len(), message_number_to_nbytes[&arg_message_number]);
+            if contents_u8.len() != message_number_to_nbytes[&arg_message_number] {
+                warn!("WARNING: message size is different from the response of LIST comand: {} vs {}", contents_u8.len(), message_number_to_nbytes[&arg_message_number]);
             }
         }
         fubaco_headers = info.fubaco_headers.clone();
         new_info = None;
     } else {
         // TODO: SPAM checker
-        fubaco_headers = my_fubaco_header::make_fubaco_headers(body_u8, resolver)?;
+        fubaco_headers = my_fubaco_header::make_fubaco_headers(contents_u8, resolver)?;
         info!("add fubaco headers:\n----------\n{}----------", fubaco_headers);
         new_info = Some(MessageInfo {
             unique_id: unique_id.clone(),
@@ -334,8 +334,8 @@ fn filter_for_response_of_retr(
     let new_status_line;
     if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&response.status_line()) {
         let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
-        if nbytes != body_u8.len() {
-            print!("WARNING: message size is different from the \"{} octets\" in staus line: {}", nbytes, body_u8.len());
+        if nbytes != contents_u8.len() {
+            print!("WARNING: message size is different from the \"{} octets\" in staus line: {}", nbytes, contents_u8.len());
         }
         let new_nbytes = nbytes + fubaco_headers.len();
         new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&response.status_line(), format!("{} octets", new_nbytes)).to_string();
@@ -347,7 +347,7 @@ fn filter_for_response_of_retr(
         .chain(new_status_line.trim_end_matches("\r\n").bytes())
         .chain("\r\n".bytes())
         .chain(fubaco_headers.bytes())
-        .chain(body_u8.to_owned())
+        .chain(contents_u8.to_owned())
         .chain(".\r\n".bytes())
         .collect::<Vec<_>>();
     let modified_response = Some(MyPop3Response::try_from(bin.as_ref()).unwrap());
