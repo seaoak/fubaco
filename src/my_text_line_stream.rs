@@ -12,21 +12,26 @@ const ASCII_CODE_LF: u8 = b'\n'; // 0x0a "Line Feed"
 #[derive(Debug)]
 pub struct MyTextLineStream<S: Read + Write + MyDisconnect> {
     raw_stream: S,
+    is_already_disconnected: bool,
 }
 
 impl<S: Read + Write + MyDisconnect> MyTextLineStream<S> {
     pub fn connect(stream: S) -> Self {
         Self {
             raw_stream: stream,
+            is_already_disconnected: false,
         }
     }
 
     pub fn disconnect(&mut self) -> Result<()> {
+        assert!(!self.is_already_disconnected);
         self.raw_stream.disconnect()?;
+        self.is_already_disconnected = true;
         Ok(())
     }
 
     pub fn write_all_and_flush(&mut self, lines: &[u8]) -> Result<()> {
+        assert!(!self.is_already_disconnected);
         assert!(ends_with_u8(lines, b"\r\n"));
         self.raw_stream.write_all(lines)?;
         self.raw_stream.flush()?;
@@ -36,6 +41,7 @@ impl<S: Read + Write + MyDisconnect> MyTextLineStream<S> {
     pub fn read_some_lines(&mut self, buf: &mut Vec<u8>) -> Result<()> {
         // NOTE: buf might contain some elements already
         // NOTE: this function may read multple lines at once
+        assert!(!self.is_already_disconnected);
         let mut local_buf = [0u8; ALMOST_MAX_LINE_LENGTH];
         loop {
             let nbytes = match self.raw_stream.read(&mut local_buf) {
