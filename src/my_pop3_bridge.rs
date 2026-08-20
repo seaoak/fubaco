@@ -239,7 +239,7 @@ fn process_pop3_transaction<S, T>(
         };
 
         let response = read_one_response_completely(upstream_stream, command.is_multi_line_response_expected())?;
-        let mut response_lines = response.to_bytes();
+        let mut modified_response: Option<MyPop3Response> = None;
         if response.is_ok() {
             // modify response
             if command.name() == MyPop3CommandName::LIST && !command.is_multi_line_response_expected() {
@@ -263,8 +263,8 @@ fn process_pop3_transaction<S, T>(
                 assert_eq!(message_number, arg_message_number);
                 assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
                 let new_nbytes = calculate_modified_nbytes_of_message(nbytes, unique_id_to_message_info.get(unique_id));
-                response_lines.clear();
-                response_lines.extend(format!("+OK {} {}\r\n", message_number.0, new_nbytes).into_bytes());
+                let bin = format!("+OK {} {}\r\n", message_number.0, new_nbytes).into_bytes();
+                modified_response = Some(MyPop3Response::try_from(bin.as_ref()).unwrap());
                 info!("Done");
             }
             if command.name() == MyPop3CommandName::LIST && command.is_multi_line_response_expected() {
@@ -292,10 +292,13 @@ fn process_pop3_transaction<S, T>(
                     new_status_line = response.status_line();
                 }
 
-                response_lines.clear();
-                response_lines.extend(new_status_line.into_bytes());
-                response_lines.extend(modified_body_u8);
-                response_lines.extend(".\r\n".as_bytes());
+                let bin = [].into_iter()
+                    .chain(new_status_line.trim_end_matches("\r\n").bytes())
+                    .chain("\r\n".bytes())
+                    .chain(modified_body_u8)
+                    .chain(".\r\n".bytes())
+                    .collect::<Vec<_>>();
+                modified_response = Some(MyPop3Response::try_from(bin.as_ref()).unwrap());
                 info!("Done");
             }
             if command.name() == MyPop3CommandName::RETR || command.name() == MyPop3CommandName::TOP {
@@ -333,10 +336,6 @@ fn process_pop3_transaction<S, T>(
                     );
                 };
 
-                let mut buf = Vec::<u8>::new();
-                buf.extend(fubaco_headers.as_bytes());
-                buf.extend(body_u8.iter());
-
                 let new_status_line;
                 if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&response.status_line()) {
                     let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
@@ -349,10 +348,14 @@ fn process_pop3_transaction<S, T>(
                     new_status_line = response.status_line();
                 }
 
-                response_lines.clear();
-                response_lines.extend(new_status_line.into_bytes());
-                response_lines.extend(buf);
-                response_lines.extend(".\r\n".as_bytes());
+                let bin = [].into_iter()
+                    .chain(new_status_line.trim_end_matches("\r\n").bytes())
+                    .chain("\r\n".bytes())
+                    .chain(fubaco_headers.bytes())
+                    .chain(body_u8.to_owned())
+                    .chain(".\r\n".bytes())
+                    .collect::<Vec<_>>();
+                modified_response = Some(MyPop3Response::try_from(bin.as_ref()).unwrap());
                 info!("Done");
             }
             if command.name() == MyPop3CommandName::STAT {
@@ -369,13 +372,14 @@ fn process_pop3_transaction<S, T>(
                 assert_eq!(nbytes, calculate_total_nbytes_of_original_maildrop(&message_number_to_nbytes));
                 let total_nbytes_of_modified_maildrop = calculate_total_nbytes_of_modified_maildrop(&message_number_to_nbytes, &message_number_to_unique_id, &unique_id_to_message_info);
                 info!("total_nbytes_of_modified_maildrop = {}", total_nbytes_of_modified_maildrop);
-                response_lines.clear();
-                response_lines.extend(format!("+OK {} {}\r\n", num_of_messages, total_nbytes_of_modified_maildrop).into_bytes());
+                let bin = format!("+OK {} {}\r\n", num_of_messages, total_nbytes_of_modified_maildrop).into_bytes();
+                modified_response = Some(MyPop3Response::try_from(bin.as_ref()).unwrap());
                 info!("Done");
             }
         }
-        info!("relay the response: {}", response.status_line());
-        downstream_stream.write_all_and_flush(&response_lines)?;
+        let final_response = modified_response.unwrap_or(response);
+        info!("relay the response: {}", final_response.status_line());
+        downstream_stream.write_all_and_flush(&final_response.to_bytes())?;
         info!("Done");
         if command.name() == MyPop3CommandName::QUIT {
             info!("close POP3 stream");
