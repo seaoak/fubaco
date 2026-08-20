@@ -16,8 +16,8 @@ use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_fubaco_header::{self, FUBACO_HEADER_TOTAL_SIZE};
 use crate::my_logger::prelude::*;
 use crate::my_pop3_command::{MyPop3Command, MyPop3CommandName, MyPop3Response};
+use crate::my_pop3_downstream::MyPop3Downstream;
 use crate::my_pop3_upstream::MyPop3Upstream;
-use crate::my_text_line_stream::MyTextLineStream;
 
 lazy_static! {
     static ref REGEX_POP3_COMMAND_LINE_GENERAL: Regex = Regex::new(r"^([A-Z]+)(?: +(\S+)(?: +(\S+))?)? *(\r\n)?$").unwrap();
@@ -349,7 +349,7 @@ fn filter_for_response_of_stat(
 //====================================================================
 fn process_pop3_transaction<S, T>(
     upstream_stream: &mut MyPop3Upstream<S>,
-    downstream_stream: &mut MyTextLineStream<T>,
+    downstream_stream: &mut MyPop3Downstream<T>,
     database: &mut HashMap<UniqueID, MessageInfo>,
     resolver: &MyDNSResolver,
 ) -> Result<()>
@@ -392,13 +392,7 @@ fn process_pop3_transaction<S, T>(
 
     // relay POP3 commands/responses
     loop {
-        let command = {
-            // relay a POP3 command
-            let mut command_line = Vec::<u8>::new();
-            downstream_stream.read_some_lines(&mut command_line)?;
-            MyPop3Command::try_from(command_line.as_ref())? // abort if unexpected command line
-        };
-
+        let (command, responder) = downstream_stream.wait_for_command()?;
         let response = upstream_stream.issue_command(&command)?;
         if response.is_ok() {
             assert_eq!(response.is_multi_line_response(), command.is_multi_line_response_expected());
@@ -428,7 +422,7 @@ fn process_pop3_transaction<S, T>(
 
         let final_response = modified_response.unwrap_or(response);
         info!("relay the response: {}", final_response.status_line());
-        downstream_stream.write_all_and_flush(&final_response.to_bytes())?;
+        responder.send_response(&final_response)?;
         info!("Done");
         if command.name() == MyPop3CommandName::QUIT {
             info!("close POP3 stream");
@@ -492,24 +486,18 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                 // https://doc.rust-lang.org/std/net/enum.SocketAddr.html#method.ip
                 assert_eq!(remote_addr.ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
-                let mut downstream_stream = MyTextLineStream::connect(downstream_tcp_stream);
+                let mut downstream_stream = MyPop3Downstream::connect(downstream_tcp_stream)?; // include sending dummy greeting message
 
                 // clear DNS cache at the start of a POP3 transaction
                 resolver.clear_cache();
 
-                // send dummy greeting message to client (upstream is not opened yet)
-                info!("send dummy greeting message to downstream");
-                downstream_stream.write_all_and_flush(b"+OK Greeting\r\n")?;
-
                 // wait for "USER" command to identify mail account
-                let username = {
-                    let mut command_line = Vec::<u8>::new();
-                    downstream_stream.read_some_lines(&mut command_line)?;
-                    let command = MyPop3Command::try_from(command_line.as_ref())?;
+                let (username, responder_for_username) = {
+                    let (command, responder) = downstream_stream.wait_for_command()?;
                     if command.name() != MyPop3CommandName::USER {
                         return Err(anyhow!("The first POP3 command should be \"USER\": {:?}", command));
                     }
-                    Username(command.as_nth_arg(0).unwrap())
+                    (Username(command.as_nth_arg(0).unwrap()), responder)
                 };
                 let upstream_hostname = username_to_hostname.get(&username).ok_or_else(|| anyhow!("unknown username: {:?}", username))?;
                 let upstream_port = 995;
@@ -552,7 +540,7 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                     let command = MyPop3Command::new(MyPop3CommandName::USER, &[&username.0]);
                     let response = upstream_stream.issue_command(&command)?;
                     info!("relay the response: {}", response.status_line());
-                    downstream_stream.write_all_and_flush(&response.to_bytes())?;
+                    responder_for_username.send_response(&response)?;
                     info!("Done");
                     if response.is_err() {
                         return Err(anyhow!("FATAL: ERR response is received for USER command"));
@@ -561,15 +549,13 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
 
                 // relay "PASS" command
                 {
-                    let mut command_line = Vec::<u8>::new();
-                    downstream_stream.read_some_lines(&mut command_line)?;
-                    let command = MyPop3Command::try_from(command_line.as_ref())?;
+                    let (command, responder) = downstream_stream.wait_for_command()?;
                     if command.name() != MyPop3CommandName::PASS {
                         return Err(anyhow!("The second POP3 command should be \"PASS\": {:?}", command));
                     }
                     let response = upstream_stream.issue_command(&command)?;
                     info!("relay the response: {}", response.status_line());
-                    downstream_stream.write_all_and_flush(&response.to_bytes())?;
+                    responder.send_response(&response)?;
                     info!("Done");
                     if response.is_err() {
                         return Err(anyhow!("FATAL: ERR response is received for PASS command"));
