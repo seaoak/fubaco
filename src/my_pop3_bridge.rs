@@ -549,22 +549,18 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                 downstream_stream.write_all_and_flush(b"+OK Greeting\r\n")?;
 
                 // wait for "USER" command to identify mail account
-                let username;
-                let upstream_hostname;
-                let upstream_port = 995;
-                {
+                let username = {
                     let mut command_line = Vec::<u8>::new();
                     downstream_stream.read_some_lines(&mut command_line)?;
-                    let command_str = String::from_utf8_lossy(&command_line);
-                    match REGEX_POP3_COMMAND_LINE_FOR_USER.captures(&command_str) {
-                        Some(caps) => username = Username(caps.get(1).unwrap().as_str().to_string()),
-                        None => return Err(anyhow!("The first POP3 command should be \"USER\", but: {}", command_str.trim())),
+                    let command = MyPop3Command::try_from(command_line.as_ref())?;
+                    if command.name() != MyPop3CommandName::USER {
+                        return Err(anyhow!("The first POP3 command should be \"USER\": {:?}", command));
                     }
-                    match username_to_hostname.get(&username) {
-                        Some(h) => upstream_hostname = h.clone(),
-                        None => return Err(anyhow!("FATAL: unknown username: {:?}", username)),
-                    }
-                }
+                    Username(command.as_nth_arg(0).unwrap())
+                };
+                let upstream_hostname = username_to_hostname.get(&username).ok_or_else(|| anyhow!("unknown username: {:?}", username))?;
+                let upstream_port = 995;
+
                 info!("username: {}", username.0);
                 info!("upstream_addr: {}:{}", upstream_hostname.0, upstream_port);
 
@@ -608,10 +604,8 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                 // issue delayed "USER" command
                 {
                     info!("issue USER command");
-                    let command_line = format!("USER {}\r\n", username.0).into_bytes();
-                    upstream_stream.write_all_and_flush(&command_line)?;
-                    info!("wait the response for USER command");
-                    let response = read_one_response_completely(&mut upstream_stream, false)?;
+                    let command = MyPop3Command::new(MyPop3CommandName::USER, &[&username.0]);
+                    let response = issue_pop3_command_general(&mut upstream_stream, &command)?;
                     info!("relay the response: {}", response.status_line());
                     downstream_stream.write_all_and_flush(&response.to_bytes())?;
                     info!("Done");
@@ -624,13 +618,12 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                 {
                     let mut command_line = Vec::<u8>::new();
                     downstream_stream.read_some_lines(&mut command_line)?;
-                    let command_str = String::from_utf8_lossy(&command_line);
-                    info!("relay POP3 command: {}", command_str.trim());
-                    if !command_str.starts_with("PASS ") {
-                        return Err(anyhow!("2nd command should be \"PASS\" command, but: {}", command_str.trim()));
+                    let command = MyPop3Command::try_from(command_line.as_ref())?;
+                    if command.name() != MyPop3CommandName::PASS {
+                        return Err(anyhow!("The second POP3 command should be \"PASS\": {:?}", command));
                     }
-                    upstream_stream.write_all_and_flush(&command_line)?;
-                    let response = read_one_response_completely(&mut upstream_stream, false)?;
+                    info!("relay POP3 command: {:?}", command);
+                    let response = issue_pop3_command_general(&mut upstream_stream, &command)?;
                     info!("relay the response: {}", response.status_line());
                     downstream_stream.write_all_and_flush(&response.to_bytes())?;
                     info!("Done");
