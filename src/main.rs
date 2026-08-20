@@ -26,6 +26,7 @@ mod my_plugin_yondakiji;
 mod my_plugin_yondatweet;
 mod my_pop3_command;
 mod my_pop3_bridge;
+mod my_pop3_upstream;
 mod my_spam_checker;
 mod my_spf_verifier;
 mod my_str;
