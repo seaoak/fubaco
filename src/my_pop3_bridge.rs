@@ -182,6 +182,20 @@ fn calculate_total_nbytes_of_modified_maildrop(
 }
 
 //====================================================================
+fn filter_for_response_of_dummy(
+    response: &MyPop3Response,
+    command: &MyPop3Command,
+    _unique_id_to_message_info: &HashMap<UniqueID, MessageInfo>,
+    _message_number_to_unique_id: &HashMap<MessageNumber, UniqueID>,
+    _message_number_to_nbytes: &HashMap<MessageNumber, usize>,
+    _resolver: &MyDNSResolver,
+) -> Result<(Option<MyPop3Response>, Option<MessageInfo>)> {
+    if response.is_ok() {
+        assert_eq!(response.is_multi_line_response(), command.is_multi_line_response_expected());
+    }
+    Ok((None, None))
+}
+
 fn filter_for_response_of_list_single(
     response: &MyPop3Response,
     command: &MyPop3Command,
@@ -433,33 +447,32 @@ fn process_pop3_transaction<S, T>(
         };
 
         let response = read_one_response_completely(upstream_stream, command.is_multi_line_response_expected())?;
-        let mut modified_response: Option<MyPop3Response> = None;
         if response.is_ok() {
-            // modify response
-            if command.name() == MyPop3CommandName::LIST && !command.is_multi_line_response_expected() {
-                let new_info;
-                (modified_response, new_info) = filter_for_response_of_list_single(&response, &command, unique_id_to_message_info, &message_number_to_unique_id, &message_number_to_nbytes, resolver)?;
-                assert!(new_info.is_none());
-            }
-            if command.name() == MyPop3CommandName::LIST && command.is_multi_line_response_expected() {
-                let new_info;
-                (modified_response, new_info) = filter_for_response_of_list_all(&response, &command, unique_id_to_message_info, &message_number_to_unique_id, &message_number_to_nbytes, resolver)?;
-                assert!(new_info.is_none());
-            }
-            if command.name() == MyPop3CommandName::RETR || command.name() == MyPop3CommandName::TOP {
-                let new_info;
-                (modified_response, new_info) = filter_for_response_of_retr(&response, &command, unique_id_to_message_info, &message_number_to_unique_id, &message_number_to_nbytes, resolver)?;
-                if let Some(info) = new_info {
-                    let ret = unique_id_to_message_info.insert(info.unique_id.clone(), info);
-                    assert!(ret.is_none());
-                }
-            }
-            if command.name() == MyPop3CommandName::STAT {
-                let new_info;
-                (modified_response, new_info) = filter_for_response_of_stat(&response, &command, unique_id_to_message_info, &message_number_to_unique_id, &message_number_to_nbytes, resolver)?;
-                assert!(new_info.is_none());
-            }
+            assert_eq!(response.is_multi_line_response(), command.is_multi_line_response_expected());
         }
+
+        let filter = match (response.is_ok(), command.name(), response.is_multi_line_response()) {
+            (false, _, _) => filter_for_response_of_dummy,
+            (true, MyPop3CommandName::APOP, _) => filter_for_response_of_dummy,
+            (true, MyPop3CommandName::DELE, _) => filter_for_response_of_dummy,
+            (true, MyPop3CommandName::LIST, false) => filter_for_response_of_list_single,
+            (true, MyPop3CommandName::LIST, true) => filter_for_response_of_list_all,
+            (true, MyPop3CommandName::NOOP, _) => filter_for_response_of_dummy,
+            (true, MyPop3CommandName::PASS, _) => filter_for_response_of_dummy,
+            (true, MyPop3CommandName::QUIT, _) => filter_for_response_of_dummy,
+            (true, MyPop3CommandName::RETR, _) => filter_for_response_of_retr,
+            (true, MyPop3CommandName::RSET, _) => filter_for_response_of_dummy,
+            (true, MyPop3CommandName::STAT, _) => filter_for_response_of_stat,
+            (true, MyPop3CommandName::TOP, _) => filter_for_response_of_retr,
+            (true, MyPop3CommandName::UIDL, _) => filter_for_response_of_dummy,
+            (true, MyPop3CommandName::USER, _) => filter_for_response_of_dummy,
+        };
+        let (modified_response, new_info) = filter(&response, &command, unique_id_to_message_info, &message_number_to_unique_id, &message_number_to_nbytes, resolver)?;
+        if let Some(info) = new_info {
+            let ret = unique_id_to_message_info.insert(info.unique_id.clone(), info);
+            assert!(ret.is_none());
+        }
+
         let final_response = modified_response.unwrap_or(response);
         info!("relay the response: {}", final_response.status_line());
         downstream_stream.write_all_and_flush(&final_response.to_bytes())?;
