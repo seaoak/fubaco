@@ -232,8 +232,8 @@ impl TryFrom<&[u8]> for MyPop3Response {
         if !status_line.chars().all(|c| c.is_ascii() && !c.is_ascii_control()) {
             return Err(anyhow!("invalid codepoint in POP3 response line: {:?}", status_line));
         }
-        let is_ok = status_line == "+OK" || status_line.starts_with("+OK ");
-        let is_err = status_line == "-ERR" || status_line.starts_with("-ERR ");
+        let is_ok = Self::is_likely_to_be_ok(&status_line);
+        let is_err = Self::is_likely_to_be_err(&status_line);
         if !(is_ok || is_err) {
             return Err(anyhow!("invalid POP3 response (neither OK nor ERR): {:?}", raw_u8));
         }
@@ -251,6 +251,20 @@ impl TryFrom<&[u8]> for MyPop3Response {
 }
 
 impl MyPop3Response {
+    // static utility function (to encapsulate the pattern "+OK")
+    pub fn is_likely_to_be_ok(ss: &str) -> bool {
+        assert!(!ss.is_empty());
+        let status_line = ss.split_terminator("\r\n").nth(0).unwrap();
+        status_line == "+OK" || status_line.starts_with("+OK ")
+    }
+
+    // static utility function (to encapsulate the pattern "-ERR")
+    pub fn is_likely_to_be_err(ss: &str) -> bool {
+        assert!(!ss.is_empty());
+        let status_line = ss.split_terminator("\r\n").nth(0).unwrap();
+        status_line == "-ERR" || status_line.starts_with("-ERR ")
+    }
+
     pub fn is_ok(&self) -> bool {
         match self {
             Self::OkSingleLine { .. } => true,

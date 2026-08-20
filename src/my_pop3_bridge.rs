@@ -55,8 +55,8 @@ fn read_one_response_completely<S>(upstream_stream: &mut MyTextLineStream<S>, is
     assert_ne!(response_lines.len(), 0);
 
     let status_line = my_text_line_stream::take_first_line(&response_lines)?;
-    let is_ok = status_line == "+OK\r\n" || status_line.starts_with("+OK ");
-    let is_err = status_line == "-ERR\r\n" || status_line.starts_with("-ERR ");
+    let is_ok = MyPop3Response::is_likely_to_be_ok(&status_line);
+    let is_err = MyPop3Response::is_likely_to_be_err(&status_line);
 
     if is_ok && is_multi_line_response_expected {
         while !response_lines.ends_with(b"\r\n.\r\n") {
