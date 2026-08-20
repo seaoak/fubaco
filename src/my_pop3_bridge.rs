@@ -151,6 +151,18 @@ fn issue_pop3_command_with_multi_line_response<S, T, F>(
 }
 
 //====================================================================
+fn calculate_modified_nbytes_of_message(
+    original_nbytes: usize,
+    info: Option<&MessageInfo>
+) -> usize {
+    let nbytes_of_fubaco_header = match info {
+        Some(info) => info.fubaco_headers.len(),
+        None => *FUBACO_HEADER_TOTAL_SIZE,
+    };
+    original_nbytes + nbytes_of_fubaco_header
+}
+
+//====================================================================
 fn process_pop3_transaction<S, T>(
     upstream_stream: &mut MyTextLineStream<S>,
     downstream_stream: &mut MyTextLineStream<T>,
@@ -198,14 +210,7 @@ fn process_pop3_transaction<S, T>(
     let total_nbytes_of_modified_maildrop = message_number_to_unique_id
         .iter()
         .map(|(message_number, unique_id)| {
-            if !message_number_to_nbytes.contains_key(message_number) {
-                unreachable!("BUG: invalid MessageNumber: {:?}", message_number);
-            }
-            if let Some(info) = unique_id_to_message_info.get(unique_id) {
-                message_number_to_nbytes[message_number] + info.fubaco_headers.len()
-            } else {
-                message_number_to_nbytes[message_number] + *FUBACO_HEADER_TOTAL_SIZE
-            }
+            calculate_modified_nbytes_of_message(message_number_to_nbytes[message_number], unique_id_to_message_info.get(unique_id))
         })
         .fold(0, |acc, nbytes| acc + nbytes);
     info!("total_nbytes_of_modified_maildrop = {}", total_nbytes_of_modified_maildrop);
