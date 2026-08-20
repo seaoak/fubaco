@@ -9,6 +9,7 @@ use crate::my_text_line_stream::take_first_line;
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Display, EnumString)]
 pub enum MyPop3CommandName {
     // https://datatracker.ietf.org/doc/html/rfc1939
+    // NOTE: the order of definition is alphabetical simply.
     APOP,
     DELE,
     LIST,
@@ -153,30 +154,30 @@ impl MyPop3Command {
 
     pub fn is_multi_line_response_expected(&self) -> bool {
         match (self.name, self.args.len()) {
-            (MyPop3CommandName::STAT, 0) => false,
-            (MyPop3CommandName::LIST, 0) => true,
-            (MyPop3CommandName::LIST, 1) => false,
             (MyPop3CommandName::APOP, 2) => false,
             (MyPop3CommandName::DELE, 1) => false,
+            (MyPop3CommandName::LIST, 0) => true,
+            (MyPop3CommandName::LIST, 1) => false,
             (MyPop3CommandName::NOOP, 0) => false,
             (MyPop3CommandName::PASS, 1) => false,
             (MyPop3CommandName::QUIT, 0) => false,
             (MyPop3CommandName::RETR, 1) => true,
             (MyPop3CommandName::RSET, 0) => false,
+            (MyPop3CommandName::STAT, 0) => false,
             (MyPop3CommandName::TOP,  2) => true,
             (MyPop3CommandName::UIDL, 0) => true,
             (MyPop3CommandName::UIDL, 1) => false,
             (MyPop3CommandName::USER, 1) => false,
 
-            (MyPop3CommandName::STAT, _) => unreachable!("{:?}", self),
-            (MyPop3CommandName::LIST, _) => unreachable!("{:?}", self),
             (MyPop3CommandName::APOP, _) => unreachable!("{:?}", self),
             (MyPop3CommandName::DELE, _) => unreachable!("{:?}", self),
+            (MyPop3CommandName::LIST, _) => unreachable!("{:?}", self),
             (MyPop3CommandName::NOOP, _) => unreachable!("{:?}", self),
             (MyPop3CommandName::PASS, _) => unreachable!("{:?}", self),
             (MyPop3CommandName::QUIT, _) => unreachable!("{:?}", self),
             (MyPop3CommandName::RETR, _) => unreachable!("{:?}", self),
             (MyPop3CommandName::RSET, _) => unreachable!("{:?}", self),
+            (MyPop3CommandName::STAT, _) => unreachable!("{:?}", self),
             (MyPop3CommandName::TOP,  _) => unreachable!("{:?}", self),
             (MyPop3CommandName::UIDL, _) => unreachable!("{:?}", self),
             (MyPop3CommandName::USER, _) => unreachable!("{:?}", self),
