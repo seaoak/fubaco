@@ -157,7 +157,7 @@ impl MyPop3Command {
             (MyPop3CommandName::LIST, 0) => true,
             (MyPop3CommandName::LIST, 1) => false,
             (MyPop3CommandName::APOP, 2) => false,
-            (MyPop3CommandName::DELE, 0) => false,
+            (MyPop3CommandName::DELE, 1) => false,
             (MyPop3CommandName::NOOP, 0) => false,
             (MyPop3CommandName::PASS, 1) => false,
             (MyPop3CommandName::QUIT, 0) => false,
