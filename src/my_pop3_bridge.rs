@@ -162,6 +162,25 @@ fn calculate_modified_nbytes_of_message(
     original_nbytes + nbytes_of_fubaco_header
 }
 
+fn calculate_total_nbytes_of_original_maildrop(message_number_to_nbytes: &HashMap<MessageNumber, usize>) -> usize {
+    message_number_to_nbytes.values().sum()
+}
+
+fn calculate_total_nbytes_of_modified_maildrop(
+    message_number_to_nbytes: &HashMap<MessageNumber, usize>,
+    message_number_to_unique_id: &HashMap<MessageNumber, UniqueID>,
+    unique_id_to_message_info: &HashMap<UniqueID, MessageInfo>,
+) -> usize {
+    message_number_to_nbytes
+        .iter()
+        .map(|(message_number, original_nbytes)| {
+            let unique_id = &message_number_to_unique_id[message_number];
+            let info = unique_id_to_message_info.get(unique_id);
+            calculate_modified_nbytes_of_message(*original_nbytes, info)
+        })
+        .sum()
+}
+
 //====================================================================
 fn process_pop3_transaction<S, T>(
     upstream_stream: &mut MyTextLineStream<S>,
@@ -190,6 +209,7 @@ fn process_pop3_transaction<S, T>(
         list.into_iter().collect()
     };
     assert_eq!(message_number_to_nbytes.len(), message_number_to_unique_id.len());
+    info!("total_nbytes_of_original_maildrop = {}", calculate_total_nbytes_of_original_maildrop(&message_number_to_nbytes));
 
     if unique_id_to_message_info.len() == 0 { // at the first time only, all existed massages are treated as old messages which have no fubaco header
         for unique_id in message_number_to_unique_id.values() {
@@ -204,16 +224,6 @@ fn process_pop3_transaction<S, T>(
         }
     }
     info!("{} messages exist in database", unique_id_to_message_info.len());
-
-    let total_nbytes_of_original_maildrop = message_number_to_nbytes.values().fold(0, |acc, nbytes| acc + nbytes);
-    info!("total_nbytes_of_original_maildrop = {}", total_nbytes_of_original_maildrop);
-    let total_nbytes_of_modified_maildrop = message_number_to_unique_id
-        .iter()
-        .map(|(message_number, unique_id)| {
-            calculate_modified_nbytes_of_message(message_number_to_nbytes[message_number], unique_id_to_message_info.get(unique_id))
-        })
-        .fold(0, |acc, nbytes| acc + nbytes);
-    info!("total_nbytes_of_modified_maildrop = {}", total_nbytes_of_modified_maildrop);
 
     // relay POP3 commands/responses
     loop {
@@ -252,12 +262,7 @@ fn process_pop3_transaction<S, T>(
                 }
                 assert_eq!(message_number, arg_message_number);
                 assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
-                let new_nbytes;
-                if let Some(info) = unique_id_to_message_info.get(unique_id) {
-                    new_nbytes = nbytes + info.fubaco_headers.len();
-                } else {
-                    new_nbytes = nbytes + *FUBACO_HEADER_TOTAL_SIZE;
-                }
+                let new_nbytes = calculate_modified_nbytes_of_message(nbytes, unique_id_to_message_info.get(unique_id));
                 response_lines.clear();
                 response_lines.extend(format!("+OK {} {}\r\n", message_number.0, new_nbytes).into_bytes());
                 info!("Done");
@@ -268,12 +273,7 @@ fn process_pop3_transaction<S, T>(
                 let modified_list = original_list.into_iter().map(|(message_number, nbytes)| {
                     assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
                     let unique_id = &message_number_to_unique_id[&message_number];
-                    let new_nbytes;
-                    if let Some(info) = unique_id_to_message_info.get(unique_id) {
-                        new_nbytes = nbytes + info.fubaco_headers.len();
-                    } else {
-                        new_nbytes = nbytes + *FUBACO_HEADER_TOTAL_SIZE;
-                    }
+                    let new_nbytes = calculate_modified_nbytes_of_message(nbytes, unique_id_to_message_info.get(unique_id));
                     (message_number, new_nbytes)
                 });
                 let modified_body_u8 = modified_list.flat_map(|(message_number, nbytes)| {
@@ -283,9 +283,9 @@ fn process_pop3_transaction<S, T>(
                 let new_status_line;
                 if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&response.status_line()) {
                     let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
-                    assert_eq!(nbytes, total_nbytes_of_original_maildrop);
-                    assert!(nbytes <= total_nbytes_of_modified_maildrop);
-                    assert_eq!(0, (total_nbytes_of_modified_maildrop - nbytes) % *FUBACO_HEADER_TOTAL_SIZE);
+                    assert_eq!(nbytes, calculate_total_nbytes_of_original_maildrop(&message_number_to_nbytes));
+                    let total_nbytes_of_modified_maildrop = calculate_total_nbytes_of_modified_maildrop(&message_number_to_nbytes, &message_number_to_unique_id, &unique_id_to_message_info);
+                    info!("total_nbytes_of_modified_maildrop = {}", total_nbytes_of_modified_maildrop);
                     let new_field = format!("{} octets", total_nbytes_of_modified_maildrop);
                     new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&response.status_line(), new_field).to_string();
                 } else {
@@ -366,7 +366,9 @@ fn process_pop3_transaction<S, T>(
                     return Err(anyhow!("invalid response: {}", response.status_line()));
                 }
                 assert_eq!(num_of_messages, message_number_to_nbytes.len());
-                assert_eq!(nbytes, total_nbytes_of_original_maildrop);
+                assert_eq!(nbytes, calculate_total_nbytes_of_original_maildrop(&message_number_to_nbytes));
+                let total_nbytes_of_modified_maildrop = calculate_total_nbytes_of_modified_maildrop(&message_number_to_nbytes, &message_number_to_unique_id, &unique_id_to_message_info);
+                info!("total_nbytes_of_modified_maildrop = {}", total_nbytes_of_modified_maildrop);
                 response_lines.clear();
                 response_lines.extend(format!("+OK {} {}\r\n", num_of_messages, total_nbytes_of_modified_maildrop).into_bytes());
                 info!("Done");
