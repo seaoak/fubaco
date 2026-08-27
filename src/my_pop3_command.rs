@@ -1,15 +1,210 @@
+use std::ops::RangeInclusive;
 use std::str::FromStr;
 
 use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
 use crate::my_text_line_stream::take_first_line;
 
 //====================================================================
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct MyPop3Username(String); // for USER command
+
+impl std::str::FromStr for MyPop3Username {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Err(anyhow!("argument is empty"));
+        }
+        if !s.chars().all(|c| c.is_ascii() && !c.is_ascii_whitespace() && !c.is_ascii_control()) {
+            return Err(anyhow!("invalid codepoint: {:?}", s));
+        }
+        Ok(Self(s.to_owned()))
+    }
+}
+
+impl AsRef<str> for MyPop3Username {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for MyPop3Username {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+//====================
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct MyPop3Password(String); // for PASS command
+
+impl std::str::FromStr for MyPop3Password {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Err(anyhow!("argument is empty"));
+        }
+        if !s.chars().all(|c| c.is_ascii() && !c.is_ascii_whitespace() && !c.is_ascii_control()) {
+            return Err(anyhow!("invalid codepoint: {:?}", s));
+        }
+        Ok(Self(s.to_owned()))
+    }
+}
+
+impl AsRef<str> for MyPop3Password {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for MyPop3Password {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+//====================
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct MyPop3Digest(String); // MD5 digest string for APOP command
+
+impl std::str::FromStr for MyPop3Digest {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Err(anyhow!("argument is empty"));
+        }
+        if !s.chars().all(|c| c.is_ascii() && !c.is_ascii_whitespace() && !c.is_ascii_control()) {
+            return Err(anyhow!("invalid codepoint: {:?}", s));
+        }
+        Ok(Self(s.to_owned()))
+    }
+}
+
+impl AsRef<str> for MyPop3Digest {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for MyPop3Digest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+//====================
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct MyPop3UniqueID(String); // for UIDL command
+
+impl std::str::FromStr for MyPop3UniqueID {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // RFC1939 says "consisting of one to 70 characters in the range 0x21 to 0x7E"
+        if s.is_empty() {
+            return Err(anyhow!("argument is empty"));
+        }
+        if s.len() > 70 {
+            return Err(anyhow!("too long unique-id: {:?}", s));
+        }
+        if !s.chars().map(u32::from).all(|c| 0x21 <= c && c <= 0x7e) {
+            return Err(anyhow!("invalid codepoint: {:?}", s));
+        }
+        Ok(Self(s.to_owned()))
+    }
+}
+
+impl AsRef<str> for MyPop3UniqueID {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for MyPop3UniqueID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+//====================
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct MyPop3MessageNumber(u32); // for LIST command and others
+
+impl std::str::FromStr for MyPop3MessageNumber {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // an integer of base-10 (i.e. decimal), starting with `1`
+        // NOTE: to avoid DoS, assume `u32`.
+        if s.is_empty() {
+            return Err(anyhow!("argument is empty"));
+        }
+        match u32::from_str_radix(s, 10) {
+            Err(_) => Err(anyhow!("not unsigned integer: {:?}", s)),
+            Ok(0) => Err(anyhow!("zero is not allowed (starting with one): {:?}", s)),
+            Ok(x) => Ok(Self(x)),
+        }
+    }
+}
+
+impl AsRef<u32> for MyPop3MessageNumber {
+    fn as_ref(&self) -> &u32 {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for MyPop3MessageNumber {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+//====================
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct MyPop3NumberOfLines(u32); // for TOP command
+
+impl std::str::FromStr for MyPop3NumberOfLines {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // "a non-negative number of lines" in RFC1939
+        // NOTE: to avoid DoS, assume `u32`.
+        if s.is_empty() {
+            return Err(anyhow!("argument is empty"));
+        }
+        match u32::from_str_radix(s, 10) {
+            Err(_) => Err(anyhow!("not unsigned integer: {:?}", s)),
+            Ok(x) => Ok(Self(x)),
+        }
+    }
+}
+
+impl AsRef<u32> for MyPop3NumberOfLines {
+    fn as_ref(&self) -> &u32 {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for MyPop3NumberOfLines {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+//====================================================================
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Display, EnumString)]
+#[strum(ascii_case_insensitive)]
 pub enum MyPop3CommandName {
     // https://datatracker.ietf.org/doc/html/rfc1939
-    // NOTE: the order of definition is alphabetical simply.
+    // RFC1939 says:
+    //   - "case-insensitive keyword"
+    //   - "consist of printable ASCII characters"
+    // NOTE: the order of definition below is alphabetical simply.
     APOP,
     DELE,
     LIST,
@@ -25,7 +220,7 @@ pub enum MyPop3CommandName {
 }
 
 impl MyPop3CommandName {
-    pub fn range_of_number_of_arguments(&self) -> std::ops::RangeInclusive<usize> {
+    fn range_of_number_of_arguments(&self) -> RangeInclusive<usize> {
         match self {
             // https://datatracker.ietf.org/doc/html/rfc1939
             Self::APOP => 2..=2,
@@ -42,88 +237,46 @@ impl MyPop3CommandName {
             Self::USER => 1..=1,
         }
     }
+}
 
-    pub fn is_well_formed_arguments(&self, args: &[String]) -> bool {
-        fn validator_for_any(ss: &str) -> bool {
-            ss.chars().all(|c| c.is_ascii() && !c.is_ascii_whitespace() && !c.is_ascii_control())
-        }
-
-        fn validator_for_digest(ss: &str) -> bool {
-            // "MD5 digest string" in RFC1939
-            ss.chars().all(|c| c.is_ascii_hexdigit())
-        }
-
-        fn validator_for_message_number(ss: &str) -> bool {
-            // an integer of base-10 (i.e. decimal), starting with `1`
-            // NOTE: to avoid DoS, assume `u32`.
-            match u32::from_str_radix(ss, 10) {
-                Err(_) => false,
-                Ok(0) => false,
-                Ok(_) => true,
-            }
-        }
-
-        fn validator_for_non_negative_integer(ss: &str) -> bool {
-            // "a non-negative number of lines" in RFC1939
-            // NOTE: to avoid DoS, assume `u32`.
-            u32::from_str_radix(ss, 10).is_ok()
-        }
-
-        let validators: &[_] = match self {
-            Self::APOP => &[validator_for_any, validator_for_digest],
-            Self::DELE => &[validator_for_message_number],
-            Self::LIST => &[validator_for_message_number],
-            Self::NOOP => &[],
-            Self::PASS => &[validator_for_any],
-            Self::QUIT => &[],
-            Self::RETR => &[validator_for_message_number],
-            Self::RSET => &[],
-            Self::STAT => &[],
-            Self::TOP  => &[validator_for_message_number, validator_for_non_negative_integer],
-            Self::UIDL => &[validator_for_message_number],
-            Self::USER => &[validator_for_any],
-        };
-        assert_eq!(&validators.len(), self.range_of_number_of_arguments().end());
-
-        assert!(args.iter().all(|arg| !arg.is_empty()));
-        assert!(self.range_of_number_of_arguments().contains(&args.len()));
-        validators.into_iter().zip(args).all(|(pred, ss)| pred(ss))
-    }
+#[test]
+#[allow(non_snake_case)]
+fn test_001_MyPop3CommandName_from_str() {
+    assert_eq!(MyPop3CommandName::LIST, "LIST".parse().unwrap());
+    assert_eq!(MyPop3CommandName::LIST, "list".parse().unwrap()); // case-insensitive
+    assert_eq!(MyPop3CommandName::LIST, "LiSt".parse().unwrap()); // case-insensitive
+    assert!(MyPop3CommandName::from_str(" LIST").is_err()); // an extra space at the start
+    assert!(MyPop3CommandName::from_str("LIS T").is_err()); // an extra space in the middle
+    assert!(MyPop3CommandName::from_str("LIST ").is_err()); // an extra space at the end
 }
 
 //====================================================================
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct MyPop3Command {
-    name: MyPop3CommandName,
-    args: Vec<String>,
+#[allow(non_camel_case_types)]
+pub enum MyPop3Command {
+    APOP(MyPop3Username, MyPop3Digest),
+    DELE(MyPop3MessageNumber),
+    LIST_ALL,
+    LIST_SINGLE(MyPop3MessageNumber),
+    NOOP,
+    PASS(MyPop3Password),
+    QUIT,
+    RETR(MyPop3MessageNumber),
+    RSET,
+    STAT,
+    TOP(MyPop3MessageNumber, MyPop3NumberOfLines),
+    UIDL_ALL,
+    UIDL_SINGLE(MyPop3MessageNumber),
+    USER(MyPop3Username),
 }
 
 impl std::str::FromStr for MyPop3Command {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = if s.ends_with("\r\n") {
-            &s[0..(s.len() - 2)]
-        } else {
-            s
-        };
-        if s.is_empty() {
-            return Err(anyhow!("invalid command line: should not be empty"));
-        }
-        if !s.chars().all(|c| c.is_ascii() && !c.is_ascii_control()) {
-            return Err(anyhow!("invalid codepoint in POP3 command line: {:?}", s));
-        }
-        let mut it = s.trim_ascii().split_ascii_whitespace();
-        let s0 = it.next().ok_or_else(|| anyhow!("empty argument: {:?}", s))?;
-        let name = MyPop3CommandName::from_str(s0).or_else(|_| Err(anyhow!("invalid command name: {:?}", s)))?;
-        let args = it.map(String::from).collect::<Vec<_>>();
-        if !name.range_of_number_of_arguments().contains(&args.len()) {
-            return Err(anyhow!("too few/many arguments: {:?} / {:?} / {:?}", s, name, args));
-        }
-        if !name.is_well_formed_arguments(args.as_ref()) {
-            return Err(anyhow!("{} command is not well-formed: {:?} / {:?}", name, args, s));
-        }
-        Ok(Self { name, args })
+        let (keyword, args) = validate_and_parse_command_line(s)?;
+        let name = MyPop3CommandName::from_str(&keyword).or_else(|e| Err(anyhow!("{:?}\n   where {:?}", e, (&keyword, &args, &s))))?;
+        Self::compose(name, &args)
     }
 }
 
@@ -140,64 +293,252 @@ impl TryFrom<&[u8]> for MyPop3Command {
 }
 
 impl MyPop3Command {
-    pub fn new(name: MyPop3CommandName, args: &[&str]) -> Self {
-        let it0 = [name.to_string()].into_iter();
-        let it1 = args.into_iter().map(|s| s.to_string());
-        let fields = it0.chain(it1).collect::<Vec<_>>();
-        let command_line = format!("{}\r\n", fields.join(" "));
-        Self::from_str(&command_line).unwrap() // delegate for validation
-    }
-
     pub fn name(&self) -> MyPop3CommandName {
-        self.name
+        let (name, _) = self.decompose();
+        name
     }
 
     pub fn is_multi_line_response_expected(&self) -> bool {
-        match (self.name, self.args.len()) {
-            (MyPop3CommandName::APOP, 2) => false,
-            (MyPop3CommandName::DELE, 1) => false,
-            (MyPop3CommandName::LIST, 0) => true,
-            (MyPop3CommandName::LIST, 1) => false,
-            (MyPop3CommandName::NOOP, 0) => false,
-            (MyPop3CommandName::PASS, 1) => false,
-            (MyPop3CommandName::QUIT, 0) => false,
-            (MyPop3CommandName::RETR, 1) => true,
-            (MyPop3CommandName::RSET, 0) => false,
-            (MyPop3CommandName::STAT, 0) => false,
-            (MyPop3CommandName::TOP,  2) => true,
-            (MyPop3CommandName::UIDL, 0) => true,
-            (MyPop3CommandName::UIDL, 1) => false,
-            (MyPop3CommandName::USER, 1) => false,
-
-            (MyPop3CommandName::APOP, _) => unreachable!("{:?}", self),
-            (MyPop3CommandName::DELE, _) => unreachable!("{:?}", self),
-            (MyPop3CommandName::LIST, _) => unreachable!("{:?}", self),
-            (MyPop3CommandName::NOOP, _) => unreachable!("{:?}", self),
-            (MyPop3CommandName::PASS, _) => unreachable!("{:?}", self),
-            (MyPop3CommandName::QUIT, _) => unreachable!("{:?}", self),
-            (MyPop3CommandName::RETR, _) => unreachable!("{:?}", self),
-            (MyPop3CommandName::RSET, _) => unreachable!("{:?}", self),
-            (MyPop3CommandName::STAT, _) => unreachable!("{:?}", self),
-            (MyPop3CommandName::TOP,  _) => unreachable!("{:?}", self),
-            (MyPop3CommandName::UIDL, _) => unreachable!("{:?}", self),
-            (MyPop3CommandName::USER, _) => unreachable!("{:?}", self),
+        match &self {
+            Self::APOP(_, _)     => false,
+            Self::DELE(_)        => false,
+            Self::LIST_ALL       => true,
+            Self::LIST_SINGLE(_) => false,
+            Self::NOOP           => false,
+            Self::PASS(_)        => false,
+            Self::QUIT           => false,
+            Self::RETR(_)        => true,
+            Self::RSET           => false,
+            Self::STAT           => false,
+            Self::TOP(_, _)      => true,
+            Self::UIDL_ALL       => true,
+            Self::UIDL_SINGLE(_) => false,
+            Self::USER(_)        => false,
         }
     }
 
-    pub fn as_nth_arg(&self, index: usize) -> Option<String> {
-        assert!(self.name.range_of_number_of_arguments().contains(&(1+index)));
-        self.args.get(index).map(String::to_owned)
+    pub fn as_message_number(&self) -> Option<&MyPop3MessageNumber> {
+        match &self {
+            Self::APOP(_, _)     => None,
+            Self::DELE(x)        => Some(x),
+            Self::LIST_ALL       => None,
+            Self::LIST_SINGLE(x) => Some(x),
+            Self::NOOP           => None,
+            Self::PASS(_)        => None,
+            Self::QUIT           => None,
+            Self::RETR(x)        => Some(x),
+            Self::RSET           => None,
+            Self::STAT           => None,
+            Self::TOP(x, _)      => Some(x),
+            Self::UIDL_ALL       => None,
+            Self::UIDL_SINGLE(x) => Some(x),
+            Self::USER(_)        => None,
+        }
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bin = self.name.to_string().into_bytes();
-        for ss in &self.args {
+        let (name, args) = self.decompose();
+        let mut bin = name.to_string().into_bytes();
+        for ss in &args {
             bin.push(b' ');
             bin.extend_from_slice(ss.as_bytes());
         }
         bin.extend_from_slice(b"\r\n");
         bin
     }
+
+    fn compose<T: AsRef<str>, U: AsRef<[T]>>(name: MyPop3CommandName, args: U) -> Result<Self> {
+        let args = args.as_ref().iter().map(|s| s.as_ref().to_owned()).collect::<Vec<_>>();
+        if !name.range_of_number_of_arguments().contains(&args.len()) {
+            return Err(anyhow!("too few/many arguments: {:?}", (name, args)));
+        }
+        {   // validation
+            let dummy_command_line = [name.to_string()].into_iter().chain(args.clone().into_iter()).collect::<Vec<_>>().join(" ");
+            let (dummy_keyword, dummy_args) = validate_and_parse_command_line(&dummy_command_line).or_else(|e| Err(anyhow!("{:?}\n   where {:?}", e, (&name, &args))))?;
+            assert_eq!(dummy_keyword.to_ascii_uppercase(), name.to_string());
+            assert_eq!(dummy_args, args);
+        }
+        let typed_command = match (name, args.len()) {
+            (MyPop3CommandName::APOP, 2) => Self::APOP(args[0].parse()?, args[1].parse()?),
+            (MyPop3CommandName::DELE, 1) => Self::DELE(args[0].parse()?),
+            (MyPop3CommandName::LIST, 0) => Self::LIST_ALL,
+            (MyPop3CommandName::LIST, 1) => Self::LIST_SINGLE(args[0].parse()?),
+            (MyPop3CommandName::NOOP, 0) => Self::NOOP,
+            (MyPop3CommandName::PASS, 1) => Self::PASS(args[0].parse()?),
+            (MyPop3CommandName::QUIT, 0) => Self::QUIT,
+            (MyPop3CommandName::RETR, 1) => Self::RETR(args[0].parse()?),
+            (MyPop3CommandName::RSET, 0) => Self::RSET,
+            (MyPop3CommandName::STAT, 0) => Self::STAT,
+            (MyPop3CommandName::TOP,  2) => Self::TOP(args[0].parse()?, args[1].parse()?),
+            (MyPop3CommandName::UIDL, 0) => Self::UIDL_ALL,
+            (MyPop3CommandName::UIDL, 1) => Self::UIDL_SINGLE(args[0].parse()?),
+            (MyPop3CommandName::USER, 1) => Self::USER(args[0].parse()?),
+
+            (MyPop3CommandName::APOP, _) => unreachable!("{:?}", (name, args)),
+            (MyPop3CommandName::DELE, _) => unreachable!("{:?}", (name, args)),
+            (MyPop3CommandName::LIST, _) => unreachable!("{:?}", (name, args)),
+            (MyPop3CommandName::NOOP, _) => unreachable!("{:?}", (name, args)),
+            (MyPop3CommandName::PASS, _) => unreachable!("{:?}", (name, args)),
+            (MyPop3CommandName::QUIT, _) => unreachable!("{:?}", (name, args)),
+            (MyPop3CommandName::RETR, _) => unreachable!("{:?}", (name, args)),
+            (MyPop3CommandName::RSET, _) => unreachable!("{:?}", (name, args)),
+            (MyPop3CommandName::STAT, _) => unreachable!("{:?}", (name, args)),
+            (MyPop3CommandName::TOP,  _) => unreachable!("{:?}", (name, args)),
+            (MyPop3CommandName::UIDL, _) => unreachable!("{:?}", (name, args)),
+            (MyPop3CommandName::USER, _) => unreachable!("{:?}", (name, args)),
+        };
+
+        if true { // for debug
+            let (name2, args2) = typed_command.decompose();
+            assert_eq!(name2, name);
+            assert_eq!(args2.len(), args.len());
+            for i in 0..args2.len() {
+                assert_eq!(args2[i], args[i]);
+            }
+        }
+
+        Ok(typed_command)
+    }
+
+    fn decompose(&self) -> (MyPop3CommandName, Vec<String>) {
+        let (name, args): (MyPop3CommandName, &[&dyn std::fmt::Display]) = match &self {
+            Self::APOP(x, y) => (MyPop3CommandName::APOP, &[x, y]),
+            Self::DELE(x) => (MyPop3CommandName::DELE, &[x]),
+            Self::LIST_ALL => (MyPop3CommandName::LIST, &[]),
+            Self::LIST_SINGLE(x) => (MyPop3CommandName::LIST, &[x]),
+            Self::NOOP => (MyPop3CommandName::NOOP, &[]),
+            Self::PASS(x) => (MyPop3CommandName::PASS, &[x]),
+            Self::QUIT => (MyPop3CommandName::QUIT, &[]),
+            Self::RETR(x) => (MyPop3CommandName::RETR, &[x]),
+            Self::RSET => (MyPop3CommandName::RSET, &[]),
+            Self::STAT => (MyPop3CommandName::STAT, &[]),
+            Self::TOP(x, y) => (MyPop3CommandName::TOP, &[x, y]),
+            Self::UIDL_ALL => (MyPop3CommandName::UIDL, &[]),
+            Self::UIDL_SINGLE(x) => (MyPop3CommandName::UIDL, &[x]),
+            Self::USER(x) => (MyPop3CommandName::USER, &[x]),
+        };
+        let args: Vec<_> = args.into_iter().map(|s| s.to_string()).collect();
+        (name, args)
+    }
+}
+
+fn validate_and_parse_command_line(s: &str) -> Result<(String, Vec<String>)> {
+    // RFC1939 says:
+    //   - Commands in the POP3 consist of a case-insensitive keyword, possibly followed by one or more arguments.
+    //   - All commands are terminated by a CRLF pair.
+    //   - Keywords and arguments consist of printable ASCII characters.
+    //   - Keywords and arguments are each separated by a single SPACE character.
+    //   - Keywords are three or four characters long.
+    //   - Each argument may be up to 40 characters long.
+    let s = s.strip_suffix("\r\n").unwrap_or(s); // for convenience, allow a string without CRLF
+    if s.is_empty() {
+        return Err(anyhow!("command line is empty"));
+    }
+    let separator = ' '; // single SPACE character
+    let mut it = s.split(separator).map(|s| s.to_string());
+    let keyword = it.next().ok_or_else(|| anyhow!("no keyword: {:?}", s))?;
+    let args = it.collect::<Vec<_>>();
+
+    let validator = |ss: &str, range_of_length: &RangeInclusive<usize>| {
+        if ss.is_empty() {
+            return Err(anyhow!("empty field (continuous SPACE characters is not allowed): {:?}", (ss, &keyword, &args, s)));
+        }
+        if !range_of_length.contains(&ss.len()) {
+            return Err(anyhow!("invalid length of a field: {:?}", (ss.len(), &ss, &keyword, &args, s)));
+        }
+        let is_ascii_printable_character = |c: char| c.is_ascii() && !c.is_ascii_control() && !c.is_ascii_whitespace();
+        if !ss.chars().all(is_ascii_printable_character) {
+            return Err(anyhow!("invalid character in a field: {:?}", (ss, &keyword, &args, ss)));
+        }
+        Ok(())
+    };
+    let range_of_length_of_keyword: RangeInclusive<usize> = 3..=4;
+    let range_of_length_of_argument: RangeInclusive<usize> = 1..=40;
+
+    let _ = validator(&keyword, &range_of_length_of_keyword)?;
+    for arg in &args {
+        let _ = validator(&arg, &range_of_length_of_argument)?;
+    }
+
+    Ok((keyword, args))
+}
+
+#[test]
+fn test_001_validate_and_parse_command_line() {
+    fn should_be_eq(input_text: &str, expected: &[&str]) {
+        let (keyword, args) = validate_and_parse_command_line(input_text).unwrap();
+        let left = [vec![keyword], args].concat();
+        let right = expected.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(left, right, "{:?}", (&input_text, &expected));
+    }
+    fn should_be_err(input_text: &str) {
+        assert!(validate_and_parse_command_line(input_text).is_err(), "{:?}", (&input_text));
+    }
+
+    should_be_eq("ABC", &["ABC"]);
+    should_be_eq("ABC\r\n", &["ABC"]);
+    should_be_eq("aBc", &["aBc"]);
+    should_be_eq("abcd", &["abcd"]);
+    should_be_eq("aBc9", &["aBc9"]);
+    should_be_eq("ABC 123", &["ABC", "123"]);
+    should_be_eq("ABC 123 4 !@_+", &["ABC", "123", "4", "!@_+"]);
+    should_be_eq("ABC 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15", &["ABC", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"]);
+    should_be_eq("ABC 1111222233334444555566667777888899990000", &["ABC", "1111222233334444555566667777888899990000"]);
+    should_be_eq("ABC 1111222233334444555566667777888899990000\r\n", &["ABC", "1111222233334444555566667777888899990000"]);
+
+    should_be_err("");
+    should_be_err("\r\n");
+    should_be_err("\r\n\r\n");
+    should_be_err("\r\n ");
+    should_be_err("\r\na");
+
+    should_be_err(" ");
+    should_be_err(" \r\n");
+    should_be_err(" \r\n\r\n");
+    should_be_err(" \r\n ");
+    should_be_err(" \r\na");
+
+    should_be_err(" ABC");
+    should_be_err(" ABC\r\n");
+    should_be_err(" ABC\r\n ");
+    should_be_err("AB C");
+    should_be_err("AB C\r\n");
+    should_be_err("AB C\r\n ");
+    should_be_err("ABC ");
+    should_be_err("ABC \r\n");
+    should_be_err("ABC\r\n ");
+
+    should_be_err(" ABC 123\r\n");
+    should_be_err("ABC  123\r\n");
+    should_be_err("ABC 123 \r\n");
+    should_be_err("ABC 123\r\n ");
+
+    should_be_err(" ABC 123 4 5\r\n"); // an extra SPACE at the start
+    should_be_err("ABC 123  4 5\r\n"); // muliple SPACEs
+    should_be_err("ABC 123 4  5\r\n"); // multiple SPACEs
+    should_be_err("ABC 123 4 5 \r\n"); // an extra SPACE at the end
+    should_be_err("ABC 123 4 5\r\n "); // an extra SPACE at next of CRLF
+
+    should_be_err("\tABC"); // TAB is not allowed
+    should_be_err("A\tBC"); // TAB is not allowed
+    should_be_err("AB\ttC"); // TAB is not allowed
+    should_be_err("ABC\t"); // TAB is not allowed
+    should_be_err("ABC\t\r\n"); // TAB is not allowed
+    should_be_err("ABC\r\n\t"); // TAB is not allowed
+
+    should_be_err("ABC "); // an extra SPACE at the end
+    should_be_err("ABC \r\n"); // an extra SPACE at the end
+    should_be_err("ABC\r\n "); // an extra SPACE at next of CRLF
+    should_be_err("ABC  "); // multiple extra SPACEs at the end
+    should_be_err("ABC  \r\n"); // multiple extra SPACEs at the end
+
+    should_be_err("A\r\n");
+    should_be_err("AB\r\n");
+    should_be_err("ABCDE\r\n");
+    should_be_err("1111222233334444555566667777888899990000\r\n");
+
+    should_be_err("ABC 1111222233334444555566667777888899990000+");
+    should_be_err("ABC 1111222233334444555566667777888899990000 1111222233334444555566667777888899990000+ 1111222233334444555566667777888899990000");
 }
 
 //====================================================================

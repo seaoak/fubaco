@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -15,7 +16,7 @@ use crate::my_disconnect::MyDisconnect;
 use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_fubaco_header::{self, FUBACO_HEADER_TOTAL_SIZE};
 use crate::my_logger::prelude::*;
-use crate::my_pop3_command::{MyPop3Command, MyPop3CommandName, MyPop3Response};
+use crate::my_pop3_command::{MyPop3Username, MyPop3UniqueID, MyPop3MessageNumber, MyPop3Command, MyPop3CommandName, MyPop3Response};
 use crate::my_pop3_downstream::MyPop3Downstream;
 use crate::my_pop3_upstream::MyPop3Upstream;
 
@@ -28,27 +29,18 @@ lazy_static! {
     static ref DATABASE_FILENAME: String = "./db.json".to_string();
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-struct Username(String);
-
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 struct Hostname(String);
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-struct UniqueID(String);
-
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct MessageNumber(u32);
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct MessageInfo {
-    unique_id: UniqueID,
+    unique_id: MyPop3UniqueID,
     fubaco_headers: String,
     is_deleted: bool,
 }
 
 //====================================================================
-fn parse_multi_line_response<T, F>(contents_u8: &[u8], converter: F) -> Result<Vec<(MessageNumber, T)>>
+fn parse_multi_line_response<T, F>(contents_u8: &[u8], converter: F) -> Result<Vec<(MyPop3MessageNumber, T)>>
     where F: Fn(&str) -> Option<T>,
 {
     let contents_text = String::from_utf8_lossy(contents_u8);
@@ -63,11 +55,7 @@ fn parse_multi_line_response<T, F>(contents_u8: &[u8], converter: F) -> Result<V
         } else {
             return Err(anyhow!("invalid entry in multi-line response (one whitespace should be contained): \"{}\"", line));
         };
-        let message_number = if let Ok(n) = u32::from_str_radix(index, 10) {
-            MessageNumber(n)
-        } else {
-            return Err(anyhow!("invalid entry in multi-line response (first element should be integer): \"{}\"", line));
-        };
+        let message_number = MyPop3MessageNumber::from_str(index).map_err(|err| anyhow!("{:?}\n   where {:?}", err, (&line, &index, &value)))?;
         if table.contains(&message_number) {
             return Err(anyhow!("ivalid entry in multi-line response (a message number occurs multiple times: \"{}\"", line));
         }
@@ -81,11 +69,11 @@ fn parse_multi_line_response<T, F>(contents_u8: &[u8], converter: F) -> Result<V
     Ok(list)
 }
 
-fn parse_response_for_uidl_command(contents_u8: &[u8]) -> Result<Vec<(MessageNumber, UniqueID)>> {
-    parse_multi_line_response(contents_u8, |s| Some(UniqueID(s.to_string())))
+fn parse_response_for_uidl_command(contents_u8: &[u8]) -> Result<Vec<(MyPop3MessageNumber, MyPop3UniqueID)>> {
+    parse_multi_line_response(contents_u8, |s| MyPop3UniqueID::from_str(s).ok())
 }
 
-fn parse_response_for_list_command(contents_u8: &[u8]) -> Result<Vec<(MessageNumber, usize)>> {
+fn parse_response_for_list_command(contents_u8: &[u8]) -> Result<Vec<(MyPop3MessageNumber, usize)>> {
     parse_multi_line_response(contents_u8, |s| usize::from_str_radix(s, 10).ok())
 }
 
@@ -119,14 +107,14 @@ fn calculate_modified_nbytes_of_message(
     original_nbytes + nbytes_of_fubaco_header
 }
 
-fn calculate_total_nbytes_of_original_maildrop(message_number_to_nbytes: &HashMap<MessageNumber, usize>) -> usize {
+fn calculate_total_nbytes_of_original_maildrop(message_number_to_nbytes: &HashMap<MyPop3MessageNumber, usize>) -> usize {
     message_number_to_nbytes.values().sum()
 }
 
 fn calculate_total_nbytes_of_modified_maildrop(
-    message_number_to_nbytes: &HashMap<MessageNumber, usize>,
-    message_number_to_unique_id: &HashMap<MessageNumber, UniqueID>,
-    unique_id_to_message_info: &HashMap<UniqueID, MessageInfo>,
+    message_number_to_nbytes: &HashMap<MyPop3MessageNumber, usize>,
+    message_number_to_unique_id: &HashMap<MyPop3MessageNumber, MyPop3UniqueID>,
+    unique_id_to_message_info: &HashMap<MyPop3UniqueID, MessageInfo>,
 ) -> usize {
     message_number_to_nbytes
         .iter()
@@ -142,9 +130,9 @@ fn calculate_total_nbytes_of_modified_maildrop(
 fn filter_for_response_of_dummy(
     response: &MyPop3Response,
     command: &MyPop3Command,
-    _unique_id_to_message_info: &HashMap<UniqueID, MessageInfo>,
-    _message_number_to_unique_id: &HashMap<MessageNumber, UniqueID>,
-    _message_number_to_nbytes: &HashMap<MessageNumber, usize>,
+    _unique_id_to_message_info: &HashMap<MyPop3UniqueID, MessageInfo>,
+    _message_number_to_unique_id: &HashMap<MyPop3MessageNumber, MyPop3UniqueID>,
+    _message_number_to_nbytes: &HashMap<MyPop3MessageNumber, usize>,
     _resolver: &MyDNSResolver,
 ) -> Result<(Option<MyPop3Response>, Option<MessageInfo>)> {
     if response.is_ok() {
@@ -156,9 +144,9 @@ fn filter_for_response_of_dummy(
 fn filter_for_response_of_list_single(
     response: &MyPop3Response,
     command: &MyPop3Command,
-    unique_id_to_message_info: &HashMap<UniqueID, MessageInfo>,
-    message_number_to_unique_id: &HashMap<MessageNumber, UniqueID>,
-    message_number_to_nbytes: &HashMap<MessageNumber, usize>,
+    unique_id_to_message_info: &HashMap<MyPop3UniqueID, MessageInfo>,
+    message_number_to_unique_id: &HashMap<MyPop3MessageNumber, MyPop3UniqueID>,
+    message_number_to_nbytes: &HashMap<MyPop3MessageNumber, usize>,
     _resolver: &MyDNSResolver,
 ) -> Result<(Option<MyPop3Response>, Option<MessageInfo>)> {
     assert!(response.is_ok());
@@ -167,26 +155,25 @@ fn filter_for_response_of_list_single(
     assert!(!command.is_multi_line_response_expected());
 
     info!("modify single-line response for LIST command");
-    let arg_str = command.as_nth_arg(0).unwrap();
-    let arg_message_number = MessageNumber(u32::from_str_radix(&arg_str, 10).map_err(|_| anyhow!("argument of LIST command shoud be integer: {}", arg_str))?);
+    let arg_message_number = command.as_message_number().unwrap();
     let unique_id;
     if let Some(v) = message_number_to_unique_id.get(&arg_message_number) {
         unique_id = v;
     } else {
-        return Err(anyhow!("unknown message number is specified: {}", arg_message_number.0));
+        return Err(anyhow!("unknown message number is specified: {}", &arg_message_number));
     }
     let message_number;
     let nbytes;
     if let Some(caps) = REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&response.status_line()) {
-        message_number = MessageNumber(u32::from_str_radix(caps.get(1).unwrap().as_str(), 10).unwrap());
+        message_number = MyPop3MessageNumber::from_str(caps.get(1).unwrap().as_str()).unwrap();
         nbytes = usize::from_str_radix(caps.get(2).unwrap().as_str(), 10).unwrap();
     } else {
         return Err(anyhow!("invalid response: {}", response.status_line()));
     }
-    assert_eq!(message_number, arg_message_number);
+    assert_eq!(&message_number, arg_message_number);
     assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
     let new_nbytes = calculate_modified_nbytes_of_message(nbytes, unique_id_to_message_info.get(unique_id));
-    let bin = format!("+OK {} {}\r\n", message_number.0, new_nbytes).into_bytes();
+    let bin = format!("+OK {} {}\r\n", message_number.to_string(), new_nbytes).into_bytes();
     let modified_response = Some(MyPop3Response::try_from(bin.as_ref()).unwrap());
     info!("Done");
 
@@ -196,9 +183,9 @@ fn filter_for_response_of_list_single(
 fn filter_for_response_of_list_all(
     response: &MyPop3Response,
     command: &MyPop3Command,
-    unique_id_to_message_info: &HashMap<UniqueID, MessageInfo>,
-    message_number_to_unique_id: &HashMap<MessageNumber, UniqueID>,
-    message_number_to_nbytes: &HashMap<MessageNumber, usize>,
+    unique_id_to_message_info: &HashMap<MyPop3UniqueID, MessageInfo>,
+    message_number_to_unique_id: &HashMap<MyPop3MessageNumber, MyPop3UniqueID>,
+    message_number_to_nbytes: &HashMap<MyPop3MessageNumber, usize>,
     _resolver: &MyDNSResolver,
 ) -> Result<(Option<MyPop3Response>, Option<MessageInfo>)> {
     assert!(response.is_ok());
@@ -215,7 +202,7 @@ fn filter_for_response_of_list_all(
         (message_number, new_nbytes)
     });
     let modified_contents_u8 = modified_list.flat_map(|(message_number, nbytes)| {
-        format!("{} {}\r\n", message_number.0, nbytes).into_bytes()
+        format!("{} {}\r\n", message_number.to_string(), nbytes).into_bytes()
     });
 
     let new_status_line;
@@ -245,9 +232,9 @@ fn filter_for_response_of_list_all(
 fn filter_for_response_of_retr(
     response: &MyPop3Response,
     command: &MyPop3Command,
-    unique_id_to_message_info: &HashMap<UniqueID, MessageInfo>,
-    message_number_to_unique_id: &HashMap<MessageNumber, UniqueID>,
-    message_number_to_nbytes: &HashMap<MessageNumber, usize>,
+    unique_id_to_message_info: &HashMap<MyPop3UniqueID, MessageInfo>,
+    message_number_to_unique_id: &HashMap<MyPop3MessageNumber, MyPop3UniqueID>,
+    message_number_to_nbytes: &HashMap<MyPop3MessageNumber, usize>,
     resolver: &MyDNSResolver,
 ) -> Result<(Option<MyPop3Response>, Option<MessageInfo>)> {
     assert!(response.is_ok());
@@ -256,13 +243,12 @@ fn filter_for_response_of_retr(
     assert!(command.is_multi_line_response_expected());
 
     info!("modify response contents for RETR/TOP command");
-    let arg_str = command.as_nth_arg(0).unwrap();
-    let arg_message_number = MessageNumber(u32::from_str_radix(&arg_str, 10).map_err(|_| anyhow!("argument of RETR/TOP command shoud be integer: {}", arg_str))?);
+    let arg_message_number = command.as_message_number().unwrap();
     let unique_id;
     if let Some(v) = message_number_to_unique_id.get(&arg_message_number) {
         unique_id = v;
     } else {
-        return Err(anyhow!("unknown message number is specified: {}", arg_message_number.0));
+        return Err(anyhow!("unknown message number is specified: {}", &arg_message_number));
     }
     assert!(response.is_multi_line_response());
     let contents_u8 = response.as_contents_u8().unwrap();
@@ -316,9 +302,9 @@ fn filter_for_response_of_retr(
 fn filter_for_response_of_stat(
     response: &MyPop3Response,
     command: &MyPop3Command,
-    unique_id_to_message_info: &HashMap<UniqueID, MessageInfo>,
-    message_number_to_unique_id: &HashMap<MessageNumber, UniqueID>,
-    message_number_to_nbytes: &HashMap<MessageNumber, usize>,
+    unique_id_to_message_info: &HashMap<MyPop3UniqueID, MessageInfo>,
+    message_number_to_unique_id: &HashMap<MyPop3MessageNumber, MyPop3UniqueID>,
+    message_number_to_nbytes: &HashMap<MyPop3MessageNumber, usize>,
     _resolver: &MyDNSResolver,
 ) -> Result<(Option<MyPop3Response>, Option<MessageInfo>)> {
     assert!(response.is_ok());
@@ -350,7 +336,7 @@ fn filter_for_response_of_stat(
 fn process_pop3_transaction<S, T>(
     upstream_stream: &mut MyPop3Upstream<S>,
     downstream_stream: &mut MyPop3Downstream<T>,
-    database: &mut HashMap<UniqueID, MessageInfo>,
+    database: &mut HashMap<MyPop3UniqueID, MessageInfo>,
     resolver: &MyDNSResolver,
 ) -> Result<()>
     where S: Read + Write + MyDisconnect,
@@ -359,17 +345,17 @@ fn process_pop3_transaction<S, T>(
     let unique_id_to_message_info = database;
 
     // issue internal "UIDL" command (to get unique-id for all mails)
-    let message_number_to_unique_id: HashMap<MessageNumber, UniqueID> = {
+    let message_number_to_unique_id: HashMap<MyPop3MessageNumber, MyPop3UniqueID> = {
         info!("issue internal UIDL command");
-        let command = MyPop3Command::new(MyPop3CommandName::UIDL, &[]);
+        let command = MyPop3Command::UIDL_ALL;
         let list = issue_pop3_command_with_multi_line_response(upstream_stream, &command, parse_response_for_uidl_command)?;
         list.into_iter().collect()
     };
 
     // issue internal "LIST" command (to get message size for all mails)
-    let message_number_to_nbytes: HashMap<MessageNumber, usize> = {
+    let message_number_to_nbytes: HashMap<MyPop3MessageNumber, usize> = {
         info!("issue internal LIST command");
-        let command = MyPop3Command::new(MyPop3CommandName::LIST, &[]);
+        let command = MyPop3Command::LIST_ALL;
         let list = issue_pop3_command_with_multi_line_response(upstream_stream, &command, parse_response_for_list_command)?;
         list.into_iter().collect()
     };
@@ -438,7 +424,7 @@ fn process_pop3_transaction<S, T>(
 
 //====================================================================
 pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
-    let username_to_hostname: HashMap<Username, Hostname> = vec![
+    let username_to_hostname: HashMap<MyPop3Username, Hostname> = vec![
         "FUBACO_Nq2DYd4cFHGZ_U",
         "FUBACO_Km2TTTAEMErD_H",
         "FUBACO_NC7s2kMrxDnU_U",
@@ -447,7 +433,7 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
         "FUBACO_MFhg2T3pxVRW_H",
         "FUBACO_GYDTwK7YTcbU_U",
         "FUBACO_QW5DV9Wko6oC_H",
-    ].into_iter().map(|s| env::var(s).unwrap()).collect::<Vec<String>>().chunks(2).map(|v| (Username(v[0].clone()), Hostname(v[1].clone()))).collect();
+    ].into_iter().map(|s| env::var(s).unwrap()).collect::<Vec<String>>().chunks(2).map(|v| (MyPop3Username::from_str(&v[0]).unwrap(), Hostname(v[1].clone()))).collect();
 
     fn load_db_file() -> Result<String> {
         if !Path::new(&*DATABASE_FILENAME).try_exists()? {
@@ -469,8 +455,8 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
     }
 
     // https://serde.rs/derive.html
-    let mut database: HashMap<Username, HashMap<UniqueID, MessageInfo>> = serde_json::from_str(&load_db_file()?).unwrap(); // permanent table (save and load a DB file)
-    let lack_keys: Vec<Username> = username_to_hostname.keys().filter(|u| !database.contains_key(u)).map(|u| u.clone()).collect();
+    let mut database: HashMap<MyPop3Username, HashMap<MyPop3UniqueID, MessageInfo>> = serde_json::from_str(&load_db_file()?).unwrap(); // permanent table (save and load a DB file)
+    let lack_keys: Vec<MyPop3Username> = username_to_hostname.keys().filter(|u| !database.contains_key(u)).map(|u| u.clone()).collect();
     lack_keys.into_iter().for_each(|u| {
         database.insert(u, HashMap::new());
     });
@@ -494,15 +480,15 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                 // wait for "USER" command to identify mail account
                 let (username, responder_for_username) = {
                     let (command, responder) = downstream_stream.wait_for_command()?;
-                    if command.name() != MyPop3CommandName::USER {
-                        return Err(anyhow!("The first POP3 command should be \"USER\": {:?}", command));
+                    match command {
+                        MyPop3Command::USER(x) => (x, responder),
+                        _ => return Err(anyhow!("The first POP3 command should be \"USER\": {:?}", command)),
                     }
-                    (Username(command.as_nth_arg(0).unwrap()), responder)
                 };
                 let upstream_hostname = username_to_hostname.get(&username).ok_or_else(|| anyhow!("unknown username: {:?}", username))?;
                 let upstream_port = 995;
 
-                info!("username: {}", username.0);
+                info!("username: {}", username);
                 info!("upstream_addr: {}:{}", upstream_hostname.0, upstream_port);
 
                 info!("open upstream connection");
@@ -537,7 +523,7 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                 // issue delayed "USER" command
                 {
                     info!("issue USER command");
-                    let command = MyPop3Command::new(MyPop3CommandName::USER, &[&username.0]);
+                    let command = MyPop3Command::USER(username.clone());
                     let response = upstream_stream.issue_command(&command)?;
                     info!("relay the response: {}", response.status_line());
                     responder_for_username.send_response(&response)?;
