@@ -196,15 +196,15 @@ fn filter_for_response_of_list_all(
     });
 
     let new_status_line;
-    if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&response.status_line()) {
+    if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(response.as_status_line()) {
         let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
         assert_eq!(nbytes, calculate_total_nbytes_of_original_maildrop(&message_number_to_nbytes));
         let total_nbytes_of_modified_maildrop = calculate_total_nbytes_of_modified_maildrop(&message_number_to_nbytes, &message_number_to_unique_id, &unique_id_to_message_info);
         info!("total_nbytes_of_modified_maildrop = {}", total_nbytes_of_modified_maildrop);
         let new_field = format!("{} octets", total_nbytes_of_modified_maildrop);
-        new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&response.status_line(), new_field).to_string();
+        new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(response.as_status_line(), new_field).to_string();
     } else {
-        new_status_line = response.status_line();
+        new_status_line = response.as_status_line().to_string();
     }
 
     let bin = [].into_iter()
@@ -265,15 +265,15 @@ fn filter_for_response_of_retr(
     };
 
     let new_status_line;
-    if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(&response.status_line()) {
+    if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(response.as_status_line()) {
         let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
         if nbytes != contents_u8.len() {
             print!("WARNING: message size is different from the \"{} octets\" in staus line: {}", nbytes, contents_u8.len());
         }
         let new_nbytes = nbytes + fubaco_headers.len();
-        new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(&response.status_line(), format!("{} octets", new_nbytes)).to_string();
+        new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(response.as_status_line(), format!("{} octets", new_nbytes)).to_string();
     } else {
-        new_status_line = response.status_line();
+        new_status_line = response.as_status_line().to_string();
     }
 
     let bin = [].into_iter()
@@ -391,7 +391,7 @@ fn process_pop3_transaction<S, T>(
         }
 
         let final_response = modified_response.unwrap_or(response);
-        info!("relay the response: {}", final_response.status_line());
+        info!("relay the response: {}", final_response.as_status_line());
         responder.send_response(&final_response)?;
         info!("Done");
         if command.name() == MyPop3CommandName::QUIT {
@@ -509,7 +509,7 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                     info!("issue USER command");
                     let command = MyPop3Command::USER(username.clone());
                     let response = upstream_stream.issue_command(&command)?;
-                    info!("relay the response: {}", response.status_line());
+                    info!("relay the response: {}", response.as_status_line());
                     responder_for_username.send_response(&response)?;
                     info!("Done");
                     if response.is_err() {
@@ -524,7 +524,7 @@ pub fn run_pop3_bridge(resolver: &MyDNSResolver) -> Result<()> {
                         return Err(anyhow!("The second POP3 command should be \"PASS\": {:?}", command));
                     }
                     let response = upstream_stream.issue_command(&command)?;
-                    info!("relay the response: {}", response.status_line());
+                    info!("relay the response: {}", response.as_status_line());
                     responder.send_response(&response)?;
                     info!("Done");
                     if response.is_err() {

@@ -20,9 +20,9 @@ impl<T: Read + Write + MyDisconnect> MyPop3Upstream<T> {
         // wait for POP3 greeting message from server
         {
             let response = read_one_response_completely(&mut stream, false)?;
-            info!("greeting message is received: {}", response.status_line());
+            info!("greeting message is received: {}", response.as_status_line());
             if response.is_err() {
-                return Err(anyhow!("greeting message should be OK: {}", response.status_line()));
+                return Err(anyhow!("greeting message should be OK: {}", response.as_status_line()));
             }
         }
 

@@ -631,19 +631,19 @@ impl MyPop3Response {
         }
     }
 
-    pub fn status_line(&self) -> String {
+    pub fn as_status_line(&self) -> &str {
         let ss = match self {
             Self::OkSingleLine { status_line, .. } => status_line,
             Self::OkMultiLine { status_line, .. } => status_line,
             Self::Err { status_line, .. } => status_line,
         };
         assert!(!ss.ends_with("\r\n")); // not include CRLF at the end
-        ss.clone()
+        ss
     }
 
     pub fn args_of_status_line(&self) -> Vec<String> {
          // NOTE: RFC1939 says "followed by a single space"
-        self.status_line().trim_ascii().split(' ').skip(1).map(|s| s.to_owned()).collect()
+        self.as_status_line().trim_ascii().split(' ').skip(1).map(|s| s.to_owned()).collect()
     }
 
     pub fn as_contents_u8(&self) -> Option<&[u8]> {
@@ -655,7 +655,7 @@ impl MyPop3Response {
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bin = self.status_line().into_bytes();
+        let mut bin = self.as_status_line().to_owned().into_bytes();
         assert!(!bin.ends_with(b"\r\n"));
         bin.extend_from_slice(b"\r\n");
         if let Some(contents_u8) = self.as_contents_u8() {
