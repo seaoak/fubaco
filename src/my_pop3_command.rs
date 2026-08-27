@@ -641,6 +641,11 @@ impl MyPop3Response {
         ss.clone()
     }
 
+    pub fn args_of_status_line(&self) -> Vec<String> {
+         // NOTE: RFC1939 says "followed by a single space"
+        self.status_line().trim_ascii().split(' ').skip(1).map(|s| s.to_owned()).collect()
+    }
+
     pub fn as_contents_u8(&self) -> Option<&[u8]> {
         match self {
             Self::OkSingleLine { .. } => None,

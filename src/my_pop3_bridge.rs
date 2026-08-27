@@ -21,10 +21,6 @@ use crate::my_pop3_downstream::MyPop3Downstream;
 use crate::my_pop3_upstream::MyPop3Upstream;
 
 lazy_static! {
-    static ref REGEX_POP3_COMMAND_LINE_GENERAL: Regex = Regex::new(r"^([A-Z]+)(?: +(\S+)(?: +(\S+))?)? *(\r\n)?$").unwrap();
-    static ref REGEX_POP3_COMMAND_LINE_FOR_USER: Regex = Regex::new(r"^USER +(\S+) *(\r\n)?$").unwrap();
-    static ref REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND: Regex = Regex::new(r"^\+OK +(\S+) +(\S+) *(\r\n)?$").unwrap();
-    static ref REGEX_POP3_RESPONSE_BODY_FOR_LISTING_COMMAND: Regex = Regex::new(r"^ *(\S+) +(\S+) *$").unwrap(); // "\r\n" is stripped
     static ref REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS: Regex = Regex::new(r"\b([1-9][0-9]*) octets\b").unwrap();
     static ref DATABASE_FILENAME: String = "./db.json".to_string();
 }
@@ -162,14 +158,8 @@ fn filter_for_response_of_list_single(
     } else {
         return Err(anyhow!("unknown message number is specified: {}", &arg_message_number));
     }
-    let message_number;
-    let nbytes;
-    if let Some(caps) = REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&response.status_line()) {
-        message_number = MyPop3MessageNumber::from_str(caps.get(1).unwrap().as_str()).unwrap();
-        nbytes = usize::from_str_radix(caps.get(2).unwrap().as_str(), 10).unwrap();
-    } else {
-        return Err(anyhow!("invalid response: {}", response.status_line()));
-    }
+    let message_number = response.args_of_status_line().get(0).and_then(|s| MyPop3MessageNumber::from_str(s).ok()).ok_or_else(|| anyhow!("1st argument should be a message number: {:?}", (&response, &command)))?;
+    let nbytes = response.args_of_status_line().get(1).and_then(|s| usize::from_str_radix(&s, 10).ok()).ok_or_else(|| anyhow!("2nd argument should be a non-negative integer: {:?}", (&response, &command)))?;
     assert_eq!(&message_number, arg_message_number);
     assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
     let new_nbytes = calculate_modified_nbytes_of_message(nbytes, unique_id_to_message_info.get(unique_id));
@@ -313,14 +303,8 @@ fn filter_for_response_of_stat(
     assert!(!command.is_multi_line_response_expected());
 
     info!("modify single-line response for STAT command");
-    let num_of_messages;
-    let nbytes;
-    if let Some(caps) = REGEX_POP3_RESPONSE_FOR_LISTING_SINGLE_COMMAND.captures(&response.status_line()) {
-        num_of_messages = usize::from_str_radix(&caps[1], 10).unwrap();
-        nbytes = usize::from_str_radix(&caps[2], 10).unwrap();
-    } else {
-        return Err(anyhow!("invalid response: {}", response.status_line()));
-    }
+    let num_of_messages = response.args_of_status_line().get(0).and_then(|s| usize::from_str_radix(&s, 10).ok()).ok_or_else(|| anyhow!("1st argument should be a non-negative integer: {:?}", (&response, &command)))?;
+    let nbytes = response.args_of_status_line().get(1).and_then(|s| usize::from_str_radix(&s, 10).ok()).ok_or_else(|| anyhow!("2nd argument should be a non-negative integer: {:?}", (&response, &command)))?;
     assert_eq!(num_of_messages, message_number_to_nbytes.len());
     assert_eq!(nbytes, calculate_total_nbytes_of_original_maildrop(&message_number_to_nbytes));
     let total_nbytes_of_modified_maildrop = calculate_total_nbytes_of_modified_maildrop(&message_number_to_nbytes, &message_number_to_unique_id, &unique_id_to_message_info);
