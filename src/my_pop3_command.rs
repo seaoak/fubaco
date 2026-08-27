@@ -571,6 +571,10 @@ impl TryFrom<&[u8]> for MyPop3Response {
         if status_line.is_empty() {
             return Err(anyhow!("invalid POP3 response line: should not be empty"));
         }
+        if status_line.len() + "\r\n".len() > 512 {
+            // RFC1939 says `Responses may be up to 512 characters long, including the terminating CRLF`
+            return Err(anyhow!("invalid POP3 response line: too long: {:?}", status_line));
+        }
         if !status_line.chars().all(|c| c.is_ascii() && !c.is_ascii_control()) {
             return Err(anyhow!("invalid codepoint in POP3 response line: {:?}", status_line));
         }
