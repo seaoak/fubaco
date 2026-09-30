@@ -210,9 +210,7 @@ fn filter_for_response_of_stat(
     assert_eq!(nbytes.as_usize(), calculate_total_nbytes_of_original_maildrop(&message_number_to_nbytes));
     let new_nbytes = calculate_total_nbytes_of_modified_maildrop(&message_number_to_nbytes, &message_number_to_unique_id, &unique_id_to_message_info);
     info!("total_nbytes_of_modified_maildrop = {}", new_nbytes);
-    let new_nbytes = new_nbytes.into();
-    let modified_status_line = response.as_status_line().rebuild_as_for_stat(&num_of_messages, &new_nbytes);
-    let modified_response = response.rebuild(&modified_status_line, None);
+    let modified_response = response.rebuild_as_for_stat(&num_of_messages, &new_nbytes.into(), &command);
     info!("Done");
 
     Ok((Some(modified_response), None))

@@ -1510,8 +1510,14 @@ impl MyPop3Response {
     }
 
     pub fn rebuild_as_for_stat(&self, total_count: &MyPop3NumberOfMessages, total_nbytes: &MyPop3Octets, command: &MyPop3Command) -> Self {
-        #![allow(unused)]
-        unimplemented!()
+        assert!(self.is_ok() && !self.is_multi_line_response(), "{:?}", (&self, &command));
+        assert!(command.name() == MyPop3CommandName::STAT && !command.is_multi_line_response_expected(), "{:?}", (&self, &command));
+        let _ = self.parse_as_for_stat(&command).unwrap(); // validation (just in case)
+
+        let new_status_line = self.as_status_line().rebuild_as_for_stat(&total_count, &total_nbytes);
+        let new_response = self.rebuild(&new_status_line, None);
+        assert_eq!((total_count.clone(), total_nbytes.clone()), new_response.parse_as_for_stat(&command).unwrap());
+        new_response
     }
 
     pub fn rebuild_as_for_top(&self, new_contents: &[u8], command: &MyPop3Command) -> Self {
