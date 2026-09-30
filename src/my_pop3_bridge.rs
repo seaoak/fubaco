@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
@@ -9,19 +9,17 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::my_disconnect::MyDisconnect;
 use crate::my_dns_resolver::MyDNSResolver;
 use crate::my_fubaco_header::{self, FUBACO_HEADER_TOTAL_SIZE};
 use crate::my_logger::prelude::*;
-use crate::my_pop3_command::{MyPop3Username, MyPop3UniqueID, MyPop3MessageNumber, MyPop3Command, MyPop3CommandName, MyPop3Response};
+use crate::my_pop3_command::{MyIteratorIsUnique, MyPop3Command, MyPop3CommandName, MyPop3MessageNumber, MyPop3Octets, MyPop3Response, MyPop3ScanListingItem, MyPop3UniqueID, MyPop3Username};
 use crate::my_pop3_downstream::MyPop3Downstream;
 use crate::my_pop3_upstream::MyPop3Upstream;
 
 lazy_static! {
-    static ref REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS: Regex = Regex::new(r"\b([1-9][0-9]*) octets\b").unwrap();
     static ref DATABASE_FILENAME: String = "./db.json".to_string();
 }
 
@@ -33,62 +31,6 @@ struct MessageInfo {
     unique_id: MyPop3UniqueID,
     fubaco_headers: String,
     is_deleted: bool,
-}
-
-//====================================================================
-fn parse_multi_line_response<T, F>(contents_u8: &[u8], converter: F) -> Result<Vec<(MyPop3MessageNumber, T)>>
-    where F: Fn(&str) -> Option<T>,
-{
-    let contents_text = String::from_utf8_lossy(contents_u8);
-    debug!("{}", contents_text);
-
-    let mut table = HashSet::new();
-    let mut list = Vec::new();
-    for line in contents_text.split_terminator("\r\n") {
-        let line = line.trim();
-        let (index, value) = if let Some(t) = line.split_once(' ') {
-            t
-        } else {
-            return Err(anyhow!("invalid entry in multi-line response (one whitespace should be contained): \"{}\"", line));
-        };
-        let message_number = MyPop3MessageNumber::from_str(index).map_err(|err| anyhow!("{:?}\n   where {:?}", err, (&line, &index, &value)))?;
-        if table.contains(&message_number) {
-            return Err(anyhow!("ivalid entry in multi-line response (a message number occurs multiple times: \"{}\"", line));
-        }
-        table.insert(message_number.clone());
-        let value = converter(value.trim_ascii());
-        if value.is_none() {
-            return Err(anyhow!("invalid value in multi-line response: \"{}\"", line));
-        }
-        list.push((message_number, value.unwrap()));
-    }
-    Ok(list)
-}
-
-fn parse_response_for_uidl_command(contents_u8: &[u8]) -> Result<Vec<(MyPop3MessageNumber, MyPop3UniqueID)>> {
-    parse_multi_line_response(contents_u8, |s| MyPop3UniqueID::from_str(s).ok())
-}
-
-fn parse_response_for_list_command(contents_u8: &[u8]) -> Result<Vec<(MyPop3MessageNumber, usize)>> {
-    parse_multi_line_response(contents_u8, |s| usize::from_str_radix(s, 10).ok())
-}
-
-//====================================================================
-fn issue_pop3_command_with_multi_line_response<S, T, F>(
-    upstream_stream: &mut MyPop3Upstream<S>,
-    command: &MyPop3Command,
-    parser: F,
-) -> Result<T>
-    where S: Read + Write + MyDisconnect,
-          F: FnOnce(&[u8]) -> Result<T>,
-{
-    assert!(command.is_multi_line_response_expected());
-    let response = upstream_stream.issue_command(&command)?;
-    if response.is_err() {
-        return Err(anyhow!("FATAL: ERR response is received for {} command", command.name()));
-    }
-    info!("parse response contents of {} command", command.name());
-    parser(response.as_contents_u8().unwrap())
 }
 
 //====================================================================
@@ -158,16 +100,21 @@ fn filter_for_response_of_list_single(
     } else {
         return Err(anyhow!("unknown message number is specified: {}", &arg_message_number));
     }
-    let message_number = response.args_of_status_line().get(0).and_then(|s| MyPop3MessageNumber::from_str(s).ok()).ok_or_else(|| anyhow!("1st argument should be a message number: {:?}", (&response, &command)))?;
-    let nbytes = response.args_of_status_line().get(1).and_then(|s| usize::from_str_radix(&s, 10).ok()).ok_or_else(|| anyhow!("2nd argument should be a non-negative integer: {:?}", (&response, &command)))?;
-    assert_eq!(&message_number, arg_message_number);
-    assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
-    let new_nbytes = calculate_modified_nbytes_of_message(nbytes, unique_id_to_message_info.get(unique_id));
-    let bin = format!("+OK {} {}\r\n", message_number.to_string(), new_nbytes).into_bytes();
-    let modified_response = Some(MyPop3Response::try_from(bin.as_ref()).unwrap());
+
+    let original_item = response.parse_as_for_list_single(&command)?;
+    assert_eq!(original_item.as_message_number(), arg_message_number);
+    assert_eq!(original_item.as_nbytes().as_usize(), message_number_to_nbytes[original_item.as_message_number()]);
+
+    let new_nbytes = calculate_modified_nbytes_of_message(original_item.as_nbytes().as_usize(), unique_id_to_message_info.get(unique_id));
+    let new_nbytes = MyPop3Octets::from(new_nbytes);
+    assert!(new_nbytes.as_usize() > 0);
+    assert!(new_nbytes.as_usize() >= original_item.as_nbytes().as_usize());
+    let new_item = original_item.rebuild_with_nbytes(original_item.as_message_number(), &new_nbytes);
+    let modified_response = response.rebuild_as_for_list_single(&new_item, &command);
+    assert_eq!(original_item, modified_response.parse_as_for_list_single(&command).unwrap());
     info!("Done");
 
-    Ok((modified_response, None))
+    Ok((Some(modified_response), None))
 }
 
 fn filter_for_response_of_list_all(
@@ -184,39 +131,18 @@ fn filter_for_response_of_list_all(
     assert!(command.is_multi_line_response_expected());
 
     info!("modify multi-line response for LIST command");
-    let original_list = parse_response_for_list_command(response.as_contents_u8().unwrap())?;
-    let modified_list = original_list.into_iter().map(|(message_number, nbytes)| {
-        assert_eq!(nbytes, message_number_to_nbytes[&message_number]);
-        let unique_id = &message_number_to_unique_id[&message_number];
-        let new_nbytes = calculate_modified_nbytes_of_message(nbytes, unique_id_to_message_info.get(unique_id));
-        (message_number, new_nbytes)
-    });
-    let modified_contents_u8 = modified_list.flat_map(|(message_number, nbytes)| {
-        format!("{} {}\r\n", message_number.to_string(), nbytes).into_bytes()
-    });
-
-    let new_status_line;
-    if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(response.as_status_line()) {
-        let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
-        assert_eq!(nbytes, calculate_total_nbytes_of_original_maildrop(&message_number_to_nbytes));
-        let total_nbytes_of_modified_maildrop = calculate_total_nbytes_of_modified_maildrop(&message_number_to_nbytes, &message_number_to_unique_id, &unique_id_to_message_info);
-        info!("total_nbytes_of_modified_maildrop = {}", total_nbytes_of_modified_maildrop);
-        let new_field = format!("{} octets", total_nbytes_of_modified_maildrop);
-        new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(response.as_status_line(), new_field).to_string();
-    } else {
-        new_status_line = response.as_status_line().to_string();
-    }
-
-    let bin = [].into_iter()
-        .chain(new_status_line.trim_end_matches("\r\n").bytes())
-        .chain("\r\n".bytes())
-        .chain(modified_contents_u8)
-        .chain(".\r\n".bytes())
-        .collect::<Vec<_>>();
-    let modified_response = Some(MyPop3Response::try_from(bin.as_ref()).unwrap());
+    let original_list: Vec<MyPop3ScanListingItem> = response.as_contents().unwrap().to_items()?;
+    assert!(original_list.iter().map(|info| info.as_message_number()).is_unique(), "{:?}", (&original_list, &response));
+    let modified_list = original_list.into_iter().map(|info| {
+        assert_eq!(info.as_nbytes().as_usize(), message_number_to_nbytes[info.as_message_number()]);
+        let unique_id = &message_number_to_unique_id[info.as_message_number()];
+        let new_nbytes = calculate_modified_nbytes_of_message(info.as_nbytes().as_usize(), unique_id_to_message_info.get(unique_id));
+        info.rebuild_with_nbytes(info.as_message_number(), &new_nbytes.into())
+    }).collect::<Vec<_>>();
+    let modified_response = response.rebuild_as_for_list_all(&modified_list, &command);
     info!("Done");
 
-    Ok((modified_response, None))
+    Ok((Some(modified_response), None))
 }
 
 fn filter_for_response_of_retr(
@@ -229,28 +155,22 @@ fn filter_for_response_of_retr(
 ) -> Result<(Option<MyPop3Response>, Option<MessageInfo>)> {
     assert!(response.is_ok());
     assert_eq!(response.is_multi_line_response(), command.is_multi_line_response_expected());
-    assert_eq!(command.name(), MyPop3CommandName::RETR);
+    assert_eq!(command.name(), MyPop3CommandName::RETR); // TODO: support TOP command if possible
     assert!(command.is_multi_line_response_expected());
 
-    info!("modify response contents for RETR/TOP command");
-    let arg_message_number = command.as_message_number().unwrap();
-    let unique_id;
-    if let Some(v) = message_number_to_unique_id.get(&arg_message_number) {
-        unique_id = v;
-    } else {
-        return Err(anyhow!("unknown message number is specified: {}", &arg_message_number));
+    info!("modify response contents for RETR command");
+    let message_number = command.as_message_number().unwrap();
+    let unique_id = message_number_to_unique_id.get(&message_number).ok_or_else(|| anyhow!("unexpected message number: {}", &message_number))?;
+    let nbytes = message_number_to_nbytes.get(&message_number).ok_or_else(|| anyhow!("unexpected message number: {}", &message_number))?;
+    let contents_u8 = response.as_contents().unwrap().as_contents_u8();
+    if contents_u8.len() != *nbytes {
+        // NOTE: this validation is effective only for RETR command (not for TOP command)
+        warn!("WARNING: message size is different from the response of LIST comand: {} vs {}", contents_u8.len(), nbytes);
     }
-    assert!(response.is_multi_line_response());
-    let contents_u8 = response.as_contents_u8().unwrap();
 
     let fubaco_headers;
     let new_info;
-    if let Some(info) = unique_id_to_message_info.get(unique_id) {
-        if command.name() == MyPop3CommandName::RETR {
-            if contents_u8.len() != message_number_to_nbytes[&arg_message_number] {
-                warn!("WARNING: message size is different from the response of LIST comand: {} vs {}", contents_u8.len(), message_number_to_nbytes[&arg_message_number]);
-            }
-        }
+    if let Some(info) = unique_id_to_message_info.get(&unique_id) {
         fubaco_headers = info.fubaco_headers.clone();
         new_info = None;
     } else {
@@ -264,29 +184,11 @@ fn filter_for_response_of_retr(
         });
     };
 
-    let new_status_line;
-    if let Some(caps) = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.captures(response.as_status_line()) {
-        let nbytes = usize::from_str_radix(&caps[1], 10).unwrap();
-        if nbytes != contents_u8.len() {
-            print!("WARNING: message size is different from the \"{} octets\" in staus line: {}", nbytes, contents_u8.len());
-        }
-        let new_nbytes = nbytes + fubaco_headers.len();
-        new_status_line = REGEX_POP3_RESPONSE_STATUS_LINE_OCTETS.replace(response.as_status_line(), format!("{} octets", new_nbytes)).to_string();
-    } else {
-        new_status_line = response.as_status_line().to_string();
-    }
-
-    let bin = [].into_iter()
-        .chain(new_status_line.trim_end_matches("\r\n").bytes())
-        .chain("\r\n".bytes())
-        .chain(fubaco_headers.bytes())
-        .chain(contents_u8.to_owned())
-        .chain(".\r\n".bytes())
-        .collect::<Vec<_>>();
-    let modified_response = Some(MyPop3Response::try_from(bin.as_ref()).unwrap());
+    let new_contents_u8 = [fubaco_headers.as_bytes(), contents_u8].concat();
+    let modified_response = response.rebuild_as_for_retr(&new_contents_u8, &command);
     info!("Done");
 
-    Ok((modified_response, new_info))
+    Ok((Some(modified_response), new_info))
 }
 
 fn filter_for_response_of_stat(
@@ -303,17 +205,17 @@ fn filter_for_response_of_stat(
     assert!(!command.is_multi_line_response_expected());
 
     info!("modify single-line response for STAT command");
-    let num_of_messages = response.args_of_status_line().get(0).and_then(|s| usize::from_str_radix(&s, 10).ok()).ok_or_else(|| anyhow!("1st argument should be a non-negative integer: {:?}", (&response, &command)))?;
-    let nbytes = response.args_of_status_line().get(1).and_then(|s| usize::from_str_radix(&s, 10).ok()).ok_or_else(|| anyhow!("2nd argument should be a non-negative integer: {:?}", (&response, &command)))?;
-    assert_eq!(num_of_messages, message_number_to_nbytes.len());
-    assert_eq!(nbytes, calculate_total_nbytes_of_original_maildrop(&message_number_to_nbytes));
-    let total_nbytes_of_modified_maildrop = calculate_total_nbytes_of_modified_maildrop(&message_number_to_nbytes, &message_number_to_unique_id, &unique_id_to_message_info);
-    info!("total_nbytes_of_modified_maildrop = {}", total_nbytes_of_modified_maildrop);
-    let bin = format!("+OK {} {}\r\n", num_of_messages, total_nbytes_of_modified_maildrop).into_bytes();
-    let modified_response = Some(MyPop3Response::try_from(bin.as_ref()).unwrap());
+    let (num_of_messages, nbytes) = response.parse_as_for_stat(&command)?;
+    assert_eq!(num_of_messages.as_usize(), message_number_to_nbytes.len());
+    assert_eq!(nbytes.as_usize(), calculate_total_nbytes_of_original_maildrop(&message_number_to_nbytes));
+    let new_nbytes = calculate_total_nbytes_of_modified_maildrop(&message_number_to_nbytes, &message_number_to_unique_id, &unique_id_to_message_info);
+    info!("total_nbytes_of_modified_maildrop = {}", new_nbytes);
+    let new_nbytes = new_nbytes.into();
+    let modified_status_line = response.as_status_line().rebuild_as_for_stat(&num_of_messages, &new_nbytes);
+    let modified_response = response.rebuild(&modified_status_line, None);
     info!("Done");
 
-    Ok((modified_response, None))
+    Ok((Some(modified_response), None))
 }
 
 //====================================================================
@@ -332,16 +234,18 @@ fn process_pop3_transaction<S, T>(
     let message_number_to_unique_id: HashMap<MyPop3MessageNumber, MyPop3UniqueID> = {
         info!("issue internal UIDL command");
         let command = MyPop3Command::UIDL_ALL;
-        let list = issue_pop3_command_with_multi_line_response(upstream_stream, &command, parse_response_for_uidl_command)?;
-        list.into_iter().collect()
+        let response = upstream_stream.issue_command(&command)?;
+        let list = response.parse_as_for_uidl_all(&command)?;
+        list.into_iter().map(|item| item.to_tuple()).collect()
     };
 
     // issue internal "LIST" command (to get message size for all mails)
     let message_number_to_nbytes: HashMap<MyPop3MessageNumber, usize> = {
         info!("issue internal LIST command");
         let command = MyPop3Command::LIST_ALL;
-        let list = issue_pop3_command_with_multi_line_response(upstream_stream, &command, parse_response_for_list_command)?;
-        list.into_iter().collect()
+        let response = upstream_stream.issue_command(&command)?;
+        let (_, _, list) = response.parse_as_for_list_all(&command)?;
+        list.into_iter().map(|item| (item.as_message_number().clone(), item.as_nbytes().as_usize())).collect()
     };
     assert_eq!(message_number_to_nbytes.len(), message_number_to_unique_id.len());
     info!("total_nbytes_of_original_maildrop = {}", calculate_total_nbytes_of_original_maildrop(&message_number_to_nbytes));
