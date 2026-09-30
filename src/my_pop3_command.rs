@@ -1838,106 +1838,6 @@ impl MyPop3StatusLine {
     }
 
     //====================
-    pub fn parse_as_for_list_all(&self) -> Result<(Option<MyPop3NumberOfMessages>, Option<MyPop3Octets>)> {
-        assert!(self.is_ok());
-        let total_count = my_regex_extract_group_2(&REGEX_FOR_NUMBER_OF_MESSAGES, self.as_str())?;
-        let total_nbytes = my_regex_extract_group_2(&REGEX_FOR_OCTETS, self.as_str())?;
-        Ok((total_count, total_nbytes))
-    }
-
-    pub fn parse_as_for_list_single(&self) -> Result<MyPop3ScanListingItem> {
-        assert!(self.is_ok());
-        self.as_rest_of_line().parse()
-    }
-
-    pub fn parse_as_for_retr(&self) -> Result<Option<MyPop3Octets>> {
-        assert!(self.is_ok());
-        let nbytes = my_regex_extract_group_2(&REGEX_FOR_OCTETS, self.as_str())?;
-        Ok(nbytes)
-    }
-
-    pub fn parse_as_for_stat(&self) -> Result<(MyPop3NumberOfMessages, MyPop3Octets)> {
-        assert!(self.is_ok());
-        let args = self.to_args();
-        if args.len() < 2 {
-            // NOTE: RFC1939 says "This memo makes no requirement on what follows the maildrop size"
-            return Err(anyhow!("the status line of the response for STAT should have at least two arguments: {:?}", (&args, &self)));
-        }
-        let num_of_messages = args[0].as_str().try_into()?;
-        let nbytes = args[1].as_str().try_into()?;
-        Ok((num_of_messages, nbytes))
-    }
-
-    pub fn parse_as_for_top(&self) -> Result<Option<MyPop3Octets>> {
-        #![allow(unused)]
-        self.parse_as_for_retr()
-    }
-
-    pub fn parse_as_for_uidl_all(&self) -> Result<()> {
-        // RFC1939 does not say about the string which follows `+OK` indicator
-        #![allow(unused)]
-        assert!(self.is_ok());
-        Ok(())
-    }
-
-    pub fn parse_as_for_uidl_single(&self) -> Result<MyPop3UniqueIdListingItem> {
-        assert!(self.is_ok());
-        self.as_rest_of_line().parse()
-    }
-
-    //====================
-    pub fn rebuild_as_for_list_all(&self, total_count: &MyPop3NumberOfMessages, total_nbytes: &MyPop3Octets) -> Self {
-        // panic if does not seem to be a response for LIST_ALL command
-        assert!(self.is_ok());
-        let ss = self.raw_line.as_str();
-        let ss = my_regex_replace_group_2(&REGEX_FOR_NUMBER_OF_MESSAGES, &ss, |_| total_count.to_string());
-        let ss = my_regex_replace_group_2(&REGEX_FOR_OCTETS, &ss, |_| total_nbytes.to_string());
-        Self::from_str(&ss).unwrap()
-    }
-
-    pub fn rebuild_as_for_list_single(&self, message_number: &MyPop3MessageNumber, nbytes: &MyPop3Octets) -> Self {
-        // panic if does not seem to be a response for LIST_SINGLE command
-        assert!(self.is_ok());
-        let old_item = self.parse_as_for_list_single().unwrap();
-        assert_eq!(message_number, old_item.as_message_number(), "{:?}", (&old_item, &message_number, &nbytes, &self));
-        let new_item = old_item.rebuild_with_nbytes(&message_number, &nbytes);
-        let it = self.fields.iter().take(2).map(|x| x.as_str().to_string());
-        let it = it.chain([new_item.to_string()].into_iter());
-        let ss = it.collect::<Vec<_>>().join("");
-        Self::from_str(&ss).unwrap()
-    }
-
-    pub fn rebuild_as_for_retr(&self, nbytes: &MyPop3Octets) -> Self {
-        // panic if does not seem to be a response for RETR command
-        #![allow(unused)]
-        unimplemented!()
-    }
-
-    pub fn rebuild_as_for_stat(&self, total_count: &MyPop3NumberOfMessages, total_nbytes: &MyPop3Octets) -> Self {
-        // panic if does not seem to be a response for STAT command
-        assert!(self.is_ok());
-        let _ = self.parse_as_for_stat().unwrap(); // check if assertion failure
-        let new_args = [total_count.to_string(), total_nbytes.to_string()];
-        self.rebuild_with_args(&new_args)
-    }
-
-    pub fn rebuild_as_for_top(&self, nbytes: &MyPop3Octets) -> Self {
-        // panic if does not seem to be a response for TOP command
-        #![allow(unused)]
-        unimplemented!()
-    }
-
-    pub fn rebuild_as_for_uidl_all(&self) -> Self {
-        #![allow(unused)]
-        assert!(self.is_ok());
-        self.clone()
-    }
-
-    pub fn rebuild_as_for_uidl_single(&self, message_number: &MyPop3MessageNumber, unique_id: &MyPop3UniqueID) -> Self {
-        #![allow(unused)]
-        unimplemented!()
-    }
-
     fn rebuild_with_args<T: AsRef<str>>(&self, new_args: &[T]) -> Self {
         let new_args = new_args.into_iter().map(|ss| {
             let ss = ss.as_ref().to_string();
@@ -2070,6 +1970,167 @@ mod test_MyPop3StatusLine {
         checker(3, "+OK a b c");
         checker(3, "+OK a b c ");
         checker(3, "+OK a! b c:");
+    }
+}
+
+//====================================================================
+pub trait MyPop3ParserOfStatusLineAsForListAll {
+    // NOTE: avoid generic because it causes to need "type annotation" in caller side.
+    fn parse_as_for_list_all(&self) -> Result<(Option<MyPop3NumberOfMessages>, Option<MyPop3Octets>)>;
+    fn rebuild_as_for_list_all(&self, total_count: &MyPop3NumberOfMessages, total_nbytes: &MyPop3Octets) -> Self;
+}
+
+impl MyPop3ParserOfStatusLineAsForListAll for MyPop3StatusLine {
+    fn parse_as_for_list_all(&self) -> Result<(Option<MyPop3NumberOfMessages>, Option<MyPop3Octets>)> {
+        assert!(self.is_ok());
+        let total_count = my_regex_extract_group_2(&REGEX_FOR_NUMBER_OF_MESSAGES, self.as_str())?;
+        let total_nbytes = my_regex_extract_group_2(&REGEX_FOR_OCTETS, self.as_str())?;
+        Ok((total_count, total_nbytes))
+    }
+
+    fn rebuild_as_for_list_all(&self, total_count: &MyPop3NumberOfMessages, total_nbytes: &MyPop3Octets) -> Self {
+        assert!(self.is_ok());
+        let ss = self.raw_line.as_str();
+        let ss = my_regex_replace_group_2(&REGEX_FOR_NUMBER_OF_MESSAGES, &ss, |_| total_count.to_string());
+        let ss = my_regex_replace_group_2(&REGEX_FOR_OCTETS, &ss, |_| total_nbytes.to_string());
+        Self::from_str(&ss).unwrap()
+    }
+}
+
+//====================
+pub trait MyPop3ParserOfStatusLineAsForListSingle {
+    // NOTE: avoid generic because it causes to need "type annotation" in caller side.
+    fn parse_as_for_list_single(&self) -> Result<MyPop3ScanListingItem>;
+    fn rebuild_as_for_list_single(&self, message_number: &MyPop3MessageNumber, nbytes: &MyPop3Octets) -> Self;
+}
+
+impl MyPop3ParserOfStatusLineAsForListSingle for MyPop3StatusLine {
+    fn parse_as_for_list_single(&self) -> Result<MyPop3ScanListingItem> {
+        assert!(self.is_ok());
+        self.as_rest_of_line().parse()
+    }
+    fn rebuild_as_for_list_single(&self, message_number: &MyPop3MessageNumber, nbytes: &MyPop3Octets) -> Self {
+        // panic if does not seem to be a response for LIST_SINGLE command
+        assert!(self.is_ok());
+        let old_item = self.parse_as_for_list_single().unwrap();
+        assert_eq!(message_number, old_item.as_message_number(), "{:?}", (&old_item, &message_number, &nbytes, &self));
+        let new_item = old_item.rebuild_with_nbytes(&message_number, &nbytes);
+        let it = self.fields.iter().take(2).map(|x| x.as_str().to_string());
+        let it = it.chain([new_item.to_string()].into_iter());
+        let ss = it.collect::<Vec<_>>().join("");
+        Self::from_str(&ss).unwrap()
+    }
+}
+
+//====================
+pub trait MyPop3ParserOfStatusLineAsForRetr {
+    // NOTE: avoid generic because it causes to need "type annotation" in caller side.
+    fn parse_as_for_retr(&self) -> Result<Option<MyPop3Octets>>;
+    fn rebuild_as_for_retr(&self, nbytes: &MyPop3Octets) -> Self;
+}
+
+impl MyPop3ParserOfStatusLineAsForRetr for MyPop3StatusLine {
+    fn parse_as_for_retr(&self) -> Result<Option<MyPop3Octets>> {
+        assert!(self.is_ok());
+        let nbytes = my_regex_extract_group_2(&REGEX_FOR_OCTETS, self.as_str())?;
+        Ok(nbytes)
+    }
+
+    fn rebuild_as_for_retr(&self, nbytes: &MyPop3Octets) -> Self {
+        // panic if does not seem to be a response for RETR command
+        #![allow(unused)]
+        unimplemented!()
+    }
+}
+
+//====================
+pub trait MyPop3ParserOfStatusLineAsForStat {
+    // NOTE: avoid generic because it causes to need "type annotation" in caller side.
+    fn parse_as_for_stat(&self) -> Result<(MyPop3NumberOfMessages, MyPop3Octets)>;
+    fn rebuild_as_for_stat(&self, total_count: &MyPop3NumberOfMessages, total_nbytes: &MyPop3Octets) -> Self;
+}
+
+impl MyPop3ParserOfStatusLineAsForStat for MyPop3StatusLine {
+    fn parse_as_for_stat(&self) -> Result<(MyPop3NumberOfMessages, MyPop3Octets)> {
+        assert!(self.is_ok());
+        let args = self.to_args();
+        if args.len() < 2 {
+            // NOTE: RFC1939 says "This memo makes no requirement on what follows the maildrop size"
+            return Err(anyhow!("the status line of the response for STAT should have at least two arguments: {:?}", (&args, &self)));
+        }
+        let num_of_messages = args[0].as_str().try_into()?;
+        let nbytes = args[1].as_str().try_into()?;
+        Ok((num_of_messages, nbytes))
+    }
+
+    fn rebuild_as_for_stat(&self, total_count: &MyPop3NumberOfMessages, total_nbytes: &MyPop3Octets) -> Self {
+        // panic if does not seem to be a response for STAT command
+        assert!(self.is_ok());
+        let _ = self.parse_as_for_stat().unwrap(); // check if assertion failure
+        let new_args = [total_count.to_string(), total_nbytes.to_string()];
+        self.rebuild_with_args(&new_args)
+    }
+}
+
+//====================
+#[allow(unused)]
+pub trait MyPop3ParserOfStatusLineAsForTop: MyPop3ParserOfStatusLineAsForRetr {
+    // NOTE: avoid generic because it causes to need "type annotation" in caller side.
+    fn parse_as_for_top(&self) -> Result<Option<MyPop3Octets>>;
+    fn rebuild_as_for_top(&self, nbytes: &MyPop3Octets) -> Self;
+}
+
+impl MyPop3ParserOfStatusLineAsForTop for MyPop3StatusLine {
+    fn parse_as_for_top(&self) -> Result<Option<MyPop3Octets>> {
+        #![allow(unused)]
+        self.parse_as_for_retr()
+    }
+
+    fn rebuild_as_for_top(&self, nbytes: &MyPop3Octets) -> Self {
+        // panic if does not seem to be a response for TOP command
+        #![allow(unused)]
+        unimplemented!()
+    }
+}
+
+//====================
+#[allow(unused)]
+pub trait MyPop3ParserOfStatusLineAsForUidlAll {
+    // NOTE: avoid generic because it causes to need "type annotation" in caller side.
+    fn parse_as_for_uidl_all(&self) -> Result<()>;
+    fn rebuild_as_for_uidl_all(&self) -> Self;
+}
+
+impl MyPop3ParserOfStatusLineAsForUidlAll for MyPop3StatusLine {
+    fn parse_as_for_uidl_all(&self) -> Result<()> {
+        // RFC1939 does not say about the string which follows `+OK` indicator
+        assert!(self.is_ok());
+        Ok(())
+    }
+
+    fn rebuild_as_for_uidl_all(&self) -> Self {
+        assert!(self.is_ok());
+        self.clone()
+    }
+}
+
+//====================
+#[allow(unused)]
+pub trait MyPop3ParserOfStatusLineAsForUidlSingle {
+    // NOTE: avoid generic because it causes to need "type annotation" in caller side.
+    fn parse_as_for_uidl_single(&self) -> Result<MyPop3UniqueIdListingItem>;
+    fn rebuild_as_for_uidl_single(&self, message_number: &MyPop3MessageNumber, unique_id: &MyPop3UniqueID) -> Self;
+}
+
+impl MyPop3ParserOfStatusLineAsForUidlSingle for MyPop3StatusLine {
+    fn parse_as_for_uidl_single(&self) -> Result<MyPop3UniqueIdListingItem> {
+        assert!(self.is_ok());
+        self.as_rest_of_line().parse()
+    }
+
+    fn rebuild_as_for_uidl_single(&self, message_number: &MyPop3MessageNumber, unique_id: &MyPop3UniqueID) -> Self {
+        #![allow(unused)]
+        unimplemented!()
     }
 }
 
