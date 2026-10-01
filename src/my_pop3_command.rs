@@ -343,13 +343,25 @@ impl<I, T> MyIteratorIsUnique for I
     fn is_unique(self) -> bool {
         let mut table = HashSet::new();
         for item in self {
-            let is_already_existed = table.insert(item);
-            if is_already_existed {
+            let is_new = table.insert(item);
+            if !is_new {
                 return false; // short-cut
             }
         }
         return true;
     }
+}
+
+#[test]
+#[allow(non_snake_case)]
+fn test_MyIteratorIsUnique() {
+    assert!((&[] as &[u32]).into_iter().is_unique());
+    assert!([1].into_iter().is_unique());
+    assert!([1, 2, 3].into_iter().is_unique());
+    assert!(![1, 1].into_iter().is_unique());
+    assert!(![1, 2, 2, 3].into_iter().is_unique());
+    assert!(![1, 2, 3, 2].into_iter().is_unique());
+    assert!(![1, 2, 3, 4, 1].into_iter().is_unique());
 }
 
 //====================================================================
