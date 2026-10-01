@@ -2070,8 +2070,11 @@ impl MyPop3ParserOfStatusLineAsForRetr for MyPop3StatusLine {
 
     fn rebuild_as_for_retr(&self, nbytes: &MyPop3Octets) -> Self {
         // panic if does not seem to be a response for RETR command
-        #![allow(unused)]
-        unimplemented!()
+        assert!(self.is_ok());
+        let _ = self.parse_as_for_retr().unwrap(); // simple validation (just in case)
+        let ss = self.raw_line.as_str();
+        let ss = my_regex_replace_group_2(&REGEX_FOR_OCTETS, &ss, |_| nbytes.to_string());
+        Self::from_str(&ss).unwrap()
     }
 }
 
