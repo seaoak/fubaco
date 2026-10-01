@@ -2142,7 +2142,7 @@ pub enum MyPop3StateName {
     AUTHORIZATION_0,
     AUTHORIZATION_1,
     TRANSACTION,
-    // UPDATE, // `UPDATE` state is described in RFC1939, but not used
+    // UPDATE, // `UPDATE` state is described in RFC1939, but not used in fubaco
     TERMINATED, // fubaco original (not defined in RFC1939)
 }
 
@@ -2164,6 +2164,24 @@ impl MyPop3State {
 
     pub fn name(&self) -> MyPop3StateName {
         self.name
+    }
+
+    pub fn is_acceptable_command(&self, command_name: MyPop3CommandName) -> bool {
+        let expected_states: &[MyPop3StateName] = match command_name {
+            MyPop3CommandName::APOP => &[MyPop3StateName::AUTHORIZATION_0],
+            MyPop3CommandName::DELE => &[MyPop3StateName::TRANSACTION],
+            MyPop3CommandName::LIST => &[MyPop3StateName::TRANSACTION],
+            MyPop3CommandName::NOOP => &[MyPop3StateName::TRANSACTION],
+            MyPop3CommandName::PASS => &[MyPop3StateName::AUTHORIZATION_1],
+            MyPop3CommandName::QUIT => &[MyPop3StateName::AUTHORIZATION_0, MyPop3StateName::AUTHORIZATION_1, MyPop3StateName::TRANSACTION],
+            MyPop3CommandName::RETR => &[MyPop3StateName::TRANSACTION],
+            MyPop3CommandName::RSET => &[MyPop3StateName::TRANSACTION],
+            MyPop3CommandName::STAT => &[MyPop3StateName::TRANSACTION],
+            MyPop3CommandName::TOP  => &[MyPop3StateName::TRANSACTION],
+            MyPop3CommandName::UIDL => &[MyPop3StateName::TRANSACTION],
+            MyPop3CommandName::USER => &[MyPop3StateName::AUTHORIZATION_0],
+        };
+        expected_states.contains(&self.name)
     }
 
     pub fn transition(&mut self, command_name: MyPop3CommandName, is_ok_response: bool) -> Result<()> {
