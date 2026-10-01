@@ -1554,11 +1554,10 @@ fn make_raw_response_u8(status_line: &MyPop3StatusLine, contents: Option<&MyPop3
     buf.extend_from_slice(status_line.as_str().trim_end_matches("\r\n").as_bytes());
     buf.extend_from_slice(LINE_TERMINATOR.as_bytes());
     if let Some(contents) = contents {
-        // contents may be empty
-        let contents = contents.encode_as_rest_of_response(); // include escaping period-only lines (termination octet)
-        assert!(contents.is_empty() || contents.ends_with(LINE_TERMINATOR.as_bytes()));
-        buf.extend_from_slice(&contents);
-        buf.extend_from_slice(TERMINATOR_OF_CONTENTS_OF_RESPONSE.as_bytes());
+        let bin = contents.encode_as_rest_of_response(); // include escaping period-only lines ("termination octet")
+        assert!((bin == TERMINATOR_OF_CONTENTS_OF_RESPONSE.as_bytes())
+                || bin.ends_with(&[LINE_TERMINATOR.as_bytes(), TERMINATOR_OF_CONTENTS_OF_RESPONSE.as_bytes()].concat()));
+        buf.extend_from_slice(&bin);
     }
     buf
 }
@@ -1627,6 +1626,7 @@ pub struct MyPop3Contents {
 
 impl MyPop3Contents {
     fn from_bytes(it: impl Iterator<Item = u8>) -> Result<Self> {
+        // NOTE: the contents may contain period-only lines (= "\r\n.\r\n") because these will be escaped when encode as response.
         let bin = Vec::from_iter(it);
         if !bin.is_empty() && !bin.ends_with(LINE_TERMINATOR.as_bytes()) {
             return Err(anyhow!("invalid contents: {:?}", (&bin)));
@@ -1649,18 +1649,20 @@ impl MyPop3Contents {
     }
 
     pub fn decode_from_response(raw_u8: &[u8]) -> Result<Self> {
-        if raw_u8.len() < TERMINATOR_OF_CONTENTS_OF_RESPONSE.len() {
-            return Err(anyhow!("invalid POP3 response: contents of multi-line response is too short: {:?}", (raw_u8.len())));
+        let expected_tail = TERMINATOR_OF_CONTENTS_OF_RESPONSE.as_bytes();
+        if raw_u8.len() < expected_tail.len() {
+            return Err(anyhow!("invalid POP3 response: contents of multi-line response is too short: {:?}", (&raw_u8)));
         }
-        let nbytes = raw_u8.len() - TERMINATOR_OF_CONTENTS_OF_RESPONSE.len(); // may be zero
-        let tail = &raw_u8[nbytes..];
-        if tail != TERMINATOR_OF_CONTENTS_OF_RESPONSE.as_bytes() {
-            return Err(anyhow!("invalid POP3 response: multi-line response should be ends with {:?}, but {:?}", &*TERMINATOR_OF_CONTENTS_OF_RESPONSE, &tail));
+        let nbytes = raw_u8.len() - expected_tail.len(); // may be zero
+        let (bin, tail) = raw_u8.split_at(nbytes);
+        if tail != expected_tail {
+            return Err(anyhow!("invalid POP3 response: multi-line response should be ends with {:?}, but {:?}", &expected_tail, &tail));
         }
-
-        let bin = &raw_u8[..nbytes];
-        let bin = Self::unescape_termination_octet(&bin);
-        Self::from_bytes(bin.iter().cloned())
+        if !bin.is_empty() && !bin.ends_with(LINE_TERMINATOR.as_bytes()) {
+            return Err(anyhow!("invalid POP3 response: no CRLF at the end of contents: {:?}", String::from_utf8_lossy(&bin[(bin.len().saturating_sub(32))..])));
+        }
+        let contents_u8 = Self::unescape_termination_octet(&bin)?;
+        Self::from_bytes(contents_u8.into_iter())
     }
 
     pub fn encode_as_rest_of_response(&self) -> Vec<u8> {
@@ -1675,7 +1677,6 @@ impl MyPop3Contents {
 
     pub fn to_text(&self) -> Result<String> {
         let bin = self.as_contents_u8().to_vec();
-        assert!(bin.is_empty() || bin.ends_with(LINE_TERMINATOR.as_bytes()));
         let text = String::from_utf8(bin).map_err(|_| anyhow!("not UTF-8 string"))?;
         Ok(text)
     }
@@ -1700,19 +1701,38 @@ impl MyPop3Contents {
     //====================
     // in RFC1939, ".\r\n" (a termination octet and a CRLF pair) has special meaning as the terminator of a multi-line response.
     // So it is necessary to escape/unescape period-only lines in a multi-line response.
-    fn escape_termination_octet(bin: &[u8]) -> Vec<u8> {
+
+    fn escape_termination_octet(contents_u8: &[u8]) -> Vec<u8> {
         // TODO: implement to escape period-only lines as described in "Secton 3. Basic Operation" in RFC1939
+
         warn!("escape_termination_octet() is not implemented yet");
+
         let _termination_octet = TERMINATOR_OF_CONTENTS_OF_RESPONSE.as_bytes()[0];
-        bin.to_vec()
+        let bin = contents_u8.to_vec(); // TODO: implement here
+
+        assert_ne!(bin, TERMINATOR_OF_CONTENTS_OF_RESPONSE.as_bytes());
+        let invalid_sequence = [LINE_TERMINATOR.as_bytes(), TERMINATOR_OF_CONTENTS_OF_RESPONSE.as_bytes()].concat();
+        assert!(!bin.windows(invalid_sequence.len()).any(|v| v == invalid_sequence));
+        bin
     }
 
-    // helper function
-    fn unescape_termination_octet(bin: &[u8]) -> Vec<u8> {
+    fn unescape_termination_octet(bin: &[u8]) -> Result<Vec<u8>> {
         // TODO: implement to restore period-only lines as described in "Secton 3. Basic Operation" in RFC1939
+
+        if bin == TERMINATOR_OF_CONTENTS_OF_RESPONSE.as_bytes() {
+            return Err(anyhow!("invalid POP3 response: detect period-only line in contents"));
+        }
+        let invalid_sequence = [LINE_TERMINATOR.as_bytes(), TERMINATOR_OF_CONTENTS_OF_RESPONSE.as_bytes()].concat();
+        if bin.windows(invalid_sequence.len()).any(|v| v == invalid_sequence) {
+            return Err(anyhow!("invalid POP3 response: detect period-only line in contents"));
+        }
+
         warn!("unescape_termination_octet() is not implemented yet");
+
         let _termination_octet = TERMINATOR_OF_CONTENTS_OF_RESPONSE.as_bytes()[0];
-        bin.to_vec()
+        let contents_u8 = bin.to_vec(); // TODO: implement here
+
+        Ok(contents_u8)
     }
 }
 
