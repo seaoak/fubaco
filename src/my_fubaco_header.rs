@@ -189,12 +189,19 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
     info!("Final result of BIMI: {:?}", if is_lack_of_bimi { "lack" } else { "not an error" });
 
     // ignore all SPAM factors if the mail is `dmarc=pass` and the verified domain is listed as a trusted domain and BIMI is OK
-    if !spam_judgement_table.is_empty() && dmarc_result.as_status() == &DMARCStatus::PASS && !is_lack_of_bimi {
-        let domain = &dmarc_result.as_domain().to_owned().unwrap(); // `dmarc=pass` なら必ず存在するので unwrap できる
-        if my_fqdn::is_trusted_domain(domain) || my_fqdn::is_listed_as_a_valid_domain(domain) {
-            let spam_factors = Vec::from_iter(spam_judgement_table.drain()); // clear table
-            let ss = spam_factors.join(" ");
-            info!("Because the verified domain of DMARC is a registered domain, ignore all SPAM factors: {}", ss);
+    if let Some(domain) = &dmarc_result.as_domain() { // TODO: follow the manner of `is_lack_of_bimi`
+        let is_registered_domain = my_fqdn::is_trusted_domain(domain) || my_fqdn::is_listed_as_a_valid_domain(domain);
+        let is_auth_ok = dmarc_result.as_status() == &DMARCStatus::PASS && !is_lack_of_bimi;
+        if is_registered_domain {
+            if is_auth_ok {
+                if !spam_judgement_table.is_empty() {
+                    let spam_factors = Vec::from_iter(spam_judgement_table.drain()); // clear table
+                    let ss = spam_factors.join(" ");
+                    info!("Because the verified domain of DMARC is a registered domain, ignore all SPAM factors: {}", ss);
+                }
+            } else {
+                spam_judgement_table.insert("auth-failed-for-registered-domain".into());
+            }
         }
     }
 
