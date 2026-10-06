@@ -21,11 +21,17 @@ target/
 /dns_cache.json
 /fubaco_yondakiji.json
 /fubaco_yondatweet.json
+/log_*
+/log-*
+/log.*
 /mail-sample
 /nodejs_*
 /pubkey.der
+/public_suffix_list.*
 /rust_*
+/sample_*
 /sample-*
+/sample.*
 /start_fubaco*.bat
 /*.log
 /*.bak
