@@ -611,6 +611,6 @@ pub fn dkim_verify(message: &Message, resolver: &MyDNSResolver) -> DKIMResult {
             break;
         }
     }
-    info!("DKIM final result: {:?}", final_result);
+    info!("DKIM result: {:?}", final_result);
     final_result
 }

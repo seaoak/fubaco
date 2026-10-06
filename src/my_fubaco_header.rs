@@ -183,6 +183,11 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
         spam_judgement_table.insert("lack-of-bimi".into());
     }
 
+    info!("Final result of SPF: {:?}", spf_result);
+    info!("Final result of DKIM: {:?}", dkim_result);
+    info!("Final result of DMARC: {:?}", dmarc_result);
+    info!("Final result of BIMI: {:?}", if is_lack_of_bimi { "lack" } else { "not an error" });
+
     // ignore all SPAM factors if the mail is `dmarc=pass` and the verified domain is listed as a trusted domain and BIMI is OK
     if !spam_judgement_table.is_empty() && dmarc_result.as_status() == &DMARCStatus::PASS && !is_lack_of_bimi {
         let domain = &dmarc_result.as_domain().to_owned().unwrap(); // `dmarc=pass` なら必ず存在するので unwrap できる
