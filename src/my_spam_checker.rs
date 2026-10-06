@@ -58,6 +58,31 @@ pub fn spam_checker_header_received(table: &mut HashSet<String>, message: &Messa
     if is_suspicious {
         table.insert("suspicious-authenticated-sender-in-header-received".into());
     }
+
+    lazy_static! {
+        static ref REGEX_FIELD_FROM: Regex = Regex::new(r"(?i)^from\s+(\S[\s\S]*?\S)\s+by\s").unwrap(); // case-insensitive
+        static ref REGEX_IN_SQUARE_BRACKET: Regex = Regex::new(r"\[([^\]]*)\]").unwrap();
+        static ref REGEX_IN_USING: Regex = Regex::new(r"(?i)\busing [\s\S]+$").unwrap(); // case-insensitive
+    }
+    let list_of_host_with_blacklist_tld = header_values.iter()
+        .filter_map(|ss| REGEX_FIELD_FROM.captures(&ss))
+        .map(|caps| caps[1].to_owned())
+        .flat_map(|ss| {
+            let ss = REGEX_IN_SQUARE_BRACKET.replace_all(&ss, ""); // remove IP address (IPv4 and IPv6)
+            let ss = REGEX_IN_USING.replace(&ss, ""); // remove after a phrase "(using TLSv1.3 with ..."
+            let it = ss.split(|c: char| c.is_ascii_whitespace() || "()[]/,".contains(c));
+            let it = it.filter(|ss| !ss.is_empty());
+            let it = it.filter(|ss| ss.chars().all(|c: char| c.is_ascii_graphic()));
+            let it = it.filter(|ss| is_seemed_to_fqdn(&ss));
+            let it = it.filter(|ss| my_fqdn::is_blacklist_tld(&ss));
+            let it = it.map(|ss| ss.to_owned());
+            it.collect::<Vec<_>>().into_iter() // use `Vec` to release the reference of `ss`
+        })
+        .collect::<Vec<_>>();
+    if !list_of_host_with_blacklist_tld.is_empty() {
+        info!("host-with-blacklist-tld-in-header-received: {}", list_of_host_with_blacklist_tld[0]);
+        table.insert("host-with-blacklist-tld-in-header-received".into());
+   }
 }
 
 pub fn spam_checker_message_id(table: &mut HashSet<String>, message: &Message) {

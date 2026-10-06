@@ -27,6 +27,15 @@ impl<'a> MyMessageParser<'a> for Message<'a> {
         let pairs = self.headers_raw();
         let pairs = pairs.filter(|(name, _)| name.to_ascii_uppercase() == header_name_upper);
         let values = pairs.map(|(_, lines)| lines);
+        let values = values.map(|ss| {
+            // skip first byte (because `mail-parser` add an extra space character at the beginning of value)
+            if ss.is_empty() {
+                &ss
+            } else {
+                assert_eq!(ss.as_bytes()[0], b' ');
+                &ss[1..]
+            }
+        });
         let joined = values.map(join_continuation_lines);
         joined.collect()
     }

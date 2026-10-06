@@ -211,6 +211,13 @@ pub fn is_seemed_to_mail_address(text: &str) -> bool {
     REGEX_MAIL_ADDRESS_RELAXED.is_match(text)
 }
 
+pub fn is_seemed_to_fqdn(text: &str) -> bool {
+    lazy_static! {
+        static ref REGEX_FQDN_RELAXED: Regex = Regex::new(r"^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*([.][a-zA-Z0-9]+(-[a-zA-Z0-9]+)*)+$").unwrap();
+    }
+    REGEX_FQDN_RELAXED.is_match(text) // IPv4 address will be true, but OK
+}
+
 //================================================================================
 fn get_header_value(text: &str, name: &str) -> Option<String> {
     let lines = text.lines();
