@@ -242,6 +242,7 @@ fn test_rustls_simple_client() -> Result<()> {
 fn test_spam_checker_with_local_files() -> Result<()> {
     let start_time = time::Instant::now();
     let path_to_dir = std::path::Path::new("./mail-sample");
+    let mut list_of_result: Vec<std::result::Result<String, String>> = Vec::new();
     for entry in path_to_dir.read_dir()? {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
@@ -259,17 +260,41 @@ fn test_spam_checker_with_local_files() -> Result<()> {
         reader.read_to_end(&mut buf)?;
         let fubaco_headers = my_fubaco_header::make_fubaco_headers(&buf, &MY_DNS_RESOLVER)?;
         info!("{}", fubaco_headers);
+
         lazy_static! {
             static ref REGEX_FILENAME_AS_SUCCESSFUL: Regex = Regex::new(r"[-._](ok|pass|valid)[-._]").unwrap();
+            static ref REGEX_FILENAME_AS_AUTHENTICATION: Regex = Regex::new(r"(?i)[-._](SPF|DKIM|DMARC)[-._]").unwrap(); // case-insensitive
         }
-        let is_error = !fubaco_headers.contains("X-Fubaco-Spam-Judgement: none\r\n") || !fubaco_headers.contains("dmarc=pass");
-        if !is_error != REGEX_FILENAME_AS_SUCCESSFUL.is_match(&filename) {
-            error!("SPAM cheker says different result to the expectation which is guessed from filename: {}", &filename);
+        let is_expected_to_pass = REGEX_FILENAME_AS_SUCCESSFUL.is_match(&filename);
+        let is_test_for_auth = REGEX_FILENAME_AS_AUTHENTICATION.is_match(&filename);
+        let is_passed = if is_test_for_auth {
+            fubaco_headers.contains("dmarc=pass")
+        } else {
+            fubaco_headers.contains("X-Fubaco-Spam-Judgement: none")
+        };
+        let mode = if is_test_for_auth { "auth" } else { "judge" };
+        let msg = format!("result={} / expected={} / mode={} / filename={:?}", is_passed, is_expected_to_pass, &mode, &filename);
+        if is_passed == is_expected_to_pass {
+            list_of_result.push(Ok(msg));
+        } else {
+            error!("TEST FAILED: {}", &msg);
+            list_of_result.push(Err(msg));
             // unreachable!();
         }
     }
+
+    info!("------------------------------------------------------------------------------");
     MY_DNS_RESOLVER.save_cache()?;
     info!("Elapsed time: {:.3} sec", start_time.elapsed().as_secs_f32());
+
+    let total_count = list_of_result.len();
+    let count_of_ng = list_of_result.iter().filter(|x| x.is_err()).count();
+    let count_of_ok = total_count - count_of_ng;
+    info!("Test summary: pass={} fail={} total={}", count_of_ok, count_of_ng, total_count);
+    if count_of_ng > 0 {
+        println!("test failed");
+        std::process::exit(1);
+    }
     Ok(())
 }
 
