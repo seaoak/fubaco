@@ -1,26 +1,39 @@
 use encoding_rs::Encoding;
 use lazy_static::lazy_static;
-use kana::wide2ascii;
+use kana::wide2ascii; // crate `unicode-jp`
 use regex::Regex;
 use unicode_normalization::UnicodeNormalization;
 
 use crate::my_logger::prelude::*;
 
-pub fn normalize_string<P: AsRef<str>>(s: P) -> String {
-    // normalize string (Unicode NFKC, uppercase, no-whitespace, no-bullet)
+pub fn my_normalize<P: AsRef<str>>(s: P, ) -> String {
+    // normalize string (Unicode NFKC, no full-width alphabet, no full-width digit, no-whitespace)
     let s: &str = s.as_ref();
     let s = s.nfkc();
     let s = String::from_iter(s);
     let s = wide2ascii(&s);
-    let s = s.chars();
-    let s = s.filter(|c| !c.is_control());
-    let s = s.filter(|c| !c.is_whitespace());
-    // let s = s.filter(|c| !c.is_ascii_graphic());
-    let s = s.filter(|c| c.is_alphanumeric() || *c == '@' || *c == '.' || *c == '-' || *c == '_');
-    let s = String::from_iter(s);
-    // let s = s.replace(&[' ', '　', '・'], "");
-    let s = s.to_uppercase();
-    s
+    let it = s.chars();
+    let it = it.filter(|c| !c.is_control());
+    let it = it.filter(|c| !c.is_whitespace());
+    String::from_iter(it)
+}
+
+pub fn my_normalize_with_filter<F, P: AsRef<str>>(s: P, is_acceptable: F) -> String
+    where F: FnMut(char) -> bool,
+          P: AsRef<str>,
+{
+    let s = my_normalize(s);
+
+    let mut is_acceptable = is_acceptable; // avoid compiler warning
+    let it = s.chars();
+    let it = it.filter(|c| is_acceptable(*c));
+    String::from_iter(it)
+}
+
+pub fn normalize_string<P: AsRef<str>>(s: P) -> String {
+    // normalize string (Unicode NFKC, uppercase, no-whitespace, no-bullet)
+    let s = my_normalize_with_filter(s, |c| c.is_alphanumeric() || c == '@' || c == '.' || c == '-' || c == '_');
+    s.to_uppercase()
 }
 
 #[test]

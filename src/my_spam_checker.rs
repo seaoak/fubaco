@@ -312,10 +312,22 @@ fn check_hyperlink(table: &mut HashSet<String>, url: &str, text: Option<String>)
         table.insert("blacklist-tld-in-href".into());
     }
     if let Some(text) = text {
-        let text = text.trim();
-        if let Some(host_in_text) = my_fqdn::extract_fqdn_in_url_with_validation(&text) {
-            if host_in_href != host_in_text {
-                info!("camouflage-hyperlink: \"{}\" vs \"{}\"", host_in_href, host_in_text);
+        lazy_static! {
+            static ref REGEX_HTML_TAG: Regex = Regex::new(r"[<][^>]*[>]").unwrap();
+        }
+        let normalized_text = {
+            let ss = REGEX_HTML_TAG.replace_all(&text, ""); // remove HTML tags simply
+            let ss = my_normalize_with_filter(&ss, |c| c.is_ascii_graphic());
+            ss.to_ascii_lowercase()
+        };
+        let is_looking_like_url = my_fqdn::extract_fqdn_in_url_with_validation(&normalized_text).is_some();
+        if is_looking_like_url {
+            // NOTE: no aggressive normalization (because it may cause too acceptance for evil HTML)
+            let ss = REGEX_HTML_TAG.replace_all(&text, " "); // replace with a space (not remove simply) because to distinguish evil embedded HTML tags
+            let ss = ss.trim_ascii();
+            let host_in_text = my_fqdn::extract_fqdn_in_url_with_validation(&ss);
+            if host_in_href != host_in_text.clone().unwrap_or("\0".into()) {
+                info!("camouflaged-hyperlink: {:?} vs {:?}", &host_in_href, &host_in_text.clone().unwrap_or(ss.to_string()));
                 table.insert("camouflaged-hyperlink".into());
             }
         }
