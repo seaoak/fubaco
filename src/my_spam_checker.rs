@@ -110,6 +110,12 @@ pub fn spam_checker_header_date(table: &mut HashSet<String>, message: &Message) 
     if REGEX_ADDED.is_match(&ss) {
         table.insert("auto-completed-date".into());
     }
+
+    let is_invalid_format = message.date().is_none();
+    if is_invalid_format {
+        info!("malformed-header-date: {:?}", &ss);
+        table.insert("malformed-header-date".into());
+    }
 }
 
 pub fn spam_checker_header_subject(table: &mut HashSet<String>, message: &Message) {
