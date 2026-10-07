@@ -98,6 +98,20 @@ pub fn spam_checker_message_id(table: &mut HashSet<String>, message: &Message) {
     }
 }
 
+pub fn spam_checker_header_date(table: &mut HashSet<String>, message: &Message) {
+    let ss = if let Some(header_value) = message.header_raw("Date") {
+        header_value.trim_ascii()
+    } else {
+        return; // report as `lack-of-mandantory-header`
+    };
+    lazy_static! {
+        static ref REGEX_ADDED: Regex = Regex::new(r"(?i)\badded\b").unwrap(); // " (added by ..."
+    }
+    if REGEX_ADDED.is_match(&ss) {
+        table.insert("auto-completed-date".into());
+    }
+}
+
 pub fn spam_checker_header_subject(table: &mut HashSet<String>, message: &Message) {
     let header_value = message.subject();
     if header_value.is_none() {
