@@ -196,7 +196,8 @@ pub fn make_fubaco_headers(message_u8: &[u8], resolver: &MyDNSResolver) -> Resul
         if is_registered_domain {
             if is_auth_ok {
                 if !spam_judgement_table.is_empty() {
-                    let spam_factors = Vec::from_iter(spam_judgement_table.drain()); // clear table
+                    let mut spam_factors = Vec::from_iter(spam_judgement_table.drain()); // clear table
+                    spam_factors.sort(); // avoid false diff of logging
                     let ss = spam_factors.join(" ");
                     info!("Because the verified domain of DMARC is a registered domain, ignore all SPAM factors: {}", ss);
                 }
