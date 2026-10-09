@@ -508,7 +508,7 @@ impl std::fmt::Display for MyPop3Username {
 }
 
 //====================
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct MyPop3Password(String); // for PASS command
 
 impl std::str::FromStr for MyPop3Password {
@@ -542,6 +542,17 @@ impl AsRef<str> for MyPop3Password {
 impl std::fmt::Display for MyPop3Password {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl std::fmt::Debug for MyPop3Password {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // hide secrets for logging
+        let dummy_text = "*".repeat(32); // the length of this dummy text should not depend on the length of actual value
+        let name = stringify!(MyPop3Password);
+        f.debug_tuple(name)
+            .field(&dummy_text)
+            .finish()
     }
 }
 
